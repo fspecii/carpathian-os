@@ -25,7 +25,7 @@ x11rb::atom_manager! {
     pub Atoms: AtomsCookie {
         WM_PROTOCOLS, WM_DELETE_WINDOW, WM_STATE, WM_TAKE_FOCUS, WM_TRANSIENT_FOR,
         UTF8_STRING, _NET_SUPPORTED, _NET_SUPPORTING_WM_CHECK, _NET_WM_NAME, _CARPATIC_ANIMATION,
-        _CARPATIC_ANIMATION_PREPARE, _NET_WM_CM_S0, _CARPATIC_FRAME_GEOMETRY,
+        _CARPATIC_ANIMATION_PREPARE, _CARPATIC_SNAP, _CARPATIC_SNAP_SAVED, _NET_WM_CM_S0, _CARPATIC_FRAME_GEOMETRY,
         _NET_CLIENT_LIST, _NET_ACTIVE_WINDOW, _NET_NUMBER_OF_DESKTOPS, _NET_CURRENT_DESKTOP,
         _NET_DESKTOP_NAMES, _NET_WM_DESKTOP, _NET_WM_STATE, _NET_WM_STATE_FULLSCREEN,
         _NET_WM_WINDOW_TYPE, _NET_WM_WINDOW_TYPE_DIALOG, _NET_CLOSE_WINDOW, _NET_WORKAREA, _NET_WM_PID, _CARPATIC_FLOATING, _CARPATIC_BUTTONS, _CARPATIC_CLIENT, _NET_WM_STATE_HIDDEN, WM_CHANGE_STATE, _MOTIF_WM_HINTS, _GTK_FRAME_EXTENTS, _NET_WM_STATE_MAXIMIZED_VERT, _NET_WM_STATE_MAXIMIZED_HORZ, _CARPATIC_DRAGGING, _CARPATIC_TAGS, _CARPATIC_LAYOUT, _NET_WM_WINDOW_TYPE_DOCK, _NET_WM_WINDOW_TYPE_DESKTOP, _NET_WM_STRUT_PARTIAL, _NET_WM_STRUT, _NET_WM_MOVERESIZE, _CARPATIC_DROP_TARGET, _CARPATIC_MAX_SAVED, _CARPATIC_FAKE_FULLSCREEN, _NET_WM_STATE_ABOVE, _NET_CLIENT_LIST_STACKING, _CARPATIC_MINLIST, _CARPATIC_DROP_ZONE, _NET_WM_STATE_DEMANDS_ATTENTION, _NET_FRAME_EXTENTS, _NET_REQUEST_FRAME_EXTENTS, _CARPATIC_URGENT_TAGS, _CARPATIC_CONFIG_SERIAL, _NET_SHOWING_DESKTOP, _CARPATIC_MINIMIZED_AT, _CARPATIC_PRESSED_BUTTON, _NET_WM_ICON, _CARPATIC_FULLSCREEN_ORIGIN,
@@ -80,6 +80,9 @@ struct Client {
     minimized: bool,
     min_stamp: u32,
     max_saved: Option<(Rect, bool)>,
+    snap_saved: Option<(Rect, bool)>,
+    snap_maximized: bool,
+    snap_constrained: bool,
     chrome_dirty: bool,
     hover: Option<Button>,
     pressed: Option<Button>,
@@ -131,6 +134,8 @@ struct DragOrigin {
     tags: u32,
     desktop: u32,
     max_saved: Option<(Rect, bool)>,
+    snap_constrained: bool,
+    snap_maximized: bool,
     tile_slot: Option<usize>,
     order: Vec<Window>,
     active_monitor: usize,
@@ -730,6 +735,8 @@ impl Wm {
             tags: c.tags,
             desktop: c.desktop,
             max_saved: c.max_saved,
+            snap_constrained: c.snap_constrained,
+            snap_maximized: c.snap_maximized,
             tile_slot: c.tile_slot,
             order: self.clients.iter().map(|c| c.id).collect(),
             active_monitor: self.active_monitor,
@@ -872,9 +879,12 @@ impl Wm {
                 c.monitor = monitor;
                 c.desktop = m.desktop;
                 c.tags = m.view;
+                c.snap_constrained = false;
+                c.snap_maximized = false;
                 c.floating_rect = clamp(rect, m.work);
             }
             self.publish_client_workspace(id)?;
+            self.sync_states(id)?;
             self.arrange()?;
         }
         self.update_drop_target(x, y)?;
@@ -1101,6 +1111,8 @@ impl Wm {
                     c.tags = drag.original.tags;
                     c.desktop = drag.original.desktop;
                     c.max_saved = drag.original.max_saved;
+                    c.snap_constrained = drag.original.snap_constrained;
+                    c.snap_maximized = drag.original.snap_maximized;
                     c.tile_slot = drag.original.tile_slot;
                     c.applied = None;
                 }
@@ -1194,6 +1206,26 @@ impl Wm {
             AtomEnum::CARDINAL,
             &[u32::from(c.fake_fullscreen)],
         )?;
+        if let Some((r, f)) = c.snap_saved {
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                id,
+                self.atoms._CARPATIC_SNAP_SAVED,
+                AtomEnum::CARDINAL,
+                &[
+                    r.x as u32,
+                    r.y as u32,
+                    r.width,
+                    r.height,
+                    u32::from(f),
+                    u32::from(c.snap_constrained),
+                    u32::from(c.snap_maximized),
+                ],
+            )?;
+        } else {
+            self.conn
+                .delete_property(id, self.atoms._CARPATIC_SNAP_SAVED)?;
+        }
         if let Some((r, f)) = c.max_saved {
             self.conn.change_property32(
                 PropMode::REPLACE,
@@ -1289,6 +1321,83 @@ impl Wm {
         self.focus(id)
     }
 
+    fn keyboard_snap(&mut self, id: Window, action: u32) -> Result<()> {
+        let Some(index) = self
+            .clients
+            .iter()
+            .position(|c| c.id == id && !c.dock && !c.fullscreen)
+        else {
+            return Ok(());
+        };
+        let monitor = self.clients[index].monitor;
+        let layout = self.monitors[monitor].layouts[self.monitors[monitor].slot()];
+        if action < 2 && layout != 1 && !self.clients[index].floating {
+            let visible: Vec<_> = self
+                .clients
+                .iter()
+                .filter(|c| {
+                    c.monitor == monitor
+                        && !c.dock
+                        && !c.minimized
+                        && c.swallowed_by.is_none()
+                        && c.tags & self.monitors[monitor].view != 0
+                })
+                .map(|c| c.id)
+                .collect();
+            if let Some(position) = visible.iter().position(|w| *w == id) {
+                let next =
+                    (position + if action == 0 { visible.len() - 1 } else { 1 }) % visible.len();
+                self.focus(visible[next])?;
+            }
+            return Ok(());
+        }
+        let work = self.monitors[monitor].work;
+        let c = &mut self.clients[index];
+        if action == 3 {
+            if let Some((rect, floating)) = c.snap_saved.take().or_else(|| c.max_saved.take()) {
+                c.floating_rect = rect;
+                c.floating = floating;
+                c.max_saved = None;
+                c.snap_maximized = false;
+                c.snap_constrained = false;
+            }
+        } else if action <= 2 {
+            if c.snap_saved.is_none() {
+                c.snap_saved = Some(
+                    c.max_saved
+                        .unwrap_or((c.applied.unwrap_or(c.floating_rect), c.floating)),
+                );
+            }
+            c.floating = true;
+            c.snap_maximized = action == 2;
+            c.snap_constrained = true;
+            c.max_saved = if action == 2 { c.snap_saved } else { None };
+            let left = work.width / 2;
+            c.floating_rect = if action == 0 {
+                Rect {
+                    width: left.max(1),
+                    ..work
+                }
+            } else if action == 1 {
+                Rect {
+                    x: work.x + left as i32,
+                    width: work.width.saturating_sub(left).max(1),
+                    ..work
+                }
+            } else {
+                work
+            };
+        } else {
+            return Ok(());
+        }
+        c.applied = None;
+        self.sync_states(id)?;
+        self.arrange()?;
+        self.focus(id)?;
+        self.client_list()?;
+        Ok(())
+    }
+
     fn maximize(&mut self, id: Window) -> Result<()> {
         if let Some(c) = self.clients.iter_mut().find(|c| c.id == id) {
             if c.fullscreen {
@@ -1301,6 +1410,9 @@ impl Wm {
                 c.max_saved = Some((c.applied.unwrap_or(c.floating_rect), c.floating));
                 c.floating = true;
             }
+            c.snap_saved = None;
+            c.snap_maximized = false;
+            c.snap_constrained = false;
             c.applied = None;
         }
         self.sync_states(id)?;
@@ -1421,6 +1533,7 @@ impl Wm {
                 a._NET_WM_STATE_ABOVE,
                 a._NET_WM_STATE_DEMANDS_ATTENTION,
                 a._NET_WM_MOVERESIZE,
+                a._CARPATIC_SNAP,
                 a._NET_FRAME_EXTENTS,
                 a._NET_REQUEST_FRAME_EXTENTS,
                 a._NET_WM_WINDOW_TYPE,
@@ -1580,6 +1693,23 @@ impl Wm {
         let active_slot = self.monitors[self.active_monitor].slot();
         match binding.func.as_str() {
             "spawn" => {
+                let args: Vec<&str> = if let Some(cmd) = &binding.cmd {
+                    cmd.split_whitespace().collect()
+                } else {
+                    binding.exec.iter().map(String::as_str).collect()
+                };
+                if args.len() == 2 && args[0] == "carpatic-snap" {
+                    let action = match args[1] {
+                        "left" => Some(0),
+                        "right" => Some(1),
+                        "max" => Some(2),
+                        "restore" => Some(3),
+                        _ => None,
+                    };
+                    if let (Some(id), Some(action)) = (self.focused, action) {
+                        return self.keyboard_snap(id, action);
+                    }
+                }
                 let mut command = if let Some(cmd) = &binding.cmd {
                     let mut c = Command::new("sh");
                     c.args(["-c", cmd]);
@@ -2257,6 +2387,25 @@ impl Wm {
         } else {
             None
         };
+        let saved_snap = self.property(id, self.atoms._CARPATIC_SNAP_SAVED);
+        let valid_snap = saved_snap.len() == 7
+            && (1..=u16::MAX as u32).contains(&saved_snap[2])
+            && (1..=u16::MAX as u32).contains(&saved_snap[3])
+            && saved_snap[4..].iter().all(|v| *v <= 1)
+            && (saved_snap[6] == 0 || (saved_snap[5] == 1 && max_saved.is_some()));
+        let snap_saved = valid_snap.then(|| {
+            (
+                Rect {
+                    x: saved_snap[0] as i32,
+                    y: saved_snap[1] as i32,
+                    width: saved_snap[2],
+                    height: saved_snap[3],
+                },
+                saved_snap[4] == 1,
+            )
+        });
+        let snap_constrained = valid_snap && saved_snap[5] == 1;
+        let snap_maximized = valid_snap && saved_snap[6] == 1;
         let fullscreen = !fake_fullscreen
             && self
                 .property(id, self.atoms._NET_WM_STATE)
@@ -2403,6 +2552,9 @@ impl Wm {
                 .copied()
                 .unwrap_or(0),
             max_saved,
+            snap_saved,
+            snap_maximized,
+            snap_constrained,
             chrome_dirty: true,
             hover: None,
             pressed: None,
@@ -2811,7 +2963,11 @@ impl Wm {
             } else if c.fullscreen {
                 m.area
             } else if c.max_saved.is_some() {
-                inset(m.work, self.config.outer_gap)
+                if c.snap_maximized {
+                    m.work
+                } else {
+                    inset(m.work, self.config.outer_gap)
+                }
             } else if c.floating || layout == 1 {
                 clamp(c.floating_rect, m.work)
             } else if layout == 2 {
@@ -2862,7 +3018,11 @@ impl Wm {
             }
             let mut width = rect.width.saturating_sub(border * 2).max(1);
             let mut height = rect.height.saturating_sub(border * 2 + title_height).max(1);
-            if (c.floating || layout == 1) && !c.fullscreen && c.max_saved.is_none() {
+            if (c.floating || layout == 1)
+                && !c.fullscreen
+                && c.max_saved.is_none()
+                && !c.snap_constrained
+            {
                 if let Some(hints) = &c.size_hints {
                     (width, height) = constrain_size(width, height, hints);
                 }
@@ -3465,11 +3625,13 @@ impl Wm {
             &ChangeWindowAttributesAux::new()
                 .border_pixel(self.client_border_pixel(id, self.config.border_active)),
         )?;
-        if self
-            .clients
-            .iter()
-            .any(|c| c.id == id && (c.floating || c.fullscreen))
-        {
+        let raise = self.clients.iter().any(|c| {
+            c.id == id
+                && (c.floating
+                    || c.fullscreen
+                    || self.monitors[c.monitor].layouts[self.monitors[c.monitor].slot()] == 1)
+        });
+        if raise {
             self.conn.configure_window(
                 self.clients.iter().find(|c| c.id == id).unwrap().surface(),
                 &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
@@ -3503,6 +3665,9 @@ impl Wm {
         } else {
             self.draw_chrome()?;
             self.draw_bars()?;
+        }
+        if raise {
+            self.client_list()?;
         }
         Ok(())
     }
@@ -4160,6 +4325,7 @@ impl Wm {
                             [self.monitors[c.monitor].desktop as usize]
                             == 1)
                         && !c.fullscreen
+                        && !c.snap_constrained
                     {
                         if e.value_mask.contains(ConfigWindow::X) {
                             c.floating_rect.x = e.x.into();
@@ -4185,10 +4351,11 @@ impl Wm {
                         c.applied = None;
                     }
                     // Tiled clients receive their real geometry, even if layout did not change.
-                    if !c.floating
-                        && self.monitors[c.monitor].layouts
-                            [self.monitors[c.monitor].desktop as usize]
-                            != 1
+                    if c.snap_constrained
+                        || (!c.floating
+                            && self.monitors[c.monitor].layouts
+                                [self.monitors[c.monitor].desktop as usize]
+                                != 1)
                     {
                         c.applied = None;
                     }
@@ -4560,6 +4727,8 @@ impl Wm {
                         self.arrange()?;
                         self.focus_available()?;
                     }
+                } else if e.type_ == self.atoms._CARPATIC_SNAP {
+                    self.keyboard_snap(e.window, e.data.as_data32()[0])?;
                 } else if e.type_ == self.atoms._NET_ACTIVE_WINDOW {
                     if self.desktop_surfaces.contains(&e.window) {
                         self.focus(e.window)?;

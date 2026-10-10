@@ -1,9 +1,43 @@
 #!/bin/sh
-# carpatic-snap left|right|max|restore : snap the active (floating) window inside the usable work area.
-. "$HOME/.config/carpatic/profile.env" 2>/dev/null
-w=$(xdotool getactivewindow 2>/dev/null) || exit 0
+# Native WM owns atomic keyboard snap geometry, restore state and focus.
+act=${1:-}
+case $act in left|right|max|restore) ;; *) echo 'Usage: carpatic-snap left|right|max|restore' >&2; exit 2;; esac
+w=$(xdotool getactivewindow 2>/dev/null) || exit 1
+if xprop -root _NET_SUPPORTED 2>/dev/null | grep -q _CARPATIC_SNAP; then
+    exec python3 - "$w" "$act" <<'PYCODE'
+import ctypes as c
+import sys
+class Data(c.Union):
+    _fields_ = [('l', c.c_long*5), ('b', c.c_char*20)]
+class Message(c.Structure):
+    _fields_ = [('type', c.c_int), ('serial', c.c_ulong), ('send_event', c.c_int), ('display', c.c_void_p), ('window', c.c_ulong), ('message_type', c.c_ulong), ('format', c.c_int), ('data', Data)]
+class Event(c.Union):
+    _fields_ = [('message', Message), ('pad', c.c_long*24)]
+x=c.CDLL('libX11.so.6')
+x.XOpenDisplay.argtypes=[c.c_char_p];x.XOpenDisplay.restype=c.c_void_p
+x.XDefaultRootWindow.argtypes=[c.c_void_p];x.XDefaultRootWindow.restype=c.c_ulong
+x.XInternAtom.argtypes=[c.c_void_p,c.c_char_p,c.c_int];x.XInternAtom.restype=c.c_ulong
+x.XSendEvent.argtypes=[c.c_void_p,c.c_ulong,c.c_int,c.c_long,c.POINTER(Event)];x.XSendEvent.restype=c.c_int
+x.XFlush.argtypes=[c.c_void_p];x.XCloseDisplay.argtypes=[c.c_void_p]
+d=x.XOpenDisplay(None)
+if not d:raise SystemExit('Cannot open X11 display')
+try:
+    e=Event();e.message.type=33;e.message.send_event=1;e.message.display=d
+    e.message.window=int(sys.argv[1]);e.message.message_type=x.XInternAtom(d,b'_CARPATIC_SNAP',0);e.message.format=32
+    e.message.data.l[0]={'left':0,'right':1,'max':2,'restore':3}[sys.argv[2]]
+    if not x.XSendEvent(d,x.XDefaultRootWindow(d),0,(1<<20)|(1<<19),c.byref(e)):raise SystemExit('Snap request was not sent')
+    x.XFlush(d)
+finally:x.XCloseDisplay(d)
+PYCODE
+fi
+# Compatibility path for another WM: published extents/workarea replace guesses.
+[ ! -r "$HOME/.config/carpatic/profile.env" ] || . "$HOME/.config/carpatic/profile.env"
 set -- "$1" $(xdotool getdisplaygeometry)
-act=$1; SW=$2; SH=$3; BW=2
+act=$1; SW=$2; SH=$3
+BW=$(xwininfo -id "$w" 2>/dev/null | awk '/Border width:/{print $NF}'); BW=${BW:-0}
+L=$BW; R=$BW; T=$BW; B=$BW
+extents=$(xprop -id "$w" _NET_FRAME_EXTENTS 2>/dev/null | sed -n 's/.*= //p' | tr ' ,' '  ')
+if [ -n "$extents" ]; then set -- $extents; [ "$#" -ne 4 ] || { L=$1; R=$2; T=$3; B=$4; }; fi
 X0=${BAR_LEFT:-0}; Y0=${BAR_TOP:-0}; AW=$((SW - X0)); AH=$((SH - Y0 - ${BAR_BOTTOM:-0}))
 # the live work area published by dwm (bars and docks of the running panel, any design, size or scale) wins over the profile's nominal sizes
 wa=$(xprop -root _NET_WORKAREA 2>/dev/null | sed -n 's/.*= *\([0-9]*\), *\([0-9]*\), *\([0-9]*\), *\([0-9]*\).*/\1 \2 \3 \4/p')
@@ -25,12 +59,9 @@ if [ ! -f "$S" ]; then
   eval "$(xdotool getwindowgeometry --shell "$w")"; echo "$X $Y $WIDTH $HEIGHT" > "$S"
 fi
 case $act in
-  left)  x=$X0;              ww=$((AW/2 - 2*BW)); ;;
-  right) x=$((X0 + AW/2));   ww=$((AW/2 - 2*BW)); ;;
-  max)   x=$X0;              ww=$((AW - 2*BW)); ;;
+  left)  x=$X0;              ww=$((AW/2 - L - R)); ;;
+  right) x=$((X0 + AW/2));   ww=$((AW - AW/2 - L - R)); ;;
+  max)   x=$X0;              ww=$((AW - L - R)); ;;
 esac
-# the title bar is its own window right above the client: its height comes off the usable height (0 without title bars)
-TB=$(xwininfo -id "$w" 2>/dev/null | awk '/Absolute upper-left X/{cx=$NF} /Absolute upper-left Y/{cy=$NF} END{print cx, cy}' | { read -r cx cy
-  xwininfo -root -tree 2>/dev/null | awk -v cx="$cx" -v cy="$cy" '/\(has no name\)/ && match($0, /[0-9]+x[0-9]+\+-?[0-9]+\+-?[0-9]+/) { split(substr($0, RSTART, RLENGTH), a, /[x+]/); if (a[3] == cx && a[2] + a[4] == cy && a[2] > 8 && a[2] < 80) { print a[2]; exit } }'; })
-TB=${TB:-0}
-xdotool windowsize "$w" "$ww" "$((AH - TB - 2*BW))" windowmove "$w" "$x" "$Y0"
+xdotool windowsize "$w" "$ww" "$((AH - T - B))" windowmove "$w" "$x" "$Y0"
+xdotool windowactivate --sync "$w"

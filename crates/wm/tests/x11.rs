@@ -4155,3 +4155,330 @@ fn tiny_native_caption_uses_clamped_surface_height() -> Result<()> {
     wm.0.wait()?;
     Ok(())
 }
+
+#[test]
+#[ignore = "requires private Xvfb; run tests/run.sh"]
+fn multiwindow_keyboard_snap_keeps_workarea_focus_stacking_and_restore() -> Result<()> {
+    assert_eq!(
+        std::env::var("CARPATIC_WM_TEST_DISPLAY").as_deref(),
+        Ok("1")
+    );
+    assert!(std::env::var_os("WAYLAND_DISPLAY").is_none());
+    let dir = std::path::PathBuf::from(std::env::var("CARPATIC_CONFIG_DIR")?);
+    let _config = ConfigRestore::new(&dir);
+    std::fs::write(dir.join("themes.toml"), "[appearance]\nworkspaces=4\ndefault_layout='float'\nborderpx=7\nborder_highlight=0\ncorner_radius=0\n[titlebar]\nenabled=1\nfloating=1\nheight=32\n")?;
+    std::fs::write(dir.join("window-rules.toml"), "rules=[]\n")?;
+    std::fs::write(dir.join("hotkeys.toml"), "keys=[{mod='SUPER',key='Left',func='spawn',exec=['carpatic-snap','left']},{mod='SUPER',key='Right',func='spawn',exec=['carpatic-snap','right']},{mod='SUPER',key='Up',func='spawn',exec=['carpatic-snap','max']},{mod='SUPER',key='Down',func='spawn',exec=['carpatic-snap','restore']}]\n")?;
+    let (conn, screen) = x11rb::connect(None)?;
+    let root = conn.setup().roots[screen].root;
+    let mut wm = start_with_policy(false, false)?;
+    wait("keyboard snap WM ready", || ready(&conn, root, &wm));
+    let dock = conn.generate_id()?;
+    conn.create_window(
+        0,
+        dock,
+        root,
+        0,
+        0,
+        17,
+        800,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &CreateWindowAux::new(),
+    )?;
+    conn.change_property32(
+        PropMode::REPLACE,
+        dock,
+        atom(&conn, "_NET_WM_WINDOW_TYPE")?,
+        AtomEnum::ATOM,
+        &[atom(&conn, "_NET_WM_WINDOW_TYPE_DOCK")?],
+    )?;
+    conn.change_property32(
+        PropMode::REPLACE,
+        dock,
+        atom(&conn, "_NET_WM_STRUT_PARTIAL")?,
+        AtomEnum::CARDINAL,
+        &[17, 16, 45, 35, 0, 799, 0, 799, 0, 1279, 0, 1279],
+    )?;
+    conn.map_window(dock)?;
+    conn.flush()?;
+    wait("odd dock workarea", || {
+        property(&conn, root, "_NET_WORKAREA")
+            .unwrap_or_default()
+            .get(..4)
+            == Some(&[17, 45, 1247, 720])
+    });
+    let mut clients = Vec::new();
+    for i in 0..3 {
+        let id = conn.generate_id()?;
+        conn.create_window(
+            0,
+            id,
+            root,
+            160 + i * 20,
+            170 + i * 20,
+            280,
+            190,
+            0,
+            WindowClass::INPUT_OUTPUT,
+            0,
+            &CreateWindowAux::new().background_pixel(0x25a9df),
+        )?;
+        let mut hints = x11rb::properties::WmSizeHints::new();
+        if i == 0 {
+            hints.min_size = Some((800, 220));
+        }
+        if i == 1 {
+            hints.size_increment = Some((37, 23));
+        }
+        hints.set_normal_hints(&conn, id)?;
+        conn.map_window(id)?;
+        conn.flush()?;
+        wait("snap client framed", || root_surface(&conn, id) != id);
+        wait("initial hinted body settled", || {
+            let g = geometry(&conn, id);
+            if i == 0 {
+                g.width == 800 && g.height == 220
+            } else if i == 1 {
+                g.width == 259 && g.height == 138
+            } else {
+                g.width == 280 && g.height == 158
+            }
+        });
+        clients.push(id);
+    }
+    let original: Vec<_> = clients
+        .iter()
+        .map(|id| geometry(&conn, root_surface(&conn, *id)))
+        .collect();
+    let home = dir.join("snap-home");
+    std::fs::create_dir_all(home.join(".config/carpatic"))?;
+    std::fs::write(home.join(".config/carpatic/profile.env"), "")?;
+    let helper = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../integration/carpatic/configurator/bin/carpatic-snap");
+    let invoke = |action: &str| -> Result<()> {
+        let out = Command::new("sh")
+            .arg(&helper)
+            .arg(action)
+            .env("HOME", &home)
+            .env("XDG_RUNTIME_DIR", &home)
+            .output()?;
+        assert!(
+            out.status.success(),
+            "snap helper: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        Ok(())
+    };
+    for (i, id) in clients.iter().enumerate() {
+        message(&conn, root, *id, "_NET_ACTIVE_WINDOW", [2, 0, 0, 0, 0])?;
+        wait("selected snap target", || {
+            property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![*id]
+        });
+        wait("activated float-layout frame raised", || {
+            let children = conn.query_tree(root).unwrap().reply().unwrap().children;
+            let frame = root_surface(&conn, *id);
+            let target = children.iter().position(|w| *w == frame);
+            target.is_some_and(|target| {
+                clients.iter().filter(|w| *w != id).all(|w| {
+                    children
+                        .iter()
+                        .position(|p| *p == root_surface(&conn, *w))
+                        .is_some_and(|p| p < target)
+                })
+            })
+        });
+        let peer = clients[(i + 1) % 3];
+        conn.configure_window(
+            peer,
+            &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
+        )?;
+        conn.flush()?;
+        for action in ["left", "right", "max", "restore"] {
+            if i == 1 {
+                let key = match action {
+                    "left" => "super+Left",
+                    "right" => "super+Right",
+                    "max" => "super+Up",
+                    _ => "super+Down",
+                };
+                xdotool(&["key", "--clearmodifiers", key]);
+            } else {
+                invoke(action)?;
+            }
+            println!("SNAP action={action} target={id}");
+            let expected = match action {
+                "left" => (17, 45, 623, 720),
+                "right" => (640, 45, 624, 720),
+                "max" => (17, 45, 1247, 720),
+                _ => (
+                    i32::from(original[i].x),
+                    i32::from(original[i].y),
+                    u32::from(original[i].width),
+                    u32::from(original[i].height),
+                ),
+            };
+            wait("snap target geometry updates", || {
+                let g = geometry(&conn, root_surface(&conn, *id));
+                (
+                    i32::from(g.x),
+                    i32::from(g.y),
+                    u32::from(g.width),
+                    u32::from(g.height),
+                ) == expected
+            });
+            wait("snapped target raised and focused", || {
+                let stack = property(&conn, root, "_NET_CLIENT_LIST_STACKING").unwrap_or_default();
+                let target = stack.iter().position(|w| w == id);
+                property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![*id]
+                    && target.is_some_and(|target| {
+                        clients.iter().filter(|w| *w != id).all(|w| {
+                            stack
+                                .iter()
+                                .position(|p| p == w)
+                                .is_some_and(|p| p < target)
+                        })
+                    })
+            });
+            assert_eq!(property(&conn, root, "_NET_ACTIVE_WINDOW")?, vec![*id]);
+            assert_eq!(conn.get_input_focus()?.reply()?.focus, *id);
+            let stack = property(&conn, root, "_NET_CLIENT_LIST_STACKING")?;
+            let target = stack.iter().position(|w| w == id).unwrap();
+            assert!(
+                clients.iter().filter(|w| *w != id).all(|w| stack
+                    .iter()
+                    .position(|p| p == w)
+                    .unwrap()
+                    < target),
+                "snapped target must stay above overlapping peers: {stack:?}"
+            );
+        }
+    }
+    // Manual move/resize returns to ordinary app hints, while Down still
+    // restores the original pre-snap outer rectangle.
+    let id = clients[1];
+    message(&conn, root, id, "_NET_ACTIVE_WINDOW", [2, 0, 0, 0, 0])?;
+    wait("hinted target active for drag", || {
+        property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![id]
+    });
+    invoke("left")?;
+    wait("hinted target snapped before drag", || {
+        geometry(&conn, root_surface(&conn, id)).width == 623
+    });
+    let g = geometry(&conn, root_surface(&conn, id));
+    xdotool(&[
+        "mousemove",
+        "--sync",
+        &(i32::from(g.x) + 80).to_string(),
+        &(i32::from(g.y) + 15).to_string(),
+        "mousedown",
+        "1",
+    ]);
+    wait("snapped caption drag grabbed", || {
+        property(&conn, root, "_CARPATIC_DRAGGING").unwrap_or_default() == vec![1]
+    });
+    xdotool(&[
+        "mousemove",
+        "--sync",
+        &(i32::from(g.x) + 120).to_string(),
+        &(i32::from(g.y) + 55).to_string(),
+    ]);
+    wait("manual drag reapplies resize increments", || {
+        let g = geometry(&conn, id);
+        g.width % 37 == 0 && g.height % 23 == 0
+    });
+    xdotool(&["mouseup", "1"]);
+    wait("manual drag released", || {
+        property(&conn, root, "_CARPATIC_DRAGGING").unwrap_or_default() == vec![0]
+    });
+    invoke("restore")?;
+    wait("original geometry survives manual drag", || {
+        let g = geometry(&conn, root_surface(&conn, id));
+        (g.x, g.y, g.width, g.height)
+            == (
+                original[1].x,
+                original[1].y,
+                original[1].width,
+                original[1].height,
+            )
+    });
+    invoke("left")?;
+    wait("hinted target resnapped before resize", || {
+        geometry(&conn, root_surface(&conn, id)).width == 623
+    });
+    let g = geometry(&conn, root_surface(&conn, id));
+    let x = i32::from(g.x) + i32::from(g.width) - 5;
+    let y = i32::from(g.y) + i32::from(g.height) - 5;
+    xdotool(&[
+        "mousemove",
+        "--sync",
+        &x.to_string(),
+        &y.to_string(),
+        "mousedown",
+        "1",
+    ]);
+    message(
+        &conn,
+        root,
+        id,
+        "_NET_WM_MOVERESIZE",
+        [x as u32, y as u32, 4, 1, 2],
+    )?;
+    wait("snapped resize grabbed", || {
+        property(&conn, root, "_CARPATIC_DRAGGING").unwrap_or_default() == vec![1]
+    });
+    xdotool(&[
+        "mousemove",
+        "--sync",
+        &(x + 53).to_string(),
+        &(y - 61).to_string(),
+    ]);
+    wait("manual resize reapplies hints", || {
+        let g = geometry(&conn, id);
+        g.width % 37 == 0 && g.height % 23 == 0 && g.width != 609
+    });
+    xdotool(&["mouseup", "1"]);
+    wait("manual resize released", || {
+        property(&conn, root, "_CARPATIC_DRAGGING").unwrap_or_default() == vec![0]
+    });
+    invoke("right")?;
+    wait("hinted right snap before restart", || {
+        geometry(&conn, root_surface(&conn, id)).width == 624
+    });
+    wm.0.kill()?;
+    wm.0.wait()?;
+    wm = start_with_policy(false, false)?;
+    wait("restart adopts snapped clients", || {
+        ready(&conn, root, &wm)
+            && property(&conn, root, "_NET_CLIENT_LIST")
+                .unwrap_or_default()
+                .contains(&id)
+    });
+    message(&conn, root, id, "_NET_ACTIVE_WINDOW", [2, 0, 0, 0, 0])?;
+    wait("restart target activated", || {
+        property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![id]
+    });
+    wait("restart preserves exact hinted snap", || {
+        geometry(&conn, root_surface(&conn, id)).width == 624
+    });
+    invoke("restore")?;
+    wait("restart Down restores original outer rectangle", || {
+        let g = geometry(&conn, root_surface(&conn, id));
+        (g.x, g.y, g.width, g.height)
+            == (
+                original[1].x,
+                original[1].y,
+                original[1].width,
+                original[1].height,
+            )
+    });
+    for id in clients {
+        conn.destroy_window(id)?;
+    }
+    conn.destroy_window(dock)?;
+    conn.flush()?;
+    wm.0.kill()?;
+    wm.0.wait()?;
+    Ok(())
+}

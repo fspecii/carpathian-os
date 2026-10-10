@@ -21,6 +21,7 @@ tar --exclude=__pycache__ -cf "$results/source.tar" Cargo.toml Cargo.lock crates
     integration/carpatic/desktop/bin/carpatic-desktop \
     integration/carpatic/configurator/bin/carpatic-apply \
     integration/carpatic/configurator/bin/carpatic-session-process \
+    integration/carpatic/configurator/bin/carpatic-snap \
     integration/carpatic/wallpapers/lib \
     integration/carpatic/reminders \
     integration/carpatic/installer-branding \
