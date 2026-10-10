@@ -2235,6 +2235,10 @@ impl Wm {
             && self
                 .property(id, self.atoms._NET_WM_STATE)
                 .contains(&self.atoms._NET_WM_STATE_FULLSCREEN);
+        let motif = self.property(id, self.atoms._MOTIF_WM_HINTS);
+        let has_csd = dock
+            || !self.property(id, self.atoms._GTK_FRAME_EXTENTS).is_empty()
+            || motif.len() >= 3 && motif[0] & 2 != 0 && motif[2] == 0;
         self.conn.change_window_attributes(
             id,
             &ChangeWindowAttributesAux::new()
@@ -2252,7 +2256,7 @@ impl Wm {
         self.grab_mouse_buttons(id)?;
         self.conn.configure_window(
             id,
-            &ConfigureWindowAux::new().border_width(if dock { 0 } else { self.config.border }),
+            &ConfigureWindowAux::new().border_width(if has_csd { 0 } else { self.config.border }),
         )?;
         self.conn.change_property32(
             PropMode::REPLACE,
@@ -2272,8 +2276,8 @@ impl Wm {
             Rect {
                 x: i32::from(g.x),
                 y: i32::from(g.y),
-                width: u32::from(g.width) + if dock { 0 } else { self.config.border * 2 },
-                height: u32::from(g.height) + if dock { 0 } else { self.config.border * 2 },
+                width: u32::from(g.width) + if has_csd { 0 } else { self.config.border * 2 },
+                height: u32::from(g.height) + if has_csd { 0 } else { self.config.border * 2 },
             },
             self.area,
         );
@@ -2286,10 +2290,6 @@ impl Wm {
         if let Some((_, _, _, _, rect, _)) = parent {
             floating_rect = rect;
         }
-        let motif = self.property(id, self.atoms._MOTIF_WM_HINTS);
-        let has_csd = dock
-            || !self.property(id, self.atoms._GTK_FRAME_EXTENTS).is_empty()
-            || motif.len() >= 3 && motif[0] & 2 != 0 && motif[2] == 0;
         let frame = if !has_csd && !dock {
             let frame = self.create_app_frame(id, g.depth, &attributes)?;
             Some(frame)
@@ -2791,7 +2791,7 @@ impl Wm {
             } else {
                 slots[&c.id]
             };
-            let border = if c.fullscreen || c.dock {
+            let border = if c.fullscreen || c.dock || c.has_csd {
                 0
             } else {
                 self.config.border
@@ -4119,8 +4119,9 @@ impl Wm {
                         if e.value_mask.contains(ConfigWindow::Y) {
                             c.floating_rect.y = e.y.into();
                         }
+                        let border = if c.has_csd { 0 } else { self.config.border };
                         if e.value_mask.contains(ConfigWindow::WIDTH) {
-                            c.floating_rect.width = u32::from(e.width) + self.config.border * 2;
+                            c.floating_rect.width = u32::from(e.width) + border * 2;
                         }
                         if e.value_mask.contains(ConfigWindow::HEIGHT) {
                             let title = if self.config.titlebar.enabled
@@ -4131,8 +4132,7 @@ impl Wm {
                             } else {
                                 0
                             };
-                            c.floating_rect.height =
-                                u32::from(e.height) + self.config.border * 2 + title;
+                            c.floating_rect.height = u32::from(e.height) + border * 2 + title;
                         }
                         c.applied = None;
                     }
@@ -4458,8 +4458,13 @@ impl Wm {
                 if e.type_ == self.atoms._NET_SHOWING_DESKTOP {
                     self.show_desktop(data[0] != 0)?;
                 } else if e.type_ == self.atoms._NET_REQUEST_FRAME_EXTENTS {
-                    let border = self.config.border;
-                    let title = if self.config.titlebar.enabled {
+                    let motif = self.property(e.window, self.atoms._MOTIF_WM_HINTS);
+                    let has_csd = !self
+                        .property(e.window, self.atoms._GTK_FRAME_EXTENTS)
+                        .is_empty()
+                        || motif.len() >= 3 && motif[0] & 2 != 0 && motif[2] == 0;
+                    let border = if has_csd { 0 } else { self.config.border };
+                    let title = if self.config.titlebar.enabled && !has_csd {
                         self.renderer.height(&self.config)
                     } else {
                         0

@@ -9,3 +9,5 @@ Picom provides compositing and configured transitions. Backend policy, reduced m
 Desktop components under integration/carpatic provide settings, the panel/calendar, reminders, file desktop integration, themes and supporting services. Runtime command names remain compatible with existing Carpatic integrations. Installation scripts assemble these components on Alpine; a complete release must separately qualify provisioning, updates, recovery and supported hardware.
 
 Tests cover host logic, private-Xvfb X11 behavior, native Alpine builds and disposable real-Xorg compositor checks. Settled pixel checks, sampled transitions and performance evidence have different scopes and must be reported separately.
+
+Application-decorated GTK and Motif windows retain their own headers and shapes without additional native borders. Resize and frame-extents requests use the same decoration policy; removing application decoration restores the native frame.

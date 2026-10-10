@@ -1187,6 +1187,8 @@ fn window_states_csd_shapes_and_restart() -> Result<()> {
         native_chrome(&conn, root, id).is_some()
     });
     let titlebar = native_chrome(&conn, root, id).expect("managed native chrome");
+    let native_border = conn.get_geometry(id)?.reply()?.border_width;
+    assert!(native_border > 0);
     conn.change_property32(
         PropMode::REPLACE,
         id,
@@ -1203,6 +1205,10 @@ fn window_states_csd_shapes_and_restart() -> Result<()> {
             .map_state
             == MapState::UNMAPPED
     });
+    wait("late CSD has no WM border or extents", || {
+        conn.get_geometry(id).unwrap().reply().unwrap().border_width == 0
+            && property(&conn, id, "_NET_FRAME_EXTENTS").unwrap_or_default() == vec![0, 0, 0, 0]
+    });
     conn.delete_property(id, atom(&conn, "_GTK_FRAME_EXTENTS")?)?;
     conn.flush()?;
     wait("CSD removal restores native titlebar", || {
@@ -1212,6 +1218,15 @@ fn window_states_csd_shapes_and_restart() -> Result<()> {
             .unwrap()
             .map_state
             == MapState::VIEWABLE
+    });
+    wait("CSD removal restores native border and extents", || {
+        let extents = property(&conn, id, "_NET_FRAME_EXTENTS").unwrap_or_default();
+        conn.get_geometry(id).unwrap().reply().unwrap().border_width == native_border
+            && extents.len() == 4
+            && extents[0] == u32::from(native_border)
+            && extents[1] == u32::from(native_border)
+            && extents[2] > u32::from(native_border)
+            && extents[3] == u32::from(native_border)
     });
     let max = atom(&conn, "_NET_WM_STATE_MAXIMIZED_VERT")?;
     message(&conn, root, id, "_NET_WM_STATE", [1, max, 0, 0, 0])?;
@@ -2442,6 +2457,13 @@ fn native_frame_groups_chrome_and_preserves_clients() -> Result<()> {
         AtomEnum::CARDINAL,
         &[8, 8, 8, 8],
     )?;
+    conn.change_property32(
+        PropMode::REPLACE,
+        dynamic,
+        atom(&conn, "_NET_WM_WINDOW_TYPE")?,
+        AtomEnum::ATOM,
+        &[atom(&conn, "_NET_WM_WINDOW_TYPE_DIALOG")?],
+    )?;
     conn.map_window(dynamic)?;
     conn.flush()?;
     wait("initial CSD retains single client surface", || {
@@ -2450,11 +2472,61 @@ fn native_frame_groups_chrome_and_preserves_clients() -> Result<()> {
             .contains(&dynamic)
     });
     assert_eq!(conn.query_tree(dynamic)?.reply()?.parent, root);
+    wait("initial GTK CSD has zero WM border and extents", || {
+        conn.get_geometry(dynamic)
+            .unwrap()
+            .reply()
+            .unwrap()
+            .border_width
+            == 0
+            && property(&conn, dynamic, "_NET_FRAME_EXTENTS").unwrap_or_default()
+                == vec![0, 0, 0, 0]
+    });
+    conn.configure_window(dynamic, &ConfigureWindowAux::new().width(333).height(177))?;
+    conn.flush()?;
+    wait(
+        "floating CSD honors requested body dimensions without WM padding",
+        || {
+            let g = conn.get_geometry(dynamic).unwrap().reply().unwrap();
+            g.width == 333 && g.height == 177 && g.border_width == 0
+        },
+    );
+    // Force the request response to replace a distinct value; stale zero must not pass.
+    conn.change_property32(
+        PropMode::REPLACE,
+        dynamic,
+        atom(&conn, "_NET_FRAME_EXTENTS")?,
+        AtomEnum::CARDINAL,
+        &[99, 99, 99, 99],
+    )?
+    .check()?;
+    message(
+        &conn,
+        root,
+        dynamic,
+        "_NET_REQUEST_FRAME_EXTENTS",
+        [0, 0, 0, 0, 0],
+    )?;
+    wait("managed CSD frame-extents request remains zero", || {
+        property(&conn, dynamic, "_NET_FRAME_EXTENTS").unwrap_or_default() == vec![0, 0, 0, 0]
+    });
     conn.delete_property(dynamic, atom(&conn, "_GTK_FRAME_EXTENTS")?)?;
     conn.flush()?;
     wait("CSD to native transition creates shared frame", || {
         let parent = conn.query_tree(dynamic).unwrap().reply().unwrap().parent;
         parent != root && native_chrome(&conn, root, dynamic).is_some()
+    });
+    wait("GTK CSD removal restores native border", || {
+        conn.get_geometry(dynamic)
+            .unwrap()
+            .reply()
+            .unwrap()
+            .border_width
+            == 2
+            && property(&conn, dynamic, "_NET_FRAME_EXTENTS")
+                .unwrap_or_default()
+                .first()
+                == Some(&2)
     });
     conn.destroy_window(dynamic)?;
     conn.flush()?;
@@ -2462,6 +2534,85 @@ fn native_frame_groups_chrome_and_preserves_clients() -> Result<()> {
         !property(&conn, root, "_NET_CLIENT_LIST")
             .unwrap_or_default()
             .contains(&dynamic)
+    });
+    // GTK HeaderBar may only advertise Motif no-decorations, without GTK extents.
+    let motif_csd = conn.generate_id()?;
+    conn.create_window(
+        0,
+        motif_csd,
+        root,
+        220,
+        180,
+        340,
+        180,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &CreateWindowAux::new().background_pixel(0x25a9df),
+    )?;
+    let motif_atom = atom(&conn, "_MOTIF_WM_HINTS")?;
+    conn.change_property32(
+        PropMode::REPLACE,
+        motif_csd,
+        motif_atom,
+        AtomEnum::CARDINAL,
+        &[2, 0, 0, 0, 0],
+    )?;
+    message(
+        &conn,
+        root,
+        motif_csd,
+        "_NET_REQUEST_FRAME_EXTENTS",
+        [0, 0, 0, 0, 0],
+    )?;
+    wait(
+        "unmapped Motif-only CSD extents request has no native decoration",
+        || property(&conn, motif_csd, "_NET_FRAME_EXTENTS").unwrap_or_default() == vec![0, 0, 0, 0],
+    );
+    conn.map_window(motif_csd)?;
+    conn.flush()?;
+    wait("Motif-only initial CSD stays free of WM border", || {
+        property(&conn, root, "_NET_CLIENT_LIST")
+            .unwrap_or_default()
+            .contains(&motif_csd)
+            && conn
+                .get_geometry(motif_csd)
+                .unwrap()
+                .reply()
+                .unwrap()
+                .border_width
+                == 0
+            && property(&conn, motif_csd, "_NET_FRAME_EXTENTS").unwrap_or_default()
+                == vec![0, 0, 0, 0]
+    });
+    assert!(property(&conn, motif_csd, "_GTK_FRAME_EXTENTS")?.is_empty());
+    assert_eq!(conn.query_tree(motif_csd)?.reply()?.parent, root);
+    conn.delete_property(motif_csd, motif_atom)?;
+    conn.flush()?;
+    wait(
+        "Motif-only CSD removal creates native bordered frame",
+        || {
+            conn.query_tree(motif_csd).unwrap().reply().unwrap().parent != root
+                && native_chrome(&conn, root, motif_csd).is_some()
+                && conn
+                    .get_geometry(motif_csd)
+                    .unwrap()
+                    .reply()
+                    .unwrap()
+                    .border_width
+                    == 2
+                && property(&conn, motif_csd, "_NET_FRAME_EXTENTS")
+                    .unwrap_or_default()
+                    .first()
+                    == Some(&2)
+        },
+    );
+    conn.destroy_window(motif_csd)?;
+    conn.flush()?;
+    wait("Motif CSD fixture leaves no phantom", || {
+        !property(&conn, root, "_NET_CLIENT_LIST")
+            .unwrap_or_default()
+            .contains(&motif_csd)
     });
     let visual = conn.setup().roots[screen]
         .allowed_depths

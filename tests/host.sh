@@ -6,6 +6,7 @@ scripts/check-host.sh
 tests/lint.sh
 tests/check-host.sh
 python3 tests/window-animations.py
+python3 tests/animation-matrix-policy.py
 python3 tests/shared-snapshot.py
 python3 tests/display-lease.py
 python3 tests/debug/rendering.py --self-test

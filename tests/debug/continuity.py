@@ -130,6 +130,13 @@ try:
                             item=dict(backend=backend,client=kind,cycle=cycle,target=target,t=round(capture_end-start,4),capture_begin=round(capture_begin-start,4),capture_ms=round((capture_end-capture_begin)*1000,3),reverse_t=round(reversed_at,4) if reversed_at is not None else None,body_top=edge+40,gap=gap)
                             records.append(item); sampled+=1
                             if gap>4:
+                                # Retain the exact capture used by the oracle.
+                                # A subsequent full-screen image is diagnostic only.
+                                item['chrome_reference'] = chrome
+                                item['body_reference'] = blue
+                                item['sample_column_rgb'] = pixels
+                                item['body_edge_row'] = edge
+                                item['chrome_matching_rows'] = chrome_rows
                                 errors.append(item)
                                 if len(errors)<=6:
                                     Gdk.pixbuf_get_from_window(root,0,0,1360,768).savev(f'/var/tmp/continuity-failure-{len(errors)}.png','png',[],[])
