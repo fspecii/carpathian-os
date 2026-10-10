@@ -61,16 +61,19 @@ class Context:
 
 
 class Branding(unittest.TestCase):
-    def test_canonical_and_symbolic_assets_share_website_geometry(self):
-        canonical = ROOT / 'website/dist/assets/mark.svg'
-        packaged = PANEL / 'assets/branding/carpathian-os.svg'
-        self.assertEqual(packaged.read_bytes(), canonical.read_bytes())
+    def test_canonical_and_symbolic_assets_preserve_brand_geometry(self):
+        canonical = PANEL / 'assets/branding/carpathian-os.svg'
         original = ET.fromstring(canonical.read_text())
+        self.assertEqual(original.attrib['viewBox'], '0 0 36 30')
         symbolic = ET.parse(PANEL / 'assets/branding/carpathian-os-symbolic.svg').getroot()
         self.assertEqual(symbolic.attrib['viewBox'], original.attrib['viewBox'])
         paths = original.findall('{http://www.w3.org/2000/svg}path')
         path = symbolic.find('{http://www.w3.org/2000/svg}path')
         expected = [contour for p in paths for contour in vertices(p.attrib['d'])]
+        self.assertEqual(expected, [
+            [(2, 26), (15, 4), (21, 14), (25, 8), (34, 26), (2, 26)],
+            [(10, 15), (15, 7), (20, 15), (15, 12), (10, 15)],
+        ])
         self.assertEqual(vertices(path.attrib['d']), expected)
         # Changing m to M also changes implicit subsequent lines to absolute.
         # Both that error and a relative appended move displace the notch.
