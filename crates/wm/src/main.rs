@@ -98,6 +98,10 @@ struct Client {
 }
 
 impl Client {
+    fn caption_height(&self) -> u32 {
+        self.applied_extents.map_or(1, |extents| extents[2].max(1))
+    }
+
     fn border_pixel(&self, color: u32) -> u32 {
         opaque_border_pixel(self.depth, color)
     }
@@ -3233,7 +3237,10 @@ impl Wm {
             };
             let mut chrome = self.config.clone();
             chrome.border = c.applied_border.unwrap_or(self.config.border);
-            let height = self.renderer.height(&self.config) + chrome.border;
+            // Arrangement may clamp the native caption for a tiny outer frame.
+            // Paint and hit regions must use the published title-plus-border
+            // extent, rather than allocating a nominal-height hidden canvas.
+            let height = c.caption_height();
             let image = self.renderer.title(
                 &chrome,
                 rect.width,
@@ -4332,7 +4339,7 @@ impl Wm {
                     self.focus(id)?;
                     let c = self.clients.iter().find(|c| c.id == id).unwrap();
                     let rect = c.applied.unwrap();
-                    let height = self.renderer.height(&self.config) + self.config.border;
+                    let height = c.caption_height();
                     let hit = self
                         .renderer
                         .hits(&self.config, rect.width, height)
@@ -4406,11 +4413,7 @@ impl Wm {
                         if let Some(rect) = c.applied {
                             let hover = self
                                 .renderer
-                                .hits(
-                                    &self.config,
-                                    rect.width,
-                                    self.renderer.height(&self.config) + self.config.border,
-                                )
+                                .hits(&self.config, rect.width, c.caption_height())
                                 .into_iter()
                                 .find(|h| {
                                     i32::from(e.event_x) >= h.left && i32::from(e.event_x) < h.right
@@ -4436,21 +4439,14 @@ impl Wm {
                         .clients
                         .iter()
                         .find(|c| c.id == id)
-                        .and_then(|c| c.applied)
-                        .is_some_and(|r| {
+                        .and_then(|c| c.applied.map(|r| (c, r)))
+                        .is_some_and(|(c, r)| {
                             e.detail == 1
                                 && i32::from(e.root_y) >= r.y
-                                && i32::from(e.root_y)
-                                    < r.y
-                                        + (self.renderer.height(&self.config) + self.config.border)
-                                            as i32
+                                && i32::from(e.root_y) < r.y + c.caption_height() as i32
                                 && self
                                     .renderer
-                                    .hits(
-                                        &self.config,
-                                        r.width,
-                                        self.renderer.height(&self.config) + self.config.border,
-                                    )
+                                    .hits(&self.config, r.width, c.caption_height())
                                     .iter()
                                     .any(|h| {
                                         h.button == button

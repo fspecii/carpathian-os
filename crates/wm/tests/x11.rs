@@ -3980,3 +3980,178 @@ fn native_caption_repaints_only_after_final_expose_fragment() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+#[ignore = "requires private Xvfb; run tests/run.sh"]
+fn tiny_native_caption_uses_clamped_surface_height() -> Result<()> {
+    assert_eq!(
+        std::env::var("CARPATIC_WM_TEST_DISPLAY").as_deref(),
+        Ok("1")
+    );
+    assert!(std::env::var_os("WAYLAND_DISPLAY").is_none());
+    let dir = std::path::PathBuf::from(std::env::var("CARPATIC_CONFIG_DIR")?);
+    let _config = ConfigRestore::new(&dir);
+    std::fs::write(dir.join("themes.toml"), "[appearance]\nworkspaces=4\ndefault_layout='float'\nborderpx=2\nborder_highlight=0\ncorner_radius=0\n[titlebar]\nenabled=1\nfloating=1\nheight=32\nbutton_style='macos'\nbuttons_side='left'\n")?;
+    std::fs::write(dir.join("window-rules.toml"), "rules=[]\n")?;
+    let (conn, screen) = x11rb::connect(None)?;
+    let root = conn.setup().roots[screen].root;
+    let mut wm = start_with_policy(false, false)?;
+    wait("tiny caption WM ready", || ready(&conn, root, &wm));
+    let client = conn.generate_id()?;
+    conn.create_window(
+        0,
+        client,
+        root,
+        200,
+        200,
+        300,
+        18,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &CreateWindowAux::new().background_pixel(0x25a9df),
+    )?;
+    let protocols = atom(&conn, "WM_PROTOCOLS")?;
+    let delete = atom(&conn, "WM_DELETE_WINDOW")?;
+    conn.change_property32(
+        PropMode::REPLACE,
+        client,
+        protocols,
+        AtomEnum::ATOM,
+        &[delete],
+    )?;
+    conn.map_window(client)?;
+    conn.flush()?;
+    wait("tiny caption metadata", || {
+        native_chrome(&conn, root, client).is_some()
+    });
+    let caption = native_chrome(&conn, root, client).unwrap();
+    wait("tiny caption settled", || {
+        conn.get_window_attributes(caption)
+            .unwrap()
+            .reply()
+            .unwrap()
+            .map_state
+            == MapState::VIEWABLE
+    });
+    let g = conn.get_geometry(caption)?.reply()?;
+    let extents = property(&conn, client, "_NET_FRAME_EXTENTS")?;
+    assert!(
+        g.height > 4 && g.height < 32,
+        "fixture must actually clamp the caption: {}",
+        g.height
+    );
+    assert_eq!(u32::from(g.height), extents[2]);
+    let buttons = property(&conn, caption, "_CARPATIC_BUTTONS")?;
+    assert_eq!(buttons.len(), 6);
+    // Traffic-light buttons must scale to the actual short caption rather than
+    // using a hidden nominal-height canvas. Close is the first left-side cell.
+    assert!(
+        buttons[5] <= u32::from(g.height),
+        "close cell {:?} exceeds short caption height {}",
+        buttons,
+        g.height
+    );
+    let image = conn
+        .get_image(
+            ImageFormat::Z_PIXMAP,
+            caption,
+            0,
+            0,
+            g.width,
+            g.height,
+            u32::MAX,
+        )?
+        .reply()?;
+    let little = u8::from(conn.setup().image_byte_order) == 0;
+    let red_pixels = image
+        .data
+        .chunks_exact(4)
+        .filter(|p| {
+            let (r, g, b) = if little {
+                (p[2], p[1], p[0])
+            } else {
+                (p[1], p[2], p[3])
+            };
+            r > 170 && g < 140 && b < 140
+        })
+        .count();
+    assert!(
+        red_pixels > 0,
+        "short caption must visibly paint its close button"
+    );
+    let caption_root = geometry(&conn, caption);
+    let close_x = i32::from(caption_root.x) + ((buttons[4] + buttons[5]) / 2) as i32;
+    let close_y = i32::from(caption_root.y) + i32::from(g.height / 2);
+    xdotool(&[
+        "mousemove",
+        "--sync",
+        &close_x.to_string(),
+        &close_y.to_string(),
+    ]);
+    wait("tiny actual close cell hover repaints", || {
+        conn.get_image(
+            ImageFormat::Z_PIXMAP,
+            caption,
+            0,
+            0,
+            g.width,
+            g.height,
+            u32::MAX,
+        )
+        .unwrap()
+        .reply()
+        .unwrap()
+        .data
+            != image.data
+    });
+    xdotool(&["mousedown", "1"]);
+    wait("tiny actual close cell press", || {
+        property(&conn, root, "_CARPATIC_PRESSED_BUTTON").unwrap_or_default() == vec![client, 2]
+    });
+    xdotool(&[
+        "mousemove",
+        "--sync",
+        &close_x.to_string(),
+        &(i32::from(caption_root.y) + i32::from(g.height) + 3).to_string(),
+        "mouseup",
+        "1",
+    ]);
+    wait("tiny outside release cancels press", || {
+        property(&conn, root, "_CARPATIC_PRESSED_BUTTON")
+            .unwrap_or_default()
+            .is_empty()
+    });
+    while let Some(event) = conn.poll_for_event()? {
+        assert!(
+            !matches!(event, x11rb::protocol::Event::ClientMessage(e) if e.type_ == protocols && e.data.as_data32()[0] == delete),
+            "outside-caption release must not close app"
+        );
+    }
+    xdotool(&[
+        "mousemove",
+        "--sync",
+        &close_x.to_string(),
+        &close_y.to_string(),
+        "mousedown",
+        "1",
+    ]);
+    wait("tiny close press after cancel", || {
+        property(&conn, root, "_CARPATIC_PRESSED_BUTTON").unwrap_or_default() == vec![client, 2]
+    });
+    xdotool(&["mouseup", "1"]);
+    wait("tiny close release sends app protocol", || {
+        while let Some(event) = conn.poll_for_event().unwrap() {
+            if matches!(event, x11rb::protocol::Event::ClientMessage(e) if e.type_ == protocols && e.data.as_data32()[0] == delete)
+            {
+                return true;
+            }
+        }
+        false
+    });
+    conn.destroy_window(client)?;
+    conn.flush()?;
+    wm.0.kill()?;
+    wm.0.wait()?;
+    Ok(())
+}
