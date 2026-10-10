@@ -1,6 +1,5 @@
 'use strict';
-// Set only after the curated repository is public. No placeholder external URL.
-const config = { githubUrl: null };
+const config = { githubUrl: 'https://github.com/fspecii/carpathian-os' };
 const toggle = document.querySelector('.menu-toggle');
 const navigation = document.querySelector('#navigation');
 function closeMenu() { navigation.removeAttribute('data-open'); toggle.setAttribute('aria-expanded', 'false'); }
