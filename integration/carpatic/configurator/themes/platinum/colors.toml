@@ -1,7 +1,7 @@
 # Platinum (light): classic Mac era grey, striped title bars, menu bar on top. Era of Mac OS 8/9 "Platinum".
 # Palette data from the LinPad desktop-themes collection (CC0 1.0),
 # upstream/themes/desktop-themes/colors/platinum/colors.toml @ 01246414fe9517d883b9489ba3e9e9f3780f479e.
-# Wallpapers in this folder are original Carpatic artwork (procedural, CC0; port of the upstream "platinum" scene).
+# Wallpapers in this folder are original Carpathian artwork (procedural, CC0; port of the upstream "platinum" scene).
 mode = "light"
 
 accent = "#6666cc"

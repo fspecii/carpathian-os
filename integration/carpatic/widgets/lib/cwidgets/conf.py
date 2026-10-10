@@ -28,7 +28,7 @@ CATALOG = {
     "toggles":    dict(title="Quick settings", desc="Wi-Fi, Bluetooth, Do not disturb, night light, volume, brightness.", dims={"S": (2, 2), "M": (4, 2), "L": (4, 4)}, default="M", period=5),
     "photo":      dict(title="Wallpaper", desc="Your current wallpaper as a picture frame.", dims={"S": (2, 2), "M": (4, 2), "L": (4, 4)}, default="M", period=0),
     "shortcuts":  dict(title="App shortcuts", desc="Five apps one click away.", dims={"S": (2, 2), "M": (4, 2), "L": (4, 2)}, default="M", period=0),
-    "tip":        dict(title="Carpatic tip", desc="A small tip about your desktop, a new one each day.", dims={"S": (2, 2), "M": (4, 2), "L": (4, 2)}, default="M", period=3600),
+    "tip":        dict(title="Carpathian tip", desc="A small tip about your desktop, a new one each day.", dims={"S": (2, 2), "M": (4, 2), "L": (4, 2)}, default="M", period=3600),
 }
 DEFAULT_ITEMS = [("clock", "M"), ("calendar", "M"), ("weather", "M"), ("sysmon", "L")]   # two columns of six rows each: composed, not a wall
 LOOKS = ("auto", "macos", "windows", "ubuntu", "tiling", "nothing")
@@ -178,7 +178,7 @@ def auto_arrange(items, cols_total, rows_total):
 
 
 def in_carpatic_session():
-    """True only on a Carpatic desktop (our dwm is running for this user) or when CARPATIC_FORCE=1 (tests on a private Xvfb).
+    """True only on a Carpathian desktop (our dwm is running for this user) or when CARPATIC_FORCE=1 (tests on a private Xvfb).
     Widgets never start on someone else's desktop, even when the flag file exists."""
     if os.environ.get("CARPATIC_FORCE") == "1": return True
     me = os.getuid()

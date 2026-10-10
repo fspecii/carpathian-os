@@ -1,5 +1,5 @@
 #!/bin/sh
-# Carpatic configurator provisioning (run as root on a box that already ran desktop/install.sh; idempotent).
+# Carpathian configurator provisioning (run as root on a box that already ran desktop/install.sh; idempotent).
 # Usage: sh configurator/install.sh        Env: CARPATIC_USER (default carpatic), DESKTOP_SRC (default ../desktop)
 set -eu
 SRC=$(cd "$(dirname "$0")" && pwd)
@@ -24,7 +24,7 @@ mkdir -p "$D/gtktheme"; cp "$SRC/share/gtktheme/geometry.conf" "$D/gtktheme/" 2>
 cp -r "$SRC/share/wallpapers" "$D/"
 mkdir -p /usr/local/lib/carpatic
 cp "$SRC"/lib/*.py /usr/local/lib/carpatic/
-# every Carpatic GTK app follows the display scale: a .pth in site-packages arms a tiny hook that runs carpatic_scale.install() when a carpatic-* program loads Gtk
+# every Carpathian GTK app follows the display scale: a .pth in site-packages arms a tiny hook that runs carpatic_scale.install() when a carpatic-* program loads Gtk
 SP=$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])' 2>/dev/null)
 if [ -n "$SP" ] && [ -d "$SP" ]; then
   install -m644 "$SRC/lib/carpatic_scale_boot.py" "$SP/carpatic_scale_boot.py"
@@ -74,7 +74,7 @@ log "user hook ($U)"
 H=$(getent passwd "$U" | cut -d: -f6)
 A="$H/.local/share/dwm-titus/scripts/autostart.sh"
 if [ -f "$A" ] && ! grep -q carpatic-session "$A"; then
-  printf '\n# Carpatic configurator: per-profile bars, hotkey daemon and first-run Welcome\ncarpatic-session start >/dev/null 2>&1 &\n' >> "$A"
+  printf '\n# Carpathian configurator: per-profile bars, hotkey daemon and first-run Welcome\ncarpatic-session start >/dev/null 2>&1 &\n' >> "$A"
 fi
 mkdir -p "$H/.config/carpatic" "$H/Pictures"; chown -R "$U:$U" "$H"
 log "done"

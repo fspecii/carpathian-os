@@ -1,6 +1,6 @@
 """Run long commands (pack installs, updates, language engines) with live progress and without ever opening a terminal.
 GTK-free: parsing, elevation choice and the streaming runner; the sheet that shows it is ui.ProgressSheet.
-Elevation follows the rest of Carpatic (geek/bin/carpatic-sudo): root runs directly; with a polkit agent running pkexec asks in the agent's own dialog;
+Elevation follows the rest of Carpathian OS (geek/bin/carpatic-sudo): root runs directly; with a polkit agent running pkexec asks in the agent's own dialog;
 otherwise doas/sudo is used and Settings asks for the password in its own styled dialog (fed to a pty, never put on a command line or stored)."""
 import os, re, pty, select, shutil, signal, subprocess, time
 from . import sysutil as su

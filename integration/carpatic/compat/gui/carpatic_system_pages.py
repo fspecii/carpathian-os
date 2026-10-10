@@ -1,4 +1,4 @@
-"""Carpatic System pages (Updates and restore points, Accessibility, Touchpad, Screen, Typing in other languages) for the Carpatic Settings
+"""Carpathian System pages (Updates and restore points, Accessibility, Touchpad, Screen, Typing in other languages) for the Carpathian Settings
 window. Every control calls a CLI tool (carpatic-update, carpatic-rollback, carpatic-a11y, carpatic-touchpad, carpatic-display,
 carpatic-appearance, carpatic-input-method), so everything here also works from a terminal. License: MIT."""
 import os, subprocess
@@ -29,7 +29,7 @@ class SystemPages:
     def __init__(self, window):
         self.w = window; self.guard = False
     def register(self):
-        """Add the pages to a Carpatic Settings window (its lazy() builds each page the first time it is shown)."""
+        """Add the pages to a Carpathian Settings window (its lazy() builds each page the first time it is shown)."""
         for name, title, fn in PAGES:
             self.w.lazy(name, title, lambda n=name, f=fn: getattr(self, f)(self.w.boxes[n]))
     def refresh(self, name):
@@ -58,7 +58,7 @@ class SystemPages:
 
     # ---- Updates and restore points ----
     def build_updates(self, box):
-        self.head(box, "Updates", "Keep Carpatic up to date. Nothing is installed without you asking.")
+        self.head(box, "Updates", "Keep Carpathian up to date. Nothing is installed without you asking.")
         self.upd_status = self.note(box, "")
         bar = Gtk.Box(spacing=8)
         self.btn_check = Gtk.Button(label="Check for updates"); self.btn_check.connect("clicked", lambda *_: self.admin("check", ["carpatic-update", "check"], "Looking for updates..."))
@@ -69,7 +69,7 @@ class SystemPages:
         self.spin = Gtk.Spinner(); bar.pack_start(self.spin, False, False, 6)
         box.pack_start(bar, False, False, 6)
         l = Gtk.Label(label="Restore points", xalign=0); l.get_style_context().add_class("h1"); box.pack_start(l, False, False, 8)
-        self.note(box, "Before every update Carpatic keeps a copy of the system. If something goes wrong, restore it and restart. Your files in the home folder are never changed.")
+        self.note(box, "Before every update Carpathian keeps a copy of the system. If something goes wrong, restore it and restart. Your files in the home folder are never changed.")
         self.snap_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         sw = Gtk.ScrolledWindow(); sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC); sw.add(self.snap_box); sw.set_min_content_height(160)
         box.pack_start(sw, True, True, 0)
@@ -126,7 +126,7 @@ class SystemPages:
 
     # ---- Accessibility ----
     def build_access(self, box):
-        self.head(box, "Accessibility", "Make Carpatic easier to see, hear and use. Choices are kept for the next login.")
+        self.head(box, "Accessibility", "Make Carpathian easier to see, hear and use. Choices are kept for the next login.")
         st = kv(["carpatic-a11y", "status"]); on = lambda k: st.get(k, "off") == "on"
         A = lambda k, v: run("carpatic-a11y", k, "on" if v else "off")
         self.switch_row(box, "Larger text", "Bigger menus, buttons, terminal text and mouse pointer.", on("large-text"), lambda v: A("large-text", v))
@@ -166,7 +166,7 @@ class SystemPages:
                        lambda v: run("carpatic-appearance", "set", "scale", v))
         self.note(box, "Some apps need to be closed and opened again to pick up the new size.")
         l = Gtk.Label(label="More than one screen", xalign=0); l.get_style_context().add_class("h1"); box.pack_start(l, False, False, 8)
-        self.note(box, "Carpatic sets up screens when you plug them in or unplug them. Pick how they are used right now:")
+        self.note(box, "Carpathian sets up screens when you plug them in or unplug them. Pick how they are used right now:")
         bar = Gtk.Box(spacing=8)
         for label, mode in (("Extend", "extend"), ("Mirror", "mirror"), ("Only the other screen", "external"), ("Only this screen", "internal")):
             b = Gtk.Button(label=label); b.connect("clicked", lambda _b, m=mode: run("carpatic-display", m)); bar.pack_start(b, False, False, 0)

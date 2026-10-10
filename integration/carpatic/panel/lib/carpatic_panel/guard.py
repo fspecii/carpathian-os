@@ -12,5 +12,5 @@ def session_ok():
 def require_session(name):
     if not session_ok():
         import sys
-        sys.stderr.write(f"{name}: not inside a Carpatic session, nothing to do. (Set CARPATIC_FORCE=1 to run anyway.)\n")
+        sys.stderr.write(f"{name}: not inside a Carpathian session, nothing to do. (Set CARPATIC_FORCE=1 to run anyway.)\n")
         raise SystemExit(0)

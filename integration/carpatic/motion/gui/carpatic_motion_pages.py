@@ -1,4 +1,4 @@
-"""Carpatic Settings page "Startup and screensaver": login animation, reduced motion, screensaver, boot menu. Every control calls a CLI tool
+"""Carpathian Settings page "Startup and screensaver": login animation, reduced motion, screensaver, boot menu. Every control calls a CLI tool
 (carpatic-intro, carpatic-screensaver, carpatic-boot, plus settings.conf for MOTION), so everything here also works from a terminal (`carpatic intro ...`).
 Loaded by carpatic-settings the same way as carpatic_system_pages (ImportError = page simply absent). License: MIT."""
 import os, subprocess
@@ -52,7 +52,7 @@ class MotionPages:
         b = Gtk.Button(label=label); b.set_halign(Gtk.Align.START); b.connect("clicked", lambda *_: cb()); box.pack_start(b, False, False, 4); return b
 
     def build(self, box):
-        self.head(box, "Startup and screensaver", "How Carpatic looks while it starts and while it waits. Everything here can be turned off.")
+        self.head(box, "Startup and screensaver", "How Carpathian looks while it starts and while it waits. Everything here can be turned off.")
         # ---- motion in general
         reduced = setting("MOTION", "full") == "reduced"
         self.switch_row(box, "Reduce motion", "Login animation, installer greeter and screensaver stand still. The boot screen follows after the next restart.", reduced, self.on_reduced)
@@ -66,13 +66,13 @@ class MotionPages:
         self.button_row(box, "Play it now", lambda: run("carpatic-intro", "play"))
         # ---- screensaver
         self.section(box, "Screensaver")
-        self.note(box, "After a few quiet minutes the screen shows the Carpatic mark and mountains. Touch any key or the mouse to come back. The screen still locks as before.")
+        self.note(box, "After a few quiet minutes the screen shows the Carpathian mark and mountains. Touch any key or the mouse to come back. The screen still locks as before.")
         self.switch_row(box, "Screensaver", "Turn the idle animation on or off.", setting("SCREENSAVER", "on") == "on", lambda v: run("carpatic-screensaver", "set", "on" if v else "off"))
         self.combo_row(box, "Start after", "Minutes without touching the computer. It always starts before the screen locks.",
                        [(str(m), "%d minute%s" % (m, "" if m == 1 else "s")) for m in (1, 2, 3, 5, 8)], setting("SCREENSAVER_MIN", "3"),
                        lambda v: run("carpatic-screensaver", "set", "timeout", v))
         self.combo_row(box, "Animation", "Mountain mark, falling peaks, sunrise or stars.",
-                       [("random", "Surprise me"), ("brand", "Carpatic mark"), ("rain", "Falling peaks"), ("sunrise", "Sunrise"), ("stars", "Stars")], setting("SAVER_EFFECT", "random"),
+                       [("random", "Surprise me"), ("brand", "Carpathian mark"), ("rain", "Falling peaks"), ("sunrise", "Sunrise"), ("stars", "Stars")], setting("SAVER_EFFECT", "random"),
                        lambda v: run("carpatic-screensaver", "set", "effect", v))
         self.switch_row(box, "Also on battery", "Off by default: the animation uses a little power.", setting("SAVER_ON_BATTERY", "no") == "yes",
                         lambda v: run("carpatic-screensaver", "set", "battery", "yes" if v else "no"))
@@ -81,7 +81,7 @@ class MotionPages:
         self.section(box, "Faster start")
         menu = out("carpatic-boot", "menu", "status")
         self.menu_note = self.note(box, "")
-        self.menu_sw = self.switch_row(box, "Hide the boot menu", "Starts Carpatic at once. Hold a key (for example Shift) while the computer starts to show the menu. "
+        self.menu_sw = self.switch_row(box, "Hide the boot menu", "Starts Carpathian at once. Hold a key (for example Shift) while the computer starts to show the menu. "
                                        "Not offered when another system such as Windows is installed.", menu.startswith("hidden"), self.on_menu)
         if "another operating system" in menu:
             self.menu_sw.set_sensitive(False); self.menu_note.set_text("Another system is installed, so the boot menu stays visible.")

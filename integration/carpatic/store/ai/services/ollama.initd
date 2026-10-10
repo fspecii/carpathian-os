@@ -1,5 +1,5 @@
 #!/sbin/openrc-run
-# Carpatic: OpenRC service for Ollama (the Alpine package ships none).
+# Carpathian: OpenRC service for Ollama (the Alpine package ships none).
 description="Ollama local LLM server"
 command=/usr/bin/ollama
 command_args="serve"

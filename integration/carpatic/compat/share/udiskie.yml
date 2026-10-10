@@ -1,4 +1,4 @@
-# Carpatic: what udiskie (the USB/SD/phone auto-mounter in the session) may touch.
+# Carpathian: what udiskie (the USB/SD/phone auto-mounter in the session) may touch.
 # A device someone opened by hand with `cryptsetup open` or `losetup` shows up as /dev/mapper/<name>; udiskie must not pop up an
 # administrator-password window for it. Containers unlocked by udisks themselves (USB sticks, "luks-<uuid>") are still mounted.
 device_config:

@@ -1,4 +1,4 @@
-# carpatic-managed starship prompt, coloured from the Carpatic palette ({{ @THEME }})
+# carpatic-managed starship prompt, coloured from the Carpathian palette ({{ @THEME }})
 add_newline = false
 palette = "carpatic"
 format = "$directory$git_branch$git_status$character"

@@ -24,7 +24,7 @@ install -m644 alpine/20-carpatic-virtio-cursor.conf /etc/X11/xorg.conf.d/
 mkdir -p /usr/share/xsessions
 cat > /usr/share/xsessions/carpatic-rust.desktop <<'EOF'
 [Desktop Entry]
-Name=Carpatic Rust
+Name=Carpathian OS
 Comment=Tiling and floating desktop
 Exec=/usr/local/bin/carpatic-rust-session
 Type=Application
@@ -32,4 +32,4 @@ DesktopNames=CarpaticRust
 EOF
 CARPATIC_SKIP_PACKAGES=0; [ "${1:-}" = --no-packages ] && CARPATIC_SKIP_PACKAGES=1
 CARPATIC_SKIP_PACKAGES=$CARPATIC_SKIP_PACKAGES CARPATIC_USER=${CARPATIC_USER:-root} sh alpine/desktop-tools.sh
-printf 'Installed. Choose Carpatic Rust at login, or use: startx /usr/local/bin/carpatic-rust-session\n'
+printf 'Installed. Choose Carpathian OS at login, or use: startx /usr/local/bin/carpatic-rust-session\n'

@@ -3,7 +3,7 @@
 
 Original GTK3 code (MIT). The look follows the layouts of the Zorin Menu (search + list left, user / places / power right) and of the UKUI start menu
 (LinPad themes/kylin/DESIGN-SPEC.md section 3: 312 | 396 | 56 columns, 40 px rows, 32 px icons, radius 12, 8 px from the panel) but no upstream code is used.
-Colours come from the active Carpatic theme (settings.conf THEME/ACCENT + colors.toml), so every theme and accent works.
+Colours come from the active Carpathian theme (settings.conf THEME/ACCENT + colors.toml), so every theme and accent works.
 
 Keyboard: Super (or the start button) opens and closes it, typing searches, Up/Down select, Enter starts, Esc closes, Tab switches Pinned/All/Recent.
 Right-click on an app: pin or unpin. State: ~/.config/carpatic/startmenu-pinned, ~/.local/state/carpatic/startmenu-usage.json.

@@ -2,11 +2,11 @@
 # Run only from a dedicated X11 login or a nested test display.
 set -eu
 if [ -z "${DISPLAY:-}" ]; then
-    printf 'Carpatic Rust needs an X11 session. Start with: startx /usr/local/bin/carpatic-rust-session\n' >&2
+    printf 'Carpathian OS needs an X11 session. Start with: startx /usr/local/bin/carpatic-rust-session\n' >&2
     exit 1
 fi
 if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_CURRENT_DESKTOP:-}" = COSMIC ]; then
-    printf 'Start Carpatic Rust in its own login or test VM, outside the COSMIC session.\n' >&2
+    printf 'Start Carpathian OS in its own login or test VM, outside the COSMIC session.\n' >&2
     exit 1
 fi
 if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
@@ -161,7 +161,7 @@ finally:
     reap_adopted()
     remaining = descendants()
     if remaining:
-        print('Carpatic session: owned helpers failed to stop: ' + str(remaining), file=sys.stderr)
+        print('Carpathian session: owned helpers failed to stop: ' + str(remaining), file=sys.stderr)
         code = 1
 raise SystemExit(code if code >= 0 else 128 - code)
 PY

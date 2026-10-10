@@ -1,6 +1,6 @@
-# --- Carpatic: start X on tty1 after autologin ---
+# --- Carpathian: start X on tty1 after autologin ---
 if [ -z "$DISPLAY" ] && [ "$(tty)" = /dev/tty1 ] && [ "$(cat /etc/carpatic/login-mode 2>/dev/null)" != greeter ]; then
   rm -f "$HOME"/.serverauth.*
   exec startx -- -keeptty >"$HOME/.xsession-errors" 2>&1
 fi
-# --- end Carpatic ---
+# --- end Carpathian ---

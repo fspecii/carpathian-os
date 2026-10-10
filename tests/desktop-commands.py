@@ -24,7 +24,7 @@ class DesktopCommands(unittest.TestCase):
         self.env = dict(os.environ, CARPATIC_SESSION="1", DISPLAY=":91",
                         XDG_CONFIG_HOME=str(self.root / "config"),
                         PATH=str(self.bin), FIXTURE_RECORD=str(self.record),
-                        FIXTURE_DESKTOP=str(self.desktop), FIXTURE_WM="Carpatic Rust")
+                        FIXTURE_DESKTOP=str(self.desktop), FIXTURE_WM="Carpathian OS")
         self.env.pop("WAYLAND_DISPLAY", None)
         for tool in ("sed", "grep", "mkdir"):
             (self.bin / tool).symlink_to(shutil.which(tool))
@@ -65,7 +65,7 @@ class DesktopCommands(unittest.TestCase):
 
     def test_rejects_non_carpatic_session(self):
         self.env["CARPATIC_SESSION"] = "0"
-        self.assert_refused("Carpatic session")
+        self.assert_refused("Carpathian session")
 
     def test_rejects_wayland_and_missing_display(self):
         self.env["WAYLAND_DISPLAY"] = "wayland-fixture"
@@ -76,7 +76,7 @@ class DesktopCommands(unittest.TestCase):
 
     def test_rejects_other_window_manager_even_with_session_label(self):
         self.env["FIXTURE_WM"] = "COSMIC"
-        self.assert_refused("not managed by Carpatic Rust")
+        self.assert_refused("not managed by Carpathian OS")
 
     def test_missing_dependency_is_actionable(self):
         (self.bin / "xfdesktop").unlink()

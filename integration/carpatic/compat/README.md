@@ -1,6 +1,6 @@
 # carpatic-compat: run programs built for other Linux systems
 
-Carpatic OS is built on Alpine Linux, which uses the *musl* C library. Most software on the internet (Google Chrome, Zoom, vendor
+Carpathian OS is built on Alpine Linux, which uses the *musl* C library. Most software on the internet (Google Chrome, Zoom, vendor
 tools, AppImages, many developer SDKs) is built for *glibc* and will not start here ("required file not found").
 `carpatic-compat` fixes that without you having to know anything about containers.
 
@@ -12,7 +12,7 @@ sound and clipboard. Apps you install in it show up in your launcher and command
 | You want to | Type |
 |---|---|
 | Install a downloaded package (Chrome, Zoom, Teams, a vendor tool) | `carpatic-compat install ~/Downloads/google-chrome-stable_current_amd64.deb` (a web link works too) |
-| Add an AppImage to your launcher | `carpatic-compat install ~/Downloads/Thing.AppImage` (or double-click it in the file manager and choose "Add to Carpatic") |
+| Add an AppImage to your launcher | `carpatic-compat install ~/Downloads/Thing.AppImage` (or double-click it in the file manager and choose "Add to Carpathian") |
 | Install something from Ubuntu's archive | `carpatic-compat install xournalpp` |
 | Run one program that refuses to start | `carpatic-compat run ./vendor-tool --help` |
 | Make a command-line tool work everywhere | `carpatic-compat wrap ~/tools/vendor-cli vendor`, then just type `vendor` |
@@ -27,7 +27,7 @@ everything is offline-friendly: nothing needs the network except installing and 
 
 ## What works (verified in a VM, see docs/DAILY-DRIVER.md)
 - A real Google Chrome `.deb`, a real Qt AppImage that fails natively, `x11-apps`, and a wrapped vendor script.
-- Windows get Carpatic title bars and taskbar entries; sound reaches the host's PipeWire; `/dev/dri` is available inside the box.
+- Windows get Carpathian title bars and taskbar entries; sound reaches the host's PipeWire; `/dev/dri` is available inside the box.
 
 ## What does not
 See [LIMITATIONS.md](LIMITATIONS.md): no NVIDIA proprietary/CUDA on the host, kernel-level anticheat, anything needing systemd inside the box,

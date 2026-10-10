@@ -1,5 +1,5 @@
 #!/bin/sh
-# Carpatic X session
+# Carpathian X session
 [ -f /etc/profile ] && . /etc/profile
 export XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP=dwm
 # make Flatpak/user .desktop entries visible to rofi and xdg tools

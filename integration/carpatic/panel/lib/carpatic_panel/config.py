@@ -52,7 +52,7 @@ def load(path=None):
 def save(cfg, path=None):
     p = path or PATH
     os.makedirs(os.path.dirname(p), exist_ok=True)
-    lines = ["# Carpatic panel. Change with: carpatic-panel set <key> <value>   (see: carpatic-panel options)"]
+    lines = ["# Carpathian panel. Change with: carpatic-panel set <key> <value>   (see: carpatic-panel options)"]
     for k in designs.OPTIONS:
         if k in cfg: lines.append(f"{k}={cfg[k]}")
     tmp = p + ".tmp"

@@ -2,15 +2,15 @@
 
 QEMU proves the Linux side (swap, resume parameters, the initramfs, elogind, our scripts). It cannot prove that a real
 laptop's graphics chip, Wi-Fi card, touchpad, fingerprint reader or firmware come back. This page is for a human with a
-laptop and a Carpatic USB stick or an installed system.
+laptop and a Carpathian USB stick or an installed system.
 
 You need: the laptop on AC power, a second device with a stopwatch, and a USB stick or a note app to write results
 (copy the table at the bottom).
 
 ## 0. Before you start (2 min)
 
-1. Boot Carpatic, log in, open a terminal (Super+Shift+Return).
-2. In BIOS/UEFI setup make sure **Secure Boot is OFF** (Carpatic kernels are not signed yet; with Secure Boot the kernel
+1. Boot Carpathian, log in, open a terminal (Super+Shift+Return).
+2. In BIOS/UEFI setup make sure **Secure Boot is OFF** (Carpathian kernels are not signed yet; with Secure Boot the kernel
    goes into lockdown and refuses to hibernate). Setup key is usually F2, F10 or Esc at power-on (HP: Esc then F10).
 3. Run `doas carpatic-power doctor`. Read the lines marked `[FAIL]`; each has a "->" fix. The usual fix is:
 
@@ -81,7 +81,7 @@ These are the machines the project is developed on, and they have specific trait
   hibernate to stop the drain).
 - **Wi-Fi (Intel AX2xx):** resumes fine with `iwlwifi`. Realtek USB dongles and some Mediatek cards need the driver unloaded
   before sleep; set `SLEEP_UNLOAD_MODULES="name"` in /etc/carpatic/power.conf if 1.4 fails (find the name with `lspci -k`).
-- **Fingerprint reader (Synaptics/Validity):** unsupported by `fprintd` on musl in Carpatic today; the sleep cycle
+- **Fingerprint reader (Synaptics/Validity):** unsupported by `fprintd` on musl in Carpathian today; the sleep cycle
   must not hang because of it. Check that 1.2 returns within 3 s.
 - **Touchpad (Synaptics/ELAN I2C-HID):** after resume taps/clicks must work. A pad that stays dead needs
   `i2c_hid` reload; note it. (Known on this project: phantom taps, see the touchpad notes.)

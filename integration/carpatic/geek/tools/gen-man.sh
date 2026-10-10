@@ -2,9 +2,9 @@
 # Generates share/man/carpatic.1 from share/commands.tsv. Run: sh geek/tools/gen-man.sh > geek/share/man/carpatic.1
 T=$(dirname "$0")/../share/commands.tsv
 cat <<'M'
-.TH CARPATIC 1 "" "Carpatic OS" "Carpatic OS manual"
+.TH CARPATIC 1 "" "Carpathian OS" "Carpathian OS manual"
 .SH NAME
-carpatic \- one command for the whole Carpatic desktop
+carpatic \- one command for the whole Carpathian desktop
 .SH SYNOPSIS
 .B carpatic
 .RI [ area ]
@@ -30,7 +30,7 @@ Done.
 The tool ran and failed. Its message says why.
 .TP
 .B 2
-Carpatic did not understand what you typed. It suggests the closest command.
+Carpathian did not understand what you typed. It suggests the closest command.
 .TP
 .B 3
 The tool is not available on this computer (not installed, or needs hardware you do not have).

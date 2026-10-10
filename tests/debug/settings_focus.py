@@ -47,7 +47,7 @@ def main():
     from cset.ui import Row
     from cset.app import SettingsWindow
 
-    window = Gtk.Window(title='Carpatic isolated settings focus test')
+    window = Gtk.Window(title='Carpathian isolated settings focus test')
     window.set_default_size(600, 400)
     stack = Gtk.Stack()
     window.add(stack)

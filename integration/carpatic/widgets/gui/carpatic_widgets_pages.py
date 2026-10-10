@@ -1,4 +1,4 @@
-"""Carpatic Settings page "Widgets": the gallery (live previews drawn from your theme), on/off, edit mode, peek, weather place, card style.
+"""Carpathian Settings page "Widgets": the gallery (live previews drawn from your theme), on/off, edit mode, peek, weather place, card style.
 Every control calls `carpatic-widgets`, so everything here also works from a terminal (`carpatic widgets ...`). Widgets are OFF until the switch
 at the top is turned on. Loaded by carpatic-settings like carpatic_motion_pages (ImportError = page absent). License: MIT."""
 import datetime, os, subprocess, threading

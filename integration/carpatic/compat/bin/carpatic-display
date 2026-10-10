@@ -73,7 +73,7 @@ case "${1:-status}" in
         sleep 1; layout extend >/dev/null 2>&1
         # a different screen may want a different scale (SCALE=auto): re-apply the desktop at the size carpatic-scale picks for it
         command -v carpatic-scale >/dev/null 2>&1 && sleep 1 && carpatic-scale sync >/dev/null 2>&1
-        command -v notify-send >/dev/null 2>&1 && notify-send -a "Display" "Screens changed" "Carpatic set up your screens. Change it with: carpatic-display mirror | external | internal"
+        command -v notify-send >/dev/null 2>&1 && notify-send -a "Display" "Screens changed" "Carpathian set up your screens. Change it with: carpatic-display mirror | external | internal"
         cur=$($XR --query 2>/dev/null | grep -E ' (dis)?connected' | awk '{print $1, $2}' | tr '\n' ';')
       fi
       # the resolution changed (Settings > Displays, or a monitor switched mode): the auto scale may follow it

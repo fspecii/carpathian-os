@@ -26,7 +26,7 @@ case $cmd in
     cp "$SHARE/lightdm/50-carpatic.conf" /etc/lightdm/lightdm.conf.d/50-carpatic.conf
     cp "$SHARE/lightdm/lightdm-gtk-greeter.conf" /etc/lightdm/lightdm-gtk-greeter.conf
     cp "$SHARE/lightdm/xsession-carpatic.desktop" /usr/share/xsessions/carpatic.desktop
-    # greeter look: the lightdm user's GTK css pulls the Carpatic tokens
+    # greeter look: the lightdm user's GTK css pulls the Carpathian tokens
     gh=$(getent passwd lightdm | cut -d: -f6); [ -n "$gh" ] || gh=/var/lib/lightdm
     mkdir -p "$gh/.config/gtk-3.0"
     cp "$SHARE/lightdm/colors-dark.css" "$gh/.config/gtk-3.0/colors-dark.css"

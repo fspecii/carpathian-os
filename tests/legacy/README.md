@@ -1,6 +1,6 @@
-# Adapted Carpatic desktop regressions
+# Adapted Carpathian desktop regressions
 
-These 19 guest cases retain the earlier Carpatic behavior assertions. The
+These 19 guest cases retain the earlier Carpathian behavior assertions. The
 original source is `../carpatic-os/tests/suites/desktop/guest/` relative to the
 project root. WM/executable names, fixture home/display and process matching
 are adapted; titlebars are located through the Rust WM's `_CARPATIC_CLIENT`

@@ -1,4 +1,4 @@
-//! Standalone configuration parsing for Carpatic WM.
+//! Standalone configuration parsing for Carpathian WM.
 //!
 //! Built directly on `toml::Value` (toml 0.8) — no serde derives, no other
 //! dependencies beyond `std`. It reads the legacy `carpatic-os` file formats:
@@ -6,7 +6,7 @@
 //! * `[active] theme = "carpatic"` selects one of the nested `[theme.<name>]`
 //!   tables. An unknown name is an error. A file with neither `[active]` nor
 //!   any `[theme.*]` table (or a legacy flat file with colours at the top
-//!   level) falls back to the built-in Carpatic defaults.
+//!   level) falls back to the built-in Carpathian defaults.
 //! * `[appearance] borderpx` (or legacy `border_width`) sets the border width.
 //! * Colours accept `#RRGGBB`, `RRGGBB`, `0xRRGGBB` and plain integers.
 //! * Toggles accept `0`/`1` and `true`/`false` (also `yes`/`no`, `on`/`off`).
@@ -138,7 +138,7 @@ impl Default for TitlebarConfig {
 }
 
 impl Default for Config {
-    /// Built-in Carpatic defaults (matching `[theme.carpatic]` in the legacy
+    /// Built-in Carpathian defaults (matching `[theme.carpatic]` in the legacy
     /// `themes.toml`), with title bars disabled until a file enables them.
     fn default() -> Self {
         Self {
@@ -1004,7 +1004,7 @@ mod tests {
     use super::*;
     use std::env;
 
-    /// Carpatic subset of the legacy `themes.toml` (exact colours).
+    /// Carpathian subset of the legacy `themes.toml` (exact colours).
     const CARPATIC: &str = r##"
 [active]
 theme = "carpatic"

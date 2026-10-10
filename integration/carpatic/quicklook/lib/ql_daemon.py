@@ -3,7 +3,7 @@ import os, sys, json, socket, time, resource
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def carpatic_session():
-    """Quick Look only ever runs inside a Carpatic desktop: CARPATIC_SESSION=1 (set by carpatic-session) or the configurator install marker,
+    """Quick Look only ever runs inside a Carpathian desktop: CARPATIC_SESSION=1 (set by carpatic-session) or the configurator install marker,
     on an X11 display and never under Wayland. This keeps it from attaching to someone else's desktop (a dev host, a test run)."""
     if os.environ.get("WAYLAND_DISPLAY") or not os.environ.get("DISPLAY"): return False
     if os.environ.get("CARPATIC_SESSION") == "1": return True

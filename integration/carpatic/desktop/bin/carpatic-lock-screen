@@ -1,5 +1,5 @@
 #!/bin/sh
-# Carpatic lock screen. Derived from design/login/carpatic-lock (design agent): blurred wallpaper, clock, one ring.
+# Carpathian lock screen. Derived from design/login/carpatic-lock (design agent): blurred wallpaper, clock, one ring.
 # Differences: single instance, dunst resumed after unlock, falls back to slock if i3lock-color is missing.
 pgrep -x i3lock >/dev/null 2>&1 && exit 0
 pgrep -x slock >/dev/null 2>&1 && exit 0

@@ -1,5 +1,5 @@
 """Loaded by carpatic-scale.pth at every Python start (site-packages). It does nothing until a program called carpatic-* (not the panel, which scales
-itself) imports GTK3; then carpatic_scale.install() runs right after Gtk is loaded, so every Carpatic GTK app follows the display scale without each one
+itself) imports GTK3; then carpatic_scale.install() runs right after Gtk is loaded, so every Carpathian GTK app follows the display scale without each one
 having to ask. See carpatic_scale.py."""
 import os, sys
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Carpatic App Store (GTK3). Usage: carpatic-store-gui [--firstrun] [--page NAME]   (CARPATIC_THEME=light for the light palette)
+"""Carpathian App Store (GTK3). Usage: carpatic-store-gui [--firstrun] [--page NAME]   (CARPATIC_THEME=light for the light palette)
 The implementation lives in lib/carpatic_storeui.py so tests can import it."""
 import os
 import sys

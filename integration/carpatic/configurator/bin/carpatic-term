@@ -1,5 +1,5 @@
 #!/bin/sh
-# Native Xterm frontend to the shared Carpatic font and OSC palette.
+# Native Xterm frontend to the shared Carpathian font and OSC palette.
 CFG=${CARPATIC_CONFIG:-$HOME/.config/carpatic}
 OSC=${CARPATIC_STATE:-$HOME/.local/state/carpatic}/current/osc
 [ -r "$CFG/env.sh" ] && . "$CFG/env.sh"

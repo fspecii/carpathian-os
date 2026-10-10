@@ -16,7 +16,7 @@ def main(argv):
     cmd = argv[i + 1:]
     if not cmd: print("usage: carpatic-progress [--title TEXT] [--root] -- COMMAND [ARGS...]", file=sys.stderr); return 2
     if not (os.environ.get("CARPATIC_FORCE") or os.environ.get("CARPATIC_SESSION") or os.path.isdir("/usr/share/carpatic") or os.path.isdir("/usr/local/share/carpatic")):
-        print("carpatic-progress: not a Carpatic session", file=sys.stderr); return 2
+        print("carpatic-progress: not a Carpathian session", file=sys.stderr); return 2
     import gi; gi.require_version("Gtk", "3.0")
     from gi.repository import Gtk
     from cset import ui, theme

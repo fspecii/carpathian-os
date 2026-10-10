@@ -1,4 +1,4 @@
-# Carpatic theme/icon/cursor/font packs. Fields:
+# Carpathian theme/icon/cursor/font packs. Fields:
 # id|category|name|kind|source|ref|sha256|installed theme dirs (space separated)|approx MB|licence|download MB
 # kind: apk (source = apk packages, installed with `doas apk add` in a terminal (user types the password); the ISO ships only what packages.txt lists)
 #       tar-icons | tar-gtk | deb-gtk | deb-icons | github-icons (downloads are pinned and sha256-verified, installed into ~/.local/share, no root)

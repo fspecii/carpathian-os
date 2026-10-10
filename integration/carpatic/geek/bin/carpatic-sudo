@@ -1,5 +1,5 @@
 #!/bin/sh
-# carpatic-sudo COMMAND [ARGS]: run a Carpatic tool with administrator rights. `carpatic` uses it for the few commands that need it
+# carpatic-sudo COMMAND [ARGS]: run a Carpathian tool with administrator rights. `carpatic` uses it for the few commands that need it
 # (updates, snapshots, power profiles), so you type `carpatic update apply` and are asked for your password.
 # As root: runs it. In a terminal: doas, then sudo. From the launcher or menu (no terminal): a graphical password prompt (pkexec).
 set -u

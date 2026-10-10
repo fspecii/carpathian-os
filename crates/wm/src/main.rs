@@ -42,6 +42,17 @@ struct AppSpace {
     view: u32,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct FrameShapeKey {
+    frame: Window,
+    width: u32,
+    height: u32,
+    border: u32,
+    title: u32,
+    radius: u32,
+    square: bool,
+}
+
 struct Client {
     id: Window,
     desktop: u32,
@@ -62,6 +73,8 @@ struct Client {
     original_border: u16,
     depth: u8,
     shape_dirty: bool,
+    frame_shape: Option<FrameShapeKey>,
+    chrome_surface: Option<(u32, u32)>,
     title: String,
     icon: Option<Icon>,
     minimized: bool,
@@ -342,6 +355,15 @@ impl Wm {
         );
         wm.load_aux_config();
         wm.publish()?;
+        // The root survives WM restarts. Publish this instance's counter before
+        // adoption so a stale predecessor value cannot mask its first reload.
+        wm.conn.change_property32(
+            PropMode::REPLACE,
+            root,
+            wm.atoms._CARPATIC_CONFIG_SERIAL,
+            AtomEnum::CARDINAL,
+            &[wm.config_serial],
+        )?;
         wm.client_list()?;
         wm.bind_keys()?;
         let children = wm.conn.query_tree(root)?.reply()?.children;
@@ -1368,7 +1390,7 @@ impl Wm {
             self.support,
             a._NET_WM_NAME,
             a.UTF8_STRING,
-            b"Carpatic Rust",
+            b"Carpathian OS",
         )?;
         self.conn.change_property32(
             PropMode::REPLACE,
@@ -2366,6 +2388,8 @@ impl Wm {
             original_border: g.border_width,
             depth: g.depth,
             shape_dirty: true,
+            frame_shape: None,
+            chrome_surface: None,
             title,
             icon: self.window_icon(id),
             minimized,
@@ -2867,7 +2891,10 @@ impl Wm {
                         .height(height)
                         .border_width(border),
                 )?;
-                c.chrome_dirty |= c.applied.map(|previous| previous.width) != Some(rect.width);
+                // ConfigureRequest can invalidate applied geometry even for a
+                // move. The caption surface depends on its size, not position.
+                c.chrome_dirty |= title_height > 0
+                    && c.chrome_surface != Some((rect.width, title_height + border));
                 c.applied = Some(rect);
                 c.applied_border = Some(border);
                 self.conn.send_event(
@@ -2900,7 +2927,16 @@ impl Wm {
                             .height(rect.height),
                     )?;
                 }
-                if geometry_changed || c.shape_dirty {
+                let shape_key = FrameShapeKey {
+                    frame,
+                    width: rect.width,
+                    height: rect.height,
+                    border,
+                    title: title_height,
+                    radius: self.config.radius,
+                    square: c.fullscreen || c.has_csd,
+                };
+                if c.frame_shape != Some(shape_key) || c.shape_dirty {
                     shape_app_frame(
                         &self.conn,
                         frame,
@@ -2913,6 +2949,7 @@ impl Wm {
                         c.fullscreen || c.has_csd,
                     )?;
                     c.shape_dirty = false;
+                    c.frame_shape = Some(shape_key);
                 }
                 publish_frames.push(frame);
             }
@@ -3287,6 +3324,7 @@ impl Wm {
             self.conn.free_gc(gc)?;
             self.conn.free_pixmap(pixmap)?;
             c.chrome_dirty = false;
+            c.chrome_surface = Some((rect.width, height));
         }
         Ok(())
     }
@@ -3962,6 +4000,9 @@ impl Wm {
             {
                 self.arrange()?
             }
+            // Each event describes one damaged rectangle; redraw the complete
+            // surface once the server has delivered the last rectangle.
+            Event::Expose(e) if e.count > 0 => {}
             Event::Expose(e) if self.bars.iter().any(|bar| bar.id == e.window) => {
                 self.draw_bars()?;
             }
@@ -4647,7 +4688,29 @@ impl Wm {
             self.expire_animation_marks()?;
             while let Some(event) = self.conn.poll_for_event()? {
                 if debug {
-                    eprintln!("EVENT {event:?}");
+                    match &event {
+                        Event::Expose(e) => eprintln!(
+                            "EVENT Expose window={} count={} x={} y={} width={} height={}",
+                            e.window, e.count, e.x, e.y, e.width, e.height
+                        ),
+                        Event::ShapeNotify(e) => eprintln!(
+                            "EVENT ShapeNotify window={} sequence={}",
+                            e.affected_window, e.sequence
+                        ),
+                        Event::PropertyNotify(e) => eprintln!(
+                            "EVENT PropertyNotify window={} atom={} state={:?}",
+                            e.window, e.atom, e.state
+                        ),
+                        Event::ConfigureNotify(e) => eprintln!(
+                            "EVENT ConfigureNotify window={} event={} width={} height={}",
+                            e.window, e.event, e.width, e.height
+                        ),
+                        Event::ConfigureRequest(e) => eprintln!(
+                            "EVENT ConfigureRequest window={} mask={:?} width={} height={}",
+                            e.window, e.value_mask, e.width, e.height
+                        ),
+                        _ => eprintln!("EVENT {event:?}"),
+                    }
                 }
                 if let Err(error) = self.handle(event) {
                     eprintln!("Window operation failed: {error}");

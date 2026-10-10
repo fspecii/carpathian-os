@@ -29,7 +29,7 @@ CONF = os.path.join(ROOT, "integration", "carpatic", "configurator")
 REFERENCE = json.loads(open(os.path.join(ROOT, "tests", "fixtures", "linpad-palettes.json"), encoding="utf-8").read())
 COMMIT = "01246414fe9517d883b9489ba3e9e9f3780f479e"
 
-# theme id -> (upstream palette name, profile id); the Carpatic theme id is the registry key
+# theme id -> (upstream palette name, profile id); the Carpathian theme id is the registry key
 PORTED = {
     "classic-98": ("classic-98", "classic-98"),
     "luna": ("luna", "luna"),

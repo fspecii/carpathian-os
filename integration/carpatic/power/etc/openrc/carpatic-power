@@ -1,7 +1,7 @@
 #!/sbin/openrc-run
-# Carpatic power: boot-time profile, resume_offset self-check, battery watcher (low/critical actions).
+# Carpathian power: boot-time profile, resume_offset self-check, battery watcher (low/critical actions).
 name="carpatic-power"
-description="Carpatic power management"
+description="Carpathian power management"
 supervisor="supervise-daemon"
 command="/usr/bin/carpatic-power"
 command_args="monitor"

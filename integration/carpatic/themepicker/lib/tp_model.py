@@ -1,4 +1,4 @@
-"""Carpatic theme picker: row models, session state and the apply debouncer. Pure Python, no GTK, no timers of its own,
+"""Carpathian theme picker: row models, session state and the apply debouncer. Pure Python, no GTK, no timers of its own,
 so every behaviour is unit-tested on the host (themepicker/tests/test-model.py).
 
 A *state* is a plain dict of settings.conf keys (THEME, ACCENT, WALLPAPER, PROFILE, WINDOW_BUTTONS, ICON_THEME, CURSOR_THEME,

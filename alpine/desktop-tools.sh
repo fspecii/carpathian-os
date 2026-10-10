@@ -1,5 +1,5 @@
 #!/bin/sh
-# Shared Carpatic desktop tools; deliberately no C dwm build.
+# Shared Carpathian desktop tools; deliberately no C dwm build.
 set -eu
 [ "$(id -u)" = 0 ] && [ -f /etc/alpine-release ] || { echo 'Run inside Alpine as root.' >&2; exit 1; }
 cd "$(dirname "$0")/.."
@@ -50,4 +50,5 @@ if [ ! -f "$H/.config/carpatic/settings.conf" ]; then
     printf 'PROFILE="windows"\nTHEME="carpatic"\nLAYOUT="tile"\n' > "$H/.config/carpatic/settings.conf"
 fi
 chown -R "$U:$(id -gn "$U")" "$H/.config/carpatic" "$H/.config/dwm-titus" "$H/.local/share/dwm-titus"
-printf 'Carpatic theme/profile tools installed.\n'
+sh alpine/branding.sh
+printf 'Carpathian theme/profile tools installed.\n'

@@ -4,7 +4,7 @@ The view never talks to X: it reads a `ctx` (task list, clock text, indicator st
 renderable offscreen for the design sheets and testable with fakes."""
 import datetime as dt
 import math
-from . import gfx, designs
+from . import gfx, designs, branding
 from .kit import View, Node, p_button
 from .theme import with_alpha, mix
 
@@ -36,13 +36,9 @@ class Ctx:
     def toggle_tray_item(self, *a): pass
 
 
-def draw_logo(cr, cx, cy, s, c1, c2):
-    """The Carpatic mark: two ridges and a sun."""
-    cr.save(); cr.translate(cx - s / 2, cy - s / 2); cr.scale(s / 24, s / 24)
-    cr.set_source_rgba(*c2); cr.arc(17.2, 7.2, 2.6, 0, gfx.TAU); cr.fill()
-    cr.set_source_rgba(*c1)
-    cr.move_to(1.5, 20.5); cr.line_to(9.2, 6.2); cr.line_to(13.2, 13.4); cr.line_to(15.4, 9.8); cr.line_to(22.5, 20.5); cr.close_path(); cr.fill()
-    cr.restore()
+def draw_logo(cr, cx, cy, s, c1, c2=None):
+    """Canonical Carpathian OS mountain, with a transparent snow notch."""
+    branding.draw_mark(cr, cx, cy, s, c1)
 
 
 class BarView(View):
@@ -131,7 +127,7 @@ class BarView(View):
             l1, l2 = self.clock_lines()
             return max(self.text_w(l1, 13 if not l2 else 12.5, 500, True), self.text_w(l2, 11.5, 400, True)) + 20
         if name == "appname": return self.text_w(self.ctx.focus_app or "Desktop", 13.5, 700) + 20
-        if name == "activities": return self.text_w("Activities", 13, 600) + 28
+        if name == "activities": return self.text_w("Activities", 13, 600) + 52
         if name == "tags": return (4 + 26 * max(1, self.ctx.tags[0]) + 4) if self.style == "minimal" else (8 + 16 * max(1, self.ctx.tags[0]) + 10)
         if name == "apps": return T
         if name == "title": return 0
@@ -277,8 +273,8 @@ class BarView(View):
             def start_paint(cr, n, s):
                 p_button(t, 6 if st != "classic" else 0)(cr, n, s)
                 sz = 22 if st != "ubuntu-top" else 18
-                draw_logo(cr, n.x + n.w / 2, n.y + n.h / 2, sz * (0.92 if s.press else 1), t.accent, t.ember)
-            out.append(self._node("start", pos, ln, vpad, on_click=lambda n: ctx.flyout("start", n), paint=start_paint, radius=6, tooltip="Start"))
+                draw_logo(cr, n.x + n.w / 2, n.y + n.h / 2, sz * (0.92 if s.press else 1), t.fg)
+            out.append(self._node("start", pos, ln, vpad, on_click=lambda n: ctx.flyout("start", n), paint=start_paint, radius=6, tooltip="Carpathian OS applications"))
         elif it in ("search", "taskview", "widgets"):
             g = {"search": "search", "taskview": "taskview", "widgets": "widgets"}[it]
             ln = self.item_len(it)
@@ -306,7 +302,7 @@ class BarView(View):
                 cr.set_source_rgba(*t.border_strong); cr.rectangle(n.x, n.y + (6 if st == "win11" else 0), 1, n.h - (12 if st == "win11" else 0)); cr.fill()
             out.append(self._node("showdesktop", pos, ln, 0, on_click=lambda n: ctx.show_desktop(), paint=sd, radius=0, tooltip="Show desktop"))
         elif it == "logo":
-            out.append(self._node("logo", pos, 36, 2, on_click=lambda n: ctx.flyout("start", n), paint=lambda cr, n, s: (p_button(t, 5)(cr, n, s), draw_logo(cr, n.x + n.w / 2, n.y + n.h / 2, 15, t.fg, t.fg)), radius=5, tooltip="Carpatic"))
+            out.append(self._node("logo", pos, 36, 2, on_click=lambda n: ctx.flyout("start", n), paint=lambda cr, n, s: (p_button(t, 5)(cr, n, s), draw_logo(cr, n.x + n.w / 2, n.y + n.h / 2, 15, t.fg, t.fg)), radius=5, tooltip="Carpathian"))
         elif it == "appname":
             ln = self.item_len("appname")
             out.append(self._node("appname", pos, ln, 2, paint=lambda cr, n, s: gfx.text(cr, ctx.focus_app or "Desktop", n.x + 10, n.y + n.h / 2, 13.5, t.fg, 700, maxw=n.w - 12), radius=5))
@@ -315,7 +311,8 @@ class BarView(View):
             ln = self.item_len("activities")
             def act(cr, n, s):
                 gfx.fill_rrect(cr, n.x, n.y + 2, n.w, n.h - 4, (n.h - 4) / 2, t.press if s.press else (t.hover if s.hover else (t.fg[0], t.fg[1], t.fg[2], 0.0)))
-                gfx.text(cr, "Activities", n.x + n.w / 2, n.y + n.h / 2, 13, t.fg, 600, "c")
+                branding.draw_mark(cr, n.x + 18, n.y + n.h / 2, 18, t.fg)
+                gfx.text(cr, "Activities", n.x + (n.w + 22) / 2, n.y + n.h / 2, 13, t.fg, 600, "c")
             out.append(self._node("activities", pos, ln, 0, on_click=lambda n: ctx.flyout("start", n), paint=act, radius=12, tooltip="Activities"))
         elif it == "tags":
             n_, cur, names = ctx.tags

@@ -45,7 +45,7 @@ install -m755 integration/carpatic/desktop/session/autostart.sh "$desktop_home/.
 mkdir -p /usr/share/xsessions /usr/local/share/carpatic/lightdm /usr/share/carpatic/lightdm
 cat > /usr/share/xsessions/carpatic-rust.desktop <<'EOF'
 [Desktop Entry]
-Name=Carpatic Rust
+Name=Carpathian OS
 Comment=Tiling and floating desktop
 Exec=/usr/local/bin/carpatic-rust-session
 Type=Application
@@ -74,4 +74,4 @@ su "$CARPATIC_USER" -c 'carpatic-apply'
 mkdir -p /etc/carpatic /var/lib/carpatic
 printf 'rust\n' > /etc/carpatic/window-manager
 cp prebuilt/SHA256SUMS /var/lib/carpatic/rust-build.sha256
-echo 'Carpatic Rust desktop installed.'
+echo 'Carpathian OS desktop installed.'

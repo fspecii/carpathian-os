@@ -1,4 +1,4 @@
-# Carpatic system-wide default applications (installed as /etc/xdg/mimeapps.list; a user's ~/.config/mimeapps.list always wins).
+# Carpathian system-wide default applications (installed as /etc/xdg/mimeapps.list; a user's ~/.config/mimeapps.list always wins).
 [Default Applications]
 inode/directory=thunar.desktop
 text/plain=org.xfce.mousepad.desktop

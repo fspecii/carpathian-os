@@ -1,4 +1,4 @@
-"""Window-button previews for Carpatic Settings (cairo). Mirrors desktop/dwm window-button styles (same geometry in u = bar height / 32,
+"""Window-button previews for Carpathian Settings (cairo). Mirrors desktop/dwm window-button styles (same geometry in u = bar height / 32,
 same colour roles) so the picker shows what dwm will draw. All colours come from a theme palette dict (read_colors)."""
 import math
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Carpatic Reminders GUI and stable local JSON command interface."""
+"""Carpathian Reminders GUI and stable local JSON command interface."""
 import argparse
 import json
 import os

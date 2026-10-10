@@ -1,5 +1,5 @@
 #!/bin/sh
-# Carpatic dwm autostart. Installed to ~/.local/share/dwm-titus/scripts/autostart.sh
+# Carpathian dwm autostart. Installed to ~/.local/share/dwm-titus/scripts/autostart.sh
 # Each helper is optional; missing programs are skipped.
 once() { command -v "$1" >/dev/null 2>&1 || return 0; pgrep -u "$(id -u)" -x "$1" >/dev/null 2>&1 || "$@" >/dev/null 2>&1 & }
 
@@ -85,5 +85,5 @@ BAR=dwm
 # system tray: dwm's built-in systray (nothing to start); tint2 profiles use tint2's own tray
 # status text in dwm's bar (root window name)
 [ "$BAR" = tint2 ] || [ "$BAR" = panel ] || pgrep -u "$(id -u)" -f "^(/bin/)?sh [^ ]*carpatic-status\$" >/dev/null 2>&1 || "$(dirname "$0")/carpatic-status" >/dev/null 2>&1 &
-# Carpatic configurator: per-profile bars, hotkey daemon, first-run Welcome wizard
+# Carpathian configurator: per-profile bars, hotkey daemon, first-run Welcome wizard
 command -v carpatic-session >/dev/null 2>&1 && carpatic-session start >/dev/null 2>&1 &

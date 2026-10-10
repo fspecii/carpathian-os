@@ -18,6 +18,7 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gdk
 from rendering import Display, COLOR, command
+from seam_segments import classify_seam
 
 root = Gdk.get_default_root_window()
 records = []
@@ -107,6 +108,10 @@ try:
                     matching=[i for i in range(max(0,top-70),top) if near(fault[i],chrome)]
                     gap=top-max(matching)-1 if matching else 999
                     if gap<=4: raise AssertionError('Oracle failed to detect missing chrome')
+                    fault_body=[i for i,p in enumerate(fault) if i+15<len(fault) and near(p,blue) and near(fault[i+15],blue)]
+                    if not fault_body: raise AssertionError('Fault control lost body positive marker')
+                    fault_seam=classify_seam(fault,fault_body[0],chrome,blue)
+                    if not fault_seam['failed']: raise AssertionError('Chromatic classifier accepted actual hidden-caption fault')
                     print(json.dumps(dict(negative_control=backend,detected_gap=gap)),flush=True)
                 finally:
                     command('xdotool','windowmap',chrome_id); time.sleep(.5)
@@ -126,10 +131,14 @@ try:
                         if body:
                             edge=body[0]
                             chrome_rows=[i for i in range(max(0,edge-70),edge) if near(pixels[i],chrome)]
-                            gap=edge-max(chrome_rows)-1 if chrome_rows else 999
+                            seam=classify_seam(pixels,edge,chrome,blue)
+                            gap=seam['gap']
                             item=dict(backend=backend,client=kind,cycle=cycle,target=target,t=round(capture_end-start,4),capture_begin=round(capture_begin-start,4),capture_ms=round((capture_end-capture_begin)*1000,3),reverse_t=round(reversed_at,4) if reversed_at is not None else None,body_top=edge+40,gap=gap)
-                            records.append(item); sampled+=1
+                            item.update(interpolated_bridge=seam['interpolated_bridge'],seam_failed=seam['failed'])
                             if gap>4:
+                                item.update(sample_column_rgb=pixels,chrome_reference=chrome,body_reference=blue,body_edge_row=edge,chrome_matching_rows=chrome_rows,bridge_fits=seam['bridge_fits'])
+                            records.append(item); sampled+=1
+                            if seam['failed']:
                                 # Retain the exact capture used by the oracle.
                                 # A subsequent full-screen image is diagnostic only.
                                 item['chrome_reference'] = chrome

@@ -1,6 +1,6 @@
 # Fast boot: hide the Limine menu when there is only one OS
 
-Omarchy's `omarchy-setup-direct-boot` creates a UEFI boot entry straight to the kernel image (UKI) and refuses on firmware that cannot do it. Carpatic uses Limine, so the
+Omarchy's `omarchy-setup-direct-boot` creates a UEFI boot entry straight to the kernel image (UKI) and refuses on firmware that cannot do it. Carpathian uses Limine, so the
 same saving comes from the menu timeout. Limine's `timeout:` key is the whole feature.
 
 ## What the engine writes today and what it should write
@@ -14,7 +14,7 @@ Proposed default, one line in the engine (exact):
 
 and nothing else changes in the file (`serial: yes`, the theme block and the entries stay). The same switch exists later for users: `carpatic-boot menu hide|show|status`
 (root; Settings > Startup and screensaver > "Hide the boot menu"). It edits the three copies, keeps `limine.conf.carpatic-bak`, and **refuses to hide the menu**
-when `limine.conf` lists any entry besides `Carpatic OS` and `Carpatic OS (recovery shell)`, when a partition looks like Windows (NTFS/BitLocker/MS reserved), or when
+when `limine.conf` lists any entry besides `Carpathian OS` and `Carpathian OS (recovery shell)`, when a partition looks like Windows (NTFS/BitLocker/MS reserved), or when
 `efibootmgr` lists a Windows Boot Manager. 20 host checks in `motion/tests/test-boot.sh`.
 
 ## Measured (UEFI, OVMF + Limine, QEMU/KVM on a busy host; QEMU start until the init prints that the splash is up; `motion/tests/fastboot-lab.py`)

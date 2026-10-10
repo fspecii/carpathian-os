@@ -1,5 +1,5 @@
 #!/bin/sh
-# Carpatic store: provision Flatpak + Flathub on Alpine (musl/OpenRC). Run as root, idempotent.
+# Carpathian store: provision Flatpak + Flathub on Alpine (musl/OpenRC). Run as root, idempotent.
 # Does not need a running desktop. Audio/portal pieces are installed here, started per user session.
 set -eu
 [ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 1; }

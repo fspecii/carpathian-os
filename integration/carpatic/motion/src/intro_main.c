@@ -122,7 +122,7 @@ static int cmd_play(int force_play, const char *windowed, const char *ready_file
     uint32_t accent = 0x5cc8a8, ember = 0xf2a65a; theme_colors(&accent, &ember);
     XSetWindowAttributes at; at.override_redirect = windowed ? False : True; at.background_pixel = 0x0b0e13; at.event_mask = ExposureMask;
     Window win = XCreateWindow(dpy, RootWindow(dpy, scr), 0, 0, W, H, 0, CopyFromParent, InputOutput, CopyFromParent, CWOverrideRedirect | CWBackPixel | CWEventMask, &at);
-    XStoreName(dpy, win, "Carpatic intro");
+    XStoreName(dpy, win, "Carpathian intro");
     XShapeSelectInput(dpy, win, 0);
     XMapRaised(dpy, win); XSync(dpy, False);          /* the server paints the background colour at once: the first frame is the colour the screen already has */
     if (ready_file) { FILE *f = fopen(ready_file, "w"); if (f) fclose(f); }

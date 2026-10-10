@@ -1,4 +1,4 @@
-# Carpatic: compressed swap in RAM, higher priority than the disk swap used for hibernation.
+# Carpathian: compressed swap in RAM, higher priority than the disk swap used for hibernation.
 load_on_start=yes
 unload_on_stop=yes
 num_devices=1

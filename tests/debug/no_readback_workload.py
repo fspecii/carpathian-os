@@ -51,7 +51,7 @@ def main():
     before = snapshot()
     timings = []
     try:
-        window = x.create('Carpatic no-readback diagnostic workload', COLOR, 500, 260)
+        window = x.create('Carpathian no-readback diagnostic workload', COLOR, 500, 260)
         x.x.XMapWindow(x.handle, window)
         x.sync()
         time.sleep(.75)

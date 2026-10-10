@@ -82,7 +82,7 @@ def create_argb(x):
         kind = c.c_ulong(x.atom('_NET_WM_WINDOW_TYPE_DIALOG'))
         x.x.XChangeProperty(x.handle, client, x.atom('_NET_WM_WINDOW_TYPE'),
                             4, 32, 0, c.byref(kind), 1)
-        x.x.XStoreName(x.handle, client, b'Carpatic ARGB frame-surface probe')
+        x.x.XStoreName(x.handle, client, b'Carpathian ARGB frame-surface probe')
         x.sync()
         return client, colormap
     except BaseException:
@@ -264,12 +264,12 @@ def main():
         if args.argb:
             # Premultiplied A8R8G8B8 over an owned solid backdrop gives a known
             # root-pixel blend, independent of the user's wallpaper.
-            backdrop = x.create('Carpatic alpha backdrop', 0x204060, 1280, 800, override=True)
+            backdrop = x.create('Carpathian alpha backdrop', 0x204060, 1280, 800, override=True)
             x.x.XMapWindow(x.handle, backdrop)
             x.sync()
             client, colormap = create_argb(x)
         else:
-            client = x.create('Carpatic frame-surface probe', COLOR, 420, 280)
+            client = x.create('Carpathian frame-surface probe', COLOR, 420, 280)
         x.x.XMapWindow(x.handle, client)
         x.message(client, '_NET_ACTIVE_WINDOW', [1, 0, 0, 0, 0])
         frame, title = wait_for_frame(x, client)
@@ -363,7 +363,7 @@ def main():
                                                named_alpha=named_alpha if args.argb else None,
                                                root_caption=f'{root_caption:06x}' if args.argb else None)
         if args.argb:
-            focus_control = x.create('Carpatic ARGB border focus control', COLOR, 200, 120)
+            focus_control = x.create('Carpathian ARGB border focus control', COLOR, 200, 120)
             x.x.XMapWindow(x.handle, focus_control)
             wait_for_frame(x, focus_control)
             command('xdotool', 'windowmove', str(focus_control), '30', '80')

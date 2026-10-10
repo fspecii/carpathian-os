@@ -296,15 +296,15 @@ class FakeSystem:
 
     def __init__(self, **kw):
         self.log = []
-        self.s = dict(wifi=True, wifi_on=True, ssid="Carpatic-5G", signal=78, bt=True, bt_on=True, dnd=False, dark=True, night=False, airplane=False,
+        self.s = dict(wifi=True, wifi_on=True, ssid="Carpathian-5G", signal=78, bt=True, bt_on=True, dnd=False, dark=True, night=False, airplane=False,
                       vol=(42, False), bright=64, battery=dict(percent=84, charging=True, full=False, seconds=2400, status="Charging"),
                       profile="balanced", sinks=[(51, "Built-in Audio Analog Stereo", True), (62, "HDMI / DisplayPort 1", False), (70, "WH-1000XM5", False)],
-                      nets=[dict(ssid="Carpatic-5G", signal=78, secure=True, active=True, security="WPA2"), dict(ssid="Cafe Bucegi", signal=61, secure=False, active=False, security=""),
+                      nets=[dict(ssid="Carpathian-5G", signal=78, secure=True, active=True, security="WPA2"), dict(ssid="Cafe Bucegi", signal=61, secure=False, active=False, security=""),
                             dict(ssid="Vecini_2.4", signal=44, secure=True, active=False, security="WPA2"), dict(ssid="DIRECT-roku-8F3", signal=20, secure=True, active=False, security="WPA2")],
                       btdevs=[dict(mac="AA:BB:CC:00:11:22", name="WH-1000XM5", connected=True, paired=True, icon="audio-headphones"),
                               dict(mac="AA:BB:CC:00:11:33", name="MX Keys", connected=False, paired=True, icon="input-keyboard"),
                               dict(mac="AA:BB:CC:00:11:44", name="Pixel Buds", connected=False, paired=True, icon="audio-headset")],
-                      capture=True, known={"Carpatic-5G", "Cafe Bucegi"})
+                      capture=True, known={"Carpathian-5G", "Cafe Bucegi"})
         self.s.update(kw)
 
     def _l(self, *a): self.log.append(a)

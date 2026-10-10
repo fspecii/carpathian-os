@@ -1,5 +1,5 @@
 #!/bin/sh
-# carpatic-touchpad: touchpad settings for the Carpatic desktop (libinput through xinput). Used by Carpatic System > Touchpad.
+# carpatic-touchpad: touchpad settings for the Carpathian desktop (libinput through xinput). Used by Carpathian System > Touchpad.
 #
 #   carpatic-touchpad status                      current values (what the X server really uses)
 #   carpatic-touchpad set <key> <value>           save and apply. Keys:

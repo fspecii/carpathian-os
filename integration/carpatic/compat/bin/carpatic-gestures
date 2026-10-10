@@ -1,5 +1,5 @@
 #!/bin/sh
-# carpatic-gestures: multi-finger touchpad gestures for the Carpatic desktop (X11 has no gesture support of its own).
+# carpatic-gestures: multi-finger touchpad gestures for the Carpathian desktop (X11 has no gesture support of its own).
 # Reads libinput's gesture events (`libinput debug-events`, needs the "input" group, which the desktop user has) and runs actions.
 #
 #   carpatic-gestures start | stop | restart | status

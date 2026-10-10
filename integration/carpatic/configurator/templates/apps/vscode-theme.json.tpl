@@ -1,5 +1,5 @@
 {
-    "name": "Carpatic",
+    "name": "Carpathian",
     "$schema": "vscode://schemas/color-theme",
     "type": "{{ theme_type }}",
     "semanticHighlighting": true,

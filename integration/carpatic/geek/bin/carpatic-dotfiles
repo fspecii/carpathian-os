@@ -1,5 +1,5 @@
 #!/bin/sh
-# carpatic-dotfiles: keep your Carpatic settings in your own git repository. Idea from Omarchy's dotfiles chapter (MIT, see NOTICE).
+# carpatic-dotfiles: keep your Carpathian settings in your own git repository. Idea from Omarchy's dotfiles chapter (MIT, see NOTICE).
 #
 #   carpatic-dotfiles init [REPO-ADDRESS]   start a repository in ~/.config/carpatic (settings, hooks, themes, web apps, menu additions)
 #   carpatic-dotfiles status                what changed since the last sync
@@ -60,7 +60,7 @@ case ${1:-help} in
     write_ignore; ensure_id
     [ -n "${2:-}" ] && G remote add origin "$2"
     scan || exit 1
-    G add -A && G commit -q -m "Carpatic settings: first commit" && echo "Started a repository in $CFG with your current settings."
+    G add -A && G commit -q -m "Carpathian settings: first commit" && echo "Started a repository in $CFG with your current settings."
     [ -n "${2:-}" ] && echo "Push it with: carpatic dotfiles sync" || echo "Set where to push with: carpatic dotfiles remote git@github.com:you/dotfiles.git" ;;
   status)
     need_repo
@@ -71,7 +71,7 @@ case ${1:-help} in
   sync)
     need_repo; ensure_id; scan || exit 1
     G add -A
-    if [ -n "$(G status --porcelain)" ]; then G commit -q -m "Carpatic settings $(date '+%Y-%m-%d %H:%M') on $(hostname 2>/dev/null || echo this computer)" && echo "Saved your changes."; else echo "Nothing changed."; fi
+    if [ -n "$(G status --porcelain)" ]; then G commit -q -m "Carpathian settings $(date '+%Y-%m-%d %H:%M') on $(hostname 2>/dev/null || echo this computer)" && echo "Saved your changes."; else echo "Nothing changed."; fi
     if G remote get-url origin >/dev/null 2>&1; then
       G fetch -q origin 2>/dev/null && G rebase -q origin/main 2>/dev/null
       if out=$(G push -q -u origin main 2>&1); then echo "Pushed to $(G remote get-url origin)."; hook dotfiles-sync

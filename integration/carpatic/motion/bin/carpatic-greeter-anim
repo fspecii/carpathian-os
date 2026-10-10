@@ -16,7 +16,7 @@ LIB=${CARPATIC_LIB:-$(dirname "$SELF")/../lib}
 # shellcheck source=../lib/ttylib.sh
 source "$LIB/ttylib.sh"
 LOGO=${CARPATIC_LOGO:-$(dirname "$SELF")/../../installer/wizard/logo.txt}
-TAGLINE="Linux, with a view."; HINT="Press Enter to install Carpatic"
+TAGLINE="Linux, with a view."; HINT="Press Enter to install Carpathian"
 DUMP=""; SIZE=""
 while (($#)); do case $1 in
   --logo) LOGO=$2; shift ;; --tagline) TAGLINE=$2; shift ;; --hint) HINT=$2; shift ;;

@@ -120,7 +120,7 @@ def main():
             if a.display == 'gtk':
                 display = 'gtk,grab-on-hover=on' + (',gl=on' if a.graphics == 'virgl' else '')
             media = (['-drive', f'file={cdrom},format=raw,media=cdrom,readonly=on', '-boot', 'order=d,strict=on'] if cdrom else [])
-            call(['qemu-system-x86_64', '-name', f'Carpatic Rust test {a.name}',
+            call(['qemu-system-x86_64', '-name', f'Carpathian OS test {a.name}',
                   '-machine', 'q35,accel=kvm,vmport=off', '-cpu', 'host', '-smp', '2', '-m', str(a.ram),
                   '-device', device+',edid=on,xres=1360,yres=768', '-display', display,
                   '-drive', f'file={vm / "overlay.qcow2"},format=qcow2,if=virtio',

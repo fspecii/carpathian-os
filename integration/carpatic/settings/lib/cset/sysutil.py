@@ -1,4 +1,4 @@
-"""Small, GTK-free helpers shared by every page: run commands (foreground, background, with polkit), read the Carpatic state files,
+"""Small, GTK-free helpers shared by every page: run commands (foreground, background, with polkit), read the Carpathian OS state files,
 parse the output of the system tools. Everything is testable on the host: set CSET_DRY=1 and no command that changes the system
 is executed (the command line is appended to $CSET_DRY_LOG instead)."""
 import os, re, shutil, subprocess, threading, time
@@ -136,7 +136,7 @@ def desktop_entries():
 
 # Display scale choices shared by Settings > Displays and Settings > Appearance > Fonts (policy: configurator/bin/carpatic-scale)
 SCALE_CHOICES = [("auto", "Auto"), ("100", "100%"), ("125", "125%"), ("150", "150%"), ("175", "175%"), ("200", "200%"), ("250", "250%"), ("300", "300%")]
-SCALE_NOTE = "Windows, the panel, bars and Carpatic apps change straight away. Apps that were already open (a browser, for example) take the new size when you close and open them again."
+SCALE_NOTE = "Windows, the panel, bars and Carpathian OS apps change straight away. Apps that were already open (a browser, for example) take the new size when you close and open them again."
 
 
 def scale_value():

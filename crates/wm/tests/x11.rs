@@ -229,7 +229,7 @@ fn real_x11_window_lifecycle() -> Result<()> {
             id,
             AtomEnum::WM_NAME,
             AtomEnum::STRING,
-            format!("Carpatic test {}", index + 1).as_bytes(),
+            format!("Carpathian test {}", index + 1).as_bytes(),
         )?;
         conn.change_property32(
             PropMode::REPLACE,
@@ -1871,6 +1871,10 @@ fn combined_states_icons_priority_and_all_tag_layout_memory() -> Result<()> {
             .unwrap_or_default()
             .contains(&id)
     });
+    // Client-list publication can precede the completed caption upload.
+    wait("managed native caption published", || {
+        native_chrome(&conn, root, id).is_some()
+    });
     let titlebar = native_chrome(&conn, root, id).expect("managed native chrome");
     wait("native titlebar paints application icon", || {
         conn.get_image(ImageFormat::Z_PIXMAP, titlebar, 20, 17, 1, 1, u32::MAX)
@@ -3131,13 +3135,25 @@ fn native_frame_preserves_client_shapes_and_click_through_holes() -> Result<()> 
     std::fs::write(dir.join("window-rules.toml"), "rules=[]\n")?;
     std::fs::write(
         dir.join("hotkeys.toml"),
-        "keys=[{mod='SUPER SHIFT',key='q',func='quit'}]\n",
+        "keys=[{mod='SUPER',key='r',func='reload'},{mod='SUPER SHIFT',key='q',func='quit'}]\n",
     )?;
     let (conn, screen) = x11rb::connect(None)?;
     let root = conn.setup().roots[screen].root;
     assert!(conn.shape_query_version()?.reply()?.minor_version >= 1);
+    // Root metadata survives the previous WM; the new process owns a fresh counter.
+    conn.change_property32(
+        PropMode::REPLACE,
+        root,
+        atom(&conn, "_CARPATIC_CONFIG_SERIAL")?,
+        AtomEnum::CARDINAL,
+        &[1],
+    )?
+    .check()?;
     let mut wm = start_with_policy(false, false)?;
     wait("shape-hole WM ready", || ready(&conn, root, &wm));
+    wait("new WM resets inherited configuration serial", || {
+        property(&conn, root, "_CARPATIC_CONFIG_SERIAL").unwrap_or_default() == vec![0]
+    });
     let receiver = conn.generate_id()?;
     conn.create_window(
         0,
@@ -3372,6 +3388,112 @@ fn native_frame_preserves_client_shapes_and_click_through_holes() -> Result<()> 
         "visual hole exposes lower magenta receiver",
         pixel.data.get(..3) == Some(&[0xcc, 0x22, 0xdd]),
     );
+    // A move preserves local shape inputs; the next same-size shape edit must
+    // still bypass that cache through ShapeNotify.
+    let before_move = geometry(&conn, frame);
+    conn.configure_window(
+        client,
+        &ConfigureWindowAux::new()
+            .x(i32::from(before_move.x) + 45)
+            .y(i32::from(before_move.y) + 25),
+    )?;
+    conn.flush()?;
+    wait("position-only shaped client move applied", || {
+        let g = geometry(&conn, frame);
+        g.x != before_move.x || g.y != before_move.y
+    });
+    let moved = geometry(&conn, frame);
+    check(
+        "position-only move preserves frame dimensions",
+        (moved.width, moved.height) == (before_move.width, before_move.height),
+    );
+    for kind in [SK::BOUNDING, SK::INPUT] {
+        conn.shape_rectangles(
+            SO::SET,
+            kind,
+            ClipOrdering::UNSORTED,
+            client,
+            0,
+            0,
+            &ring(220),
+        )?
+        .check()?;
+    }
+    conn.flush()?;
+    thread::sleep(Duration::from_millis(200));
+    let changed_hole = translated(240, 80);
+    check(
+        "same-size moved frame follows dynamic bounding hole",
+        !contains(frame, SK::BOUNDING, changed_hole.dst_x, changed_hole.dst_y),
+    );
+    check(
+        "same-size moved frame follows dynamic input hole",
+        !contains(frame, SK::INPUT, changed_hole.dst_x, changed_hole.dst_y),
+    );
+    check(
+        "moved dynamic hole actual click-through",
+        click(240, 80)? == (0, 1),
+    );
+    check(
+        "previous hole restored solid after same-size shape edit",
+        click(160, 80)? == (1, 0),
+    );
+    check(
+        "square frame caption corner initially occupied",
+        contains(frame, SK::BOUNDING, 0, 0),
+    );
+    let serial = property(&conn, root, "_CARPATIC_CONFIG_SERIAL")?;
+    let theme_path = dir.join("themes.toml");
+    let theme = std::fs::read_to_string(&theme_path)?;
+    std::fs::write(
+        &theme_path,
+        theme.replace("corner_radius=0", "corner_radius=12"),
+    )?;
+    xdotool(&["key", "super+r"]);
+    wait("radius reload processed without geometry change", || {
+        property(&conn, root, "_CARPATIC_CONFIG_SERIAL").unwrap_or_default() != serial
+    });
+    let rounded = geometry(&conn, frame);
+    check(
+        "radius reload preserves outer geometry",
+        (rounded.x, rounded.y, rounded.width, rounded.height)
+            == (moved.x, moved.y, moved.width, moved.height),
+    );
+    check(
+        "radius reload updates frame corner bounding",
+        !contains(frame, SK::BOUNDING, 0, 0),
+    );
+    check(
+        "radius reload updates frame corner input",
+        !contains(frame, SK::INPUT, 0, 0),
+    );
+    check(
+        "radius reload preserves app-owned bounding hole",
+        !contains(client, SK::BOUNDING, 240, 80),
+    );
+    check(
+        "radius reload preserves app-owned input hole",
+        !contains(client, SK::INPUT, 240, 80),
+    );
+    check(
+        "radius reload keeps hole click-through",
+        click(240, 80)? == (0, 1),
+    );
+    // Restore the original interior hole for the existing fullscreen/restart cases.
+    for kind in [SK::BOUNDING, SK::INPUT] {
+        conn.shape_rectangles(
+            SO::SET,
+            kind,
+            ClipOrdering::UNSORTED,
+            client,
+            0,
+            0,
+            &ring(140),
+        )?
+        .check()?;
+    }
+    conn.flush()?;
+    thread::sleep(Duration::from_millis(200));
     // Fullscreen changes body origin and border but must retain app-owned masks.
     let fullscreen = atom(&conn, "_NET_WM_STATE_FULLSCREEN")?;
     for enabled in [true, false] {
@@ -3703,6 +3825,158 @@ fn argb_native_border_keeps_opaque_alpha_across_focus_states() -> Result<()> {
     assert!(
         failures.is_empty(),
         "ARGB native border alpha failures: {failures:?}"
+    );
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires private Xvfb; run tests/run.sh"]
+fn native_caption_repaints_only_after_final_expose_fragment() -> Result<()> {
+    assert_eq!(
+        std::env::var("CARPATIC_WM_TEST_DISPLAY").as_deref(),
+        Ok("1")
+    );
+    assert!(std::env::var_os("WAYLAND_DISPLAY").is_none());
+    let dir = std::path::PathBuf::from(std::env::var("CARPATIC_CONFIG_DIR")?);
+    let _config = ConfigRestore::new(&dir);
+    std::fs::write(dir.join("themes.toml"), "[active]\ntheme='expose-proof'\n[appearance]\nworkspaces=4\ndefault_layout='float'\nborderpx=2\nborder_highlight=0\ncorner_radius=0\n[theme.expose-proof]\nselbgcolor='#183645'\n[titlebar]\nenabled=1\nheight=32\nbutton_style='windows'\n")?;
+    std::fs::write(dir.join("window-rules.toml"), "rules=[]\n")?;
+    std::fs::write(
+        dir.join("hotkeys.toml"),
+        "keys=[{mod='SUPER SHIFT',key='q',func='quit'}]\n",
+    )?;
+    let (conn, screen) = x11rb::connect(None)?;
+    let root = conn.setup().roots[screen].root;
+    let mut wm = start_with_policy(false, false)?;
+    wait("Expose batching WM ready", || ready(&conn, root, &wm));
+    let client = conn.generate_id()?;
+    conn.create_window(
+        0,
+        client,
+        root,
+        200,
+        200,
+        400,
+        260,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &CreateWindowAux::new().background_pixel(0x25a9df),
+    )?;
+    conn.map_window(client)?;
+    conn.flush()?;
+    wait("Expose caption published and focused", || {
+        native_chrome(&conn, root, client).is_some()
+            && property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![client]
+    });
+    let caption = native_chrome(&conn, root, client).unwrap();
+    wait("Expose caption initially viewable", || {
+        conn.get_window_attributes(caption)
+            .unwrap()
+            .reply()
+            .unwrap()
+            .map_state
+            == MapState::VIEWABLE
+    });
+    let barrier = || -> Result<()> {
+        // Same sender's FIFO delivery orders the Expose before this request.
+        // Distinct sentinel avoids accepting stale extents as acknowledgment.
+        conn.change_property32(
+            PropMode::REPLACE,
+            client,
+            atom(&conn, "_NET_FRAME_EXTENTS")?,
+            AtomEnum::CARDINAL,
+            &[99, 99, 99, 99],
+        )?
+        .check()?;
+        message(
+            &conn,
+            root,
+            client,
+            "_NET_REQUEST_FRAME_EXTENTS",
+            [0, 0, 0, 0, 0],
+        )?;
+        wait("WM processes Expose barrier", || {
+            property(&conn, client, "_NET_FRAME_EXTENTS").unwrap_or_default() == vec![2, 2, 34, 2]
+        });
+        Ok(())
+    };
+    barrier()?;
+    let pixel = || -> Result<Vec<u8>> {
+        Ok(conn
+            .get_image(ImageFormat::Z_PIXMAP, caption, 5, 5, 1, 1, u32::MAX)?
+            .reply()?
+            .data)
+    };
+    let original = pixel()?;
+    assert!(
+        original.iter().take(3).any(|byte| *byte != 0),
+        "initial caption paint must exist"
+    );
+    let gc = conn.generate_id()?;
+    conn.create_gc(
+        gc,
+        caption,
+        &CreateGCAux::new()
+            .foreground(0xff00ff)
+            .graphics_exposures(0),
+    )?;
+    // FillRectangle damages contents without requesting a server Expose event.
+    conn.poly_fill_rectangle(
+        caption,
+        gc,
+        &[Rectangle {
+            x: 5,
+            y: 5,
+            width: 1,
+            height: 1,
+        }],
+    )?
+    .check()?;
+    let marker = pixel()?;
+    assert_ne!(
+        marker.get(..3),
+        original.get(..3),
+        "marker must alter the pixel"
+    );
+    let expose = |count: u16| -> Result<()> {
+        conn.send_event(
+            false,
+            caption,
+            EventMask::EXPOSURE,
+            ExposeEvent {
+                response_type: EXPOSE_EVENT,
+                sequence: 0,
+                window: caption,
+                x: 5,
+                y: 5,
+                width: 1,
+                height: 1,
+                count,
+            },
+        )?
+        .check()?;
+        barrier()
+    };
+    expose(1)?;
+    let during_batch = pixel()?;
+    expose(0)?;
+    let after_batch = pixel()?;
+    println!("EXPOSE_BATCH caption={caption:#x} original={original:?} marked={marker:?} count1={during_batch:?} count0={after_batch:?}");
+    conn.free_gc(gc)?;
+    conn.destroy_window(client)?;
+    conn.flush()?;
+    xdotool(&["key", "super+shift+q"]);
+    assert!(wm.0.wait()?.success());
+    assert_eq!(
+        during_batch.get(..3),
+        marker.get(..3),
+        "non-final Expose must not repaint caption yet"
+    );
+    assert_eq!(
+        after_batch.get(..3),
+        original.get(..3),
+        "final Expose must restore caption paint"
     );
     Ok(())
 }

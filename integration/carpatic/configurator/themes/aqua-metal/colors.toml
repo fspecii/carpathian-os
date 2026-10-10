@@ -3,7 +3,7 @@
 # brushed-metal switch (upstream/desktop/DesktopKit DesktopThemePresets.swift "aqua-metal",
 # brushedMetal: true, @ 01246414fe9517d883b9489ba3e9e9f3780f479e). The metal title bars are a
 # native dwm/carpatic-wm follow-up (see docs/LINPAD-THEME-PORT.md); this theme carries the data side.
-# Wallpapers in this folder are original Carpatic artwork (procedural, CC0; aqua swooshes + brushed metal).
+# Wallpapers in this folder are original Carpathian artwork (procedural, CC0; aqua swooshes + brushed metal).
 mode = "light"
 
 accent = "#3875d7"

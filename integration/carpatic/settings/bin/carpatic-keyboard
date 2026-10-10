@@ -1,5 +1,5 @@
 #!/bin/sh
-# carpatic-keyboard: keyboard layouts and key repeat for X (setxkbmap, xset). Used by Carpatic Settings > Keyboard.
+# carpatic-keyboard: keyboard layouts and key repeat for X (setxkbmap, xset). Used by Carpathian Settings > Keyboard.
 #   carpatic-keyboard status                      layouts (comma list), variant, options, repeat delay/rate
 #   carpatic-keyboard layouts <us,de,ro>          set the layouts (first is default); variants as us:intl is not supported here, use set-variant
 #   carpatic-keyboard variants <layout>           list variants of a layout

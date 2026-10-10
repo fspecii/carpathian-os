@@ -1,7 +1,7 @@
-# Carpatic motion: boot splash, greeter, login intro, screensaver
+# Carpathian motion: boot splash, greeter, login intro, screensaver
 
 One story: **mountains rise in layers, the ember sun comes up behind them, then the sun breathes.** Inspired by what Omarchy does at startup (Plymouth progress bar, a
-terminaltexteffects greeter, per-theme intro videos, a ttfx screensaver, direct boot), all rebuilt from scratch in the Carpatic design language
+terminaltexteffects greeter, per-theme intro videos, a ttfx screensaver, direct boot), all rebuilt from scratch in the Carpathian design language
 (`docs/DESIGN-SYSTEM.md` section 7.1). What Omarchy does and what was kept or changed: `RESEARCH.md`. Other owners' to-do list: `NEEDS.md`. Fast boot: `FASTBOOT.md`.
 
 | Piece | Where | Previews |

@@ -1,5 +1,5 @@
 #!/bin/sh
-# carpatic-mouse: pointer settings (libinput through xinput). Used by Carpatic Settings > Mouse.
+# carpatic-mouse: pointer settings (libinput through xinput). Used by Carpathian Settings > Mouse.
 #   carpatic-mouse status                 what the X server uses: speed, accel, natural, left-handed (or "No mouse found")
 #   carpatic-mouse set <key> <value>      save and apply. Keys: speed -1.0..1.0 | accel flat|adaptive | natural on|off | left-handed on|off | middle-emulation on|off
 #   carpatic-mouse reset | apply          (the session calls apply at login)

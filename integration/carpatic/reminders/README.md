@@ -1,12 +1,12 @@
-# Carpatic Reminders
+# Carpathian Reminders
 
 A local GTK3 reminder manager with title, optional notes, optional due date/time, edit, completion/reopen and deletion. Data is shared by GUI and CLI in `$XDG_DATA_HOME/carpatic/reminders/reminders.json` (default `~/.local/share/carpatic/reminders/reminders.json`). It never writes to calendar ICS files, uses no accounts/network, and the editor starts no daemon automatically. A separate Gio-only notifier delivers timed due alerts through the local freedesktop notification server.
 
 ## Run and integration
 
-Run `bin/carpatic-reminders` from this directory or use the installed `carpatic-reminders`. Python3 and GTK3/PyGObject are runtime requirements (Alpine: `python3 py3-gobject3 gtk+3.0`). The active Carpatic Settings palette is reused when that component is present; otherwise the app uses its original neutral light palette and system widgets. No proprietary artwork or upstream theme assets are included.
+Run `bin/carpatic-reminders` from this directory or use the installed `carpatic-reminders`. Python3 and GTK3/PyGObject are runtime requirements (Alpine: `python3 py3-gobject3 gtk+3.0`). The active Carpathian Settings palette is reused when that component is present; otherwise the app uses its original neutral light palette and system widgets. No proprietary artwork or upstream theme assets are included.
 
-`install.sh` installs only program files and an application menu entry. `DESTDIR=/absolute/staging/path ./install.sh` supports reviewable staging without touching the running OS. The Alpine desktop-tools installer includes this component, and the managed Carpatic session hook starts its notifier; standalone installation remains inert.
+`install.sh` installs only program files and an application menu entry. `DESTDIR=/absolute/staging/path ./install.sh` supports reviewable staging without touching the running OS. The Alpine desktop-tools installer includes this component, and the managed Carpathian session hook starts its notifier; standalone installation remains inert.
 
 Calendar's selected-date link opens `carpatic-reminders --date YYYY-MM-DD`; its Add button opens `carpatic-reminders --date YYYY-MM-DD --new`. The app uses `org.carpatic.Reminders` for single-instance GTK/GApplication routing. The flyout reads pending counts using the same CLI/store on a delayed worker thread, with a two-second timeout and a bounded result. There is one reminder store and no synchronization copy. Opening another app/date reloads the list. The calendar count is refreshed on flyout open/date change, not continuously while idle; a changed store in an already-open flyout requires reopening the flyout.
 
@@ -31,7 +31,7 @@ Select a row to edit it, toggle its checkbox to complete/reopen, or use the edit
 
 ## Optional timed alerts
 
-`carpatic-reminders notify-service` runs the notifier on the user's session bus. It uses Gio/PyGObject without importing GTK. **The standalone component installer does not start this service or install autostart entries**. The Alpine desktop-tools installer includes the component; the managed Carpatic login hook starts the notifier on its private session bus. Integrated login acceptance is a separate lead gate. The GTK editor does not start the notifier secretly. Its hint distinguishes this dependency.
+`carpatic-reminders notify-service` runs the notifier on the user's session bus. It uses Gio/PyGObject without importing GTK. **The standalone component installer does not start this service or install autostart entries**. The Alpine desktop-tools installer includes the component; the managed Carpathian login hook starts the notifier on its private session bus. Integrated login acceptance is a separate lead gate. The GTK editor does not start the notifier secretly. Its hint distinguishes this dependency.
 
 Only pending reminders with **both a date and a time** alert; date-only and undated tasks do not alert. Timed overdue reminders alert once when the notifier starts. A Gio directory monitor reloads edits/completion/deletion off the event loop, and one next-deadline GLib timer is armed. While scheduled undelivered items exist, deadline revalidation is capped at 60 seconds to detect wall-clock changes and resume drift; an empty, completed-only or fully delivered store has no periodic timer. Detection after a clock/time-zone change or resume is within the next revalidation interval plus delivery/queue time, not a hard real-time guarantee.
 

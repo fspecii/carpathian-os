@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """carpatic-vscode-theme THEME.json [dark|light]
-Installs the generated "Carpatic" colour theme for every VS Code family editor it finds and selects it, with live updates:
+Installs the generated "Carpathian" colour theme for every VS Code family editor it finds and selects it, with live updates:
  - extension "carpatic.carpatic-theme" in the extensions dir of each editor (applies after a window reload / restart)
- - the same colours as workbench.colorCustomizations["[Carpatic]"] in settings.json, which editors watch, so a running window retints at once
+ - the same colours as workbench.colorCustomizations["[Carpathian]"] in settings.json, which editors watch, so a running window retints at once
 Editors/paths (config dir -> extensions dir):
   VSCodium, Code - OSS (native build / compat box):  ~/.config/VSCodium|Code - OSS/User -> ~/.vscode-oss/extensions
   VS Code (Ubuntu compat box shares $HOME):          ~/.config/Code/User -> ~/.vscode/extensions
   Flatpak VSCodium / Code - OSS / VS Code:           ~/.var/app/<id>/config/<name>/User -> ~/.var/app/<id>/data/<codium|vscode-oss|vscode>/extensions
-A settings.json that has comments (JSONC) is left alone and reported: then pick the theme "Carpatic" once by hand."""
+A settings.json that has comments (JSONC) is left alone and reported: then pick the theme "Carpathian" once by hand."""
 import json, os, re, sys, shutil
 H = os.path.expanduser("~")
 src, mode = sys.argv[1], (sys.argv[2] if len(sys.argv) > 2 else "dark")
 theme = json.load(open(src))
-theme["name"] = "Carpatic"
+theme["name"] = "Carpathian"
 EDITORS = [  # (user dir, extensions dir)
     (f"{H}/.config/VSCodium/User", f"{H}/.vscode-oss/extensions"),
     (f"{H}/.config/Code - OSS/User", f"{H}/.vscode-oss/extensions"),
@@ -22,8 +22,8 @@ EDITORS = [  # (user dir, extensions dir)
     (f"{H}/.var/app/com.visualstudio.code/config/Code/User", f"{H}/.var/app/com.visualstudio.code/data/vscode/extensions"),
 ]
 VERSION = "1.0.0"
-pkg = {"name": "carpatic-theme", "displayName": "Carpatic", "publisher": "carpatic", "version": VERSION, "engines": {"vscode": "^1.60.0"},
-       "categories": ["Themes"], "contributes": {"themes": [{"label": "Carpatic", "uiTheme": "vs" if mode == "light" else "vs-dark", "path": "./themes/carpatic.json"}]}}
+pkg = {"name": "carpatic-theme", "displayName": "Carpathian", "publisher": "carpatic", "version": VERSION, "engines": {"vscode": "^1.60.0"},
+       "categories": ["Themes"], "contributes": {"themes": [{"label": "Carpathian", "uiTheme": "vs" if mode == "light" else "vs-dark", "path": "./themes/carpatic.json"}]}}
 done = []
 for user, ext in EDITORS:
     if not (os.path.isdir(user) or os.path.isdir(ext)):
@@ -46,13 +46,13 @@ for user, ext in EDITORS:
         try:
             txt = open(sj).read() if os.path.exists(sj) else "{}"
             if re.search(r"(^|[^:\"])//|/\*", txt):
-                print(f"{sj}: has comments, not edited; choose the theme Carpatic once", file=sys.stderr)
+                print(f"{sj}: has comments, not edited; choose the theme Carpathian once", file=sys.stderr)
             else:
                 s = json.loads(txt or "{}")
-                s["workbench.colorTheme"] = "Carpatic"
-                s.setdefault("workbench.colorCustomizations", {})["[Carpatic]"] = theme.get("colors", {})
-                s.setdefault("editor.semanticTokenColorCustomizations", {})["[Carpatic]"] = {"enabled": True, "rules": theme.get("semanticTokenColors", {})}
-                s.setdefault("editor.tokenColorCustomizations", {})["[Carpatic]"] = {"textMateRules": theme.get("tokenColors", [])}
+                s["workbench.colorTheme"] = "Carpathian"
+                s.setdefault("workbench.colorCustomizations", {})["[Carpathian]"] = theme.get("colors", {})
+                s.setdefault("editor.semanticTokenColorCustomizations", {})["[Carpathian]"] = {"enabled": True, "rules": theme.get("semanticTokenColors", {})}
+                s.setdefault("editor.tokenColorCustomizations", {})["[Carpathian]"] = {"textMateRules": theme.get("tokenColors", [])}
                 tmp = sj + ".tmp"; json.dump(s, open(tmp, "w"), indent=2); os.replace(tmp, sj)
         except Exception as e:
             print(f"{sj}: {e}", file=sys.stderr)

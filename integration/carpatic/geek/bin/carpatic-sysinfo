@@ -1,8 +1,8 @@
 #!/bin/sh
-# carpatic-sysinfo: about this computer (carpatic system info), a check that every Carpatic tool is in place (doctor), the version.
-# The look follows the terminal palette: ANSI cyan is the Carpatic accent, so the logo recolours with every theme.
+# carpatic-sysinfo: about this computer (carpatic system info), a check that every Carpathian tool is in place (doctor), the version.
+# The look follows the terminal palette: ANSI cyan is the Carpathian accent, so the logo recolours with every theme.
 #   carpatic-sysinfo            logo and facts
-#   carpatic-sysinfo doctor     are the Carpatic tools all installed? exit 1 when something is missing
+#   carpatic-sysinfo doctor     are the Carpathian tools all installed? exit 1 when something is missing
 #   carpatic-sysinfo version
 set -u
 PATH="$(cd "$(dirname "$0")" && pwd):$PATH"
@@ -30,7 +30,7 @@ info() {
   {
     printf '%s%s%s@%s%s\n' "$B" "$(id -un)" "$R" "$B$host" "$R"
     printf '%s\n' "$(printf '%s' "$(id -un)@$host" | sed 's/./-/g')"
-    row OS "Carpatic OS $VER (Alpine $(val VERSION_ID), musl)"
+    row OS "Carpathian OS $VER (Alpine $(val VERSION_ID), musl)"
     row Kernel "$(uname -r)"
     row Uptime "$up"
     [ "${pk:-0}" -gt 0 ] && row Packages "$pk (apk)"
@@ -62,7 +62,7 @@ L
 doctor() {
   miss=0; total=0
   chk() { total=$((total+1)); if command -v "$2" >/dev/null 2>&1; then printf '  %sok%s       %s\n' "$A" "$R" "$1"; else printf '  %smissing%s  %s (%s)\n' "$E" "$R" "$1" "$2"; miss=$((miss+1)); fi; }
-  echo "Carpatic tools on this computer"
+  echo "Carpathian tools on this computer"
   chk "carpatic command" carpatic
   chk "menu" carpatic-menu
   chk "keyboard shortcut sheet" carpatic-cheatsheet
@@ -96,7 +96,7 @@ doctor() {
 case ${1:-info} in
   info|"") info ;;
   doctor) doctor ;;
-  version|--version) echo "Carpatic OS $VER" ;;
+  version|--version) echo "Carpathian OS $VER" ;;
   -h|--help|help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) echo "carpatic system: I do not know '$1'. Try: info, doctor, version." >&2; exit 2 ;;
 esac

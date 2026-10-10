@@ -1,4 +1,4 @@
-"""Display scale for Carpatic's GTK3 apps (one place, so every app agrees).
+"""Display scale for Carpathian's GTK3 apps (one place, so every app agrees).
 
 The desktop runs at device pixels with a fractional scale (125%, 150% ...): the font DPI (Xft.dpi = 96 x scale) enlarges text, and everything that
 is written in px has to be multiplied by the same factor. GTK3's CSS ignores the font DPI, so an app that loads its own stylesheet would stay small

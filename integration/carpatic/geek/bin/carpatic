@@ -1,5 +1,5 @@
 #!/bin/sh
-# carpatic: one front door for every Carpatic tool.   carpatic <area> <verb> [arguments]
+# carpatic: one front door for every Carpathian tool.   carpatic <area> <verb> [arguments]
 #
 # Idea from Omarchy's `omarchy` router (MIT, see NOTICE), rebuilt for POSIX sh and the existing carpatic-* tools:
 # a plain table (share/commands.tsv) maps `carpatic theme set nord` to `carpatic-theme set nord`. The old commands keep working.
@@ -102,7 +102,7 @@ run_row() { # row args...
       carpatic-rollback|carpatic-update|carpatic-compat) printf '  It is part of the daily-driver tools. Reinstall them with: sh compat/install.sh\n' >&2 ;;
       carpatic-store*|carpatic-ai|carpatic-drivers)      printf '  It is part of the store. Reinstall it with: sh store/system/setup-flatpak.sh\n' >&2 ;;
       carpatic-power)                                    printf '  It is part of the power tools. Reinstall them with: sh power/install.sh\n' >&2 ;;
-      *) printf '  Reinstall the Carpatic tools to bring it back (see: carpatic system doctor).\n' >&2 ;;
+      *) printf '  Reinstall the Carpathian tools to bring it back (see: carpatic system doctor).\n' >&2 ;;
     esac
     exit 3
   fi

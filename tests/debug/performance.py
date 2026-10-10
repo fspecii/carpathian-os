@@ -49,7 +49,7 @@ def main():
     print(json.dumps(dict(kind='environment', alpine=Path('/etc/alpine-release').read_text().strip(),
                          renderer=renderer, cpu_count=os.cpu_count(),
                          note='CPU: 100%=one core; xprop latency is not frame time')), flush=True)
-    terminal = subprocess.Popen(['xterm', '-title', 'Carpatic performance probe'],
+    terminal = subprocess.Popen(['xterm', '-title', 'Carpathian performance probe'],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     hz = os.sysconf('SC_CLK_TCK')
     try:

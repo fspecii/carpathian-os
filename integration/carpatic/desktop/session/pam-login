@@ -1,4 +1,4 @@
-# Carpatic: PAM login stack with an elogind session (gives XDG_RUNTIME_DIR=/run/user/UID)
+# Carpathian: PAM login stack with an elogind session (gives XDG_RUNTIME_DIR=/run/user/UID)
 auth       required   pam_unix.so nullok
 account    required   pam_unix.so
 password   required   pam_unix.so sha512 shadow nullok

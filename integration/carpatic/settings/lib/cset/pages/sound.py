@@ -86,7 +86,7 @@ class NotificationsPage(Page):
     id = "notifications"; title = "Notifications"; icon = "preferences-system-notifications"; color = "#ff3b30"; group = 1
     keywords = "alerts banners dunst do not disturb focus silence popups"
     entries = (("Do Not Disturb", "focus silence quiet pause alerts", "dnd"), ("Show a test notification", "try preview", "test"), ("Notification history", "clear missed", "history"))
-    sub = "Choose when Carpatic may interrupt you."
+    sub = "Choose when Carpathian OS may interrupt you."
     def available(self): return su.which("dunstctl")
     def build(self, pb):
         self.pb = pb

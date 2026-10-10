@@ -1,4 +1,4 @@
-"""Shared "look" components used by Carpatic Settings (Appearance) and the Welcome wizard, so the style gallery and the theme gallery are the
+"""Shared "look" components used by Carpathian Settings (Appearance) and the Welcome wizard, so the style gallery and the theme gallery are the
 same widgets with the same previews everywhere. The previews are drawn by the theme picker's renderer (themepicker/lib/tp_render.draw_mock: the
 real wallpaper, the style's bars, windows with borders, gaps and buttons), which is also what the keyboard picker (Super+Ctrl+Shift+Space) shows.
 Without the picker's library a plain palette swatch is drawn instead. License: MIT."""
@@ -62,7 +62,7 @@ def theme_choices(mode=None):
     for n in cu.theme_names():
         c = cu.read_colors(n)
         if mode and c.get("mode", "dark") != mode: continue
-        out.append((n, n.replace("-", " ").title(), c))
+        out.append((n, {"carpatic": "Carpathian", "carpatic-light": "Carpathian Light"}.get(n, n.replace("-", " ").title()), c))
     return out
 
 # ---------------------------------------------------------------- painters

@@ -22,11 +22,11 @@ class AboutPage(Page):
                ("Kernel", "linux", "kernel"), ("Startup disk", "storage", "disk"), ("Copy system details", "report support clipboard", "copy"), ("Run the Welcome again", "setup assistant onboarding", "welcome"))
     optional = frozenset({"welcome"})
     def build(self, pb):
-        osr = ad.os_release() if not ad.FAKE else {"VERSION_ID": "1.0", "PRETTY_NAME": "Carpatic OS 1.0"}
+        osr = ad.os_release() if not ad.FAKE else {"VERSION_ID": "1.0", "PRETTY_NAME": "Carpathian OS 1.0"}
         top = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4); top.set_halign(Gtk.Align.CENTER); top.set_margin_top(8); top.set_margin_bottom(8)
         p = brand_icon(self.win.pal["mode"] == "dark")
         if p: top.pack_start(hidpi_image(p, 96), False, False, 0)
-        top.pack_start(label("Carpatic OS", "page-title", xalign=0.5), False, False, 4)
+        top.pack_start(label("Carpathian OS", "page-title", xalign=0.5), False, False, 4)
         top.pack_start(label("Version " + (osr.get("VERSION_ID") or osr.get("PRETTY_NAME", "")), "page-sub", xalign=0.5), False, False, 0)
         tag = label("Linux, with a view.", "muted", xalign=0.5); top.pack_start(tag, False, False, 0)
         pb.add(top)
@@ -42,7 +42,7 @@ class AboutPage(Page):
         tot, free = ad.disk_root()
         if tot: g.add(InfoRow("Startup disk", f"{su.human_bytes(tot)}, {su.human_bytes(free)} free", key="disk"))
         h = pb.group("System")
-        h.add(InfoRow("Version", osr.get("PRETTY_NAME", "Carpatic OS"), key="version"), InfoRow("Kernel", platform.release(), key="kernel"),
+        h.add(InfoRow("Version", osr.get("PRETTY_NAME", "Carpathian OS"), key="version"), InfoRow("Kernel", platform.release(), key="kernel"),
               InfoRow("Running for", ad.uptime_text(), key="uptime"))
         st = su.settings()
         style = st.get("PROFILE", "")
@@ -50,7 +50,7 @@ class AboutPage(Page):
         a = pb.group()
         a.add(ButtonRow("Copy system details", "For bug reports and the forum", "Copy", self.copy, key="copy"))
         if su.which("carpatic-welcome"): a.add(ButtonRow("Run the Welcome again", "Pick your desktop style and apps again", "Open", lambda: su.spawn("carpatic-welcome"), key="welcome"))
-        pb.add(label("Carpatic is free software. Built on Alpine Linux, dwm and many open-source projects; thank you to all of them.", "group-footer", xalign=0.5, wrap=True))
+        pb.add(label("Carpathian OS is free software. Built on Alpine Linux, an original Rust window manager and many open-source projects; thank you to all of them.", "group-footer", xalign=0.5, wrap=True))
     def rename(self, name):
         name = name.strip()
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,62}", name):
@@ -60,7 +60,7 @@ class AboutPage(Page):
         su.spawn(*su.pk("sh", "-c", f"echo {name} > /etc/hostname && hostname {name}"), done=done)
     def copy(self):
         osr = ad.os_release()
-        txt = "\n".join([f"Carpatic OS {osr.get('VERSION_ID','')}", f"Kernel: {platform.release()}", f"CPU: {ad.cpu_model()}", f"Memory: {su.human_bytes(ad.mem_total())}", f"GPU: {ad.gpu_name()}", f"Style: {su.settings().get('PROFILE','')}  Theme: {su.settings().get('THEME','')}"])
+        txt = "\n".join([f"Carpathian OS {osr.get('VERSION_ID','')}", f"Kernel: {platform.release()}", f"CPU: {ad.cpu_model()}", f"Memory: {su.human_bytes(ad.mem_total())}", f"GPU: {ad.gpu_name()}", f"Style: {su.settings().get('PROFILE','')}  Theme: {su.settings().get('THEME','')}"])
         ui.copy_text(txt); self.win.idle("Copied.")
 
 
@@ -87,14 +87,14 @@ class UpdatesPage(Page):
     id = "updates"; title = "Software Update"; icon = "software-update-available"; color = "#8e8e93"; group = 5
     aliases = ("update", "restore", "rollback")
     keywords = "upgrade packages apk restore points rollback snapshots restart check install"
-    sub = "Keep Carpatic up to date. Nothing is installed without you asking."
+    sub = "Keep Carpathian OS up to date. Nothing is installed without you asking."
     entries = (("Check for updates", "refresh apk upgrade new versions", "check"), ("Install updates", "upgrade apk", "install"), ("Restore points", "rollback snapshots btrfs undo", "restore"), ("Make a restore point now", "snapshot backup", "snap"))
     optional = frozenset({"restore", "snap"})
     def available(self): return su.which("carpatic-update")
     def build(self, pb):
         self.pb = pb
         g = pb.group()
-        self.status = StatusRow("Carpatic OS", "Up to date", "ok", "", key="check"); g.add(self.status)
+        self.status = StatusRow("Carpathian OS", "Up to date", "ok", "", key="check"); g.add(self.status)
         self.btns = ButtonRow("Updates", "", "Check for updates", lambda: self.admin("check", ["carpatic-update", "check"], "Looking for updates..."), key="install")
         self.btn_apply = self.btns.add_button("Install updates", lambda: self.admin("apply", ["carpatic-update", "apply"], "Installing updates. This can take a few minutes..."), "suggested")
         self.btn_restart = self.btns.add_button("Restart now", lambda: su.spawn("loginctl", "reboot"), "default"); self.btn_restart.set_no_show_all(True); self.btn_restart.hide()
@@ -103,7 +103,7 @@ class UpdatesPage(Page):
             ga = pb.group("Automatic updates", "Off unless you turn it on. When on, updates are installed once a day after a restore point is saved; the computer is never restarted for you.", key="auto")
             ga.add(SwitchRow("Install updates automatically", "Fixes arrive without you doing anything. Leave off to be only notified.", su.out("carpatic-security", "auto-updates", "status").strip() == "on",
                              lambda v: self.win.apply(*su.pk("carpatic-security", "auto-updates", "on" if v else "off"), msg="Saving..."), key="auto-updates"))
-        self.snap = pb.group("Restore points", "Before every update Carpatic keeps a copy of the system. If something goes wrong, restore it and restart. Your files in the home folder are never changed.", key="restore")
+        self.snap = pb.group("Restore points", "Before every update Carpathian OS keeps a copy of the system. If something goes wrong, restore it and restart. Your files in the home folder are never changed.", key="restore")
         self.snap_rows = []
         self.make = ButtonRow("Make a restore point now", "", "Make", lambda: self.admin("snap", ["carpatic-rollback", "snapshot", "manual"], "Saving a restore point..."), key="snap")
         self.snap.add(self.make)

@@ -1,4 +1,4 @@
-"""Carpatic Quick Look widgets that are not specific to one file type: the close button in the user's window-button style, the zoomable image
+"""Carpathian Quick Look widgets that are not specific to one file type: the close button in the user's window-button style, the zoomable image
 canvas, the seek bar (waveform), and a small mpv remote control."""
 import os, json, math, socket, subprocess, time
 import cairo

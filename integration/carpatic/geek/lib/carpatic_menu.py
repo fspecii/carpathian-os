@@ -2,7 +2,7 @@
 
 Idea from Omarchy's omarchy-menu (MIT, see NOTICE): the tree is data (share/menu.toml, extended by ~/.config/carpatic/menu.d/*.toml),
 entries can be hidden by context (laptop, Bluetooth ...), Esc goes back one level, typing filters. Rebuilt for rofi on X11 and the
-Carpatic design system. Python 3.11+ standard library only.
+Carpathian design system. Python 3.11+ standard library only.
 """
 import glob
 import html
@@ -641,11 +641,11 @@ class ScriptBackend(Backend):
 
 # --------------------------------------------------------------------------------------------------------- actions
 def term_title(text):
-    return "Carpatic: " + text
+    return "Carpathian: " + text
 
 
 def term_command(action, title="menu"):
-    """Command line that runs `action` in a small floating terminal and waits for Enter. The title starts with 'Carpatic' so the
+    """Command line that runs `action` in a small floating terminal and waits for Enter. The title starts with 'Carpathian' so the
     window rules float it (configurator/bin/carpatic-genrules)."""
     cfg = cfg_dir()
     font = read(os.path.join(cfg, "term-font")) or "JetBrains Mono:size=10"
@@ -724,7 +724,7 @@ def navigate(root, route, backend, dry=False, providers=None):
     search = False
     while stack:
         cur = stack[-1]
-        crumb = " › ".join(cur.crumbs()) if cur.key else "Carpatic"
+        crumb = " › ".join(cur.crumbs()) if cur.key else "Carpathian"
         rows = rows_of(cur, providers) if not search else flatten(root)
         if cur is root and not search:
             rows.append(Row("Find anything", None, "edit-find", "Type a few letters", enter="search"))

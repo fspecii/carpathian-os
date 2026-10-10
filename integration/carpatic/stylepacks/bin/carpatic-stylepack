@@ -69,7 +69,7 @@ case $cmd in
     curl -fsSL --retry 3 -m 900 -o "$WORK/pkg" "$url" || die "download failed: $url"
     echo "$sha  $WORK/pkg" | sha256sum -c - >/dev/null 2>&1 || die "checksum mismatch for $id (expected $sha): nothing was installed"
     note() { # dir kind : written next to every installed theme (licence + provenance + what was changed)
-      printf 'Package: %s\nSource: %s\nPinned: %s\nLicence: %s\nInstalled by Carpatic OS (carpatic-stylepack). %s\n' "$id" "$url" "$ref" "$lic" "${2:-Unmodified.}" > "$1/CARPATIC-SOURCE.txt"; }
+      printf 'Package: %s\nSource: %s\nPinned: %s\nLicence: %s\nInstalled by Carpathian OS (carpatic-stylepack). %s\n' "$id" "$url" "$ref" "$lic" "${2:-Unmodified.}" > "$1/CARPATIC-SOURCE.txt"; }
     case $id in
       zorin-gtk)
         tar -xzf "$WORK/pkg" -C "$WORK/x" || die "cannot unpack $id"; src=$(ls -d "$WORK"/x/*/ | head -1)

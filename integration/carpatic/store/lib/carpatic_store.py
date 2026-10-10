@@ -1,4 +1,4 @@
-"""Carpatic store core: catalog loading and a unified apk + Flatpak backend. Stdlib only (Python 3.11+)."""
+"""Carpathian store core: catalog loading and a unified apk + Flatpak backend. Stdlib only (Python 3.11+)."""
 import difflib
 import glob
 import json

@@ -1,5 +1,5 @@
 /* carpatic-clipwatch: waits until the X clipboard (CLIPBOARD selection) gets a new owner or new content, then exits 0.
- * Used by carpatic-clipd for clipboard history. Same idea as the small `clipnotify` tool (public domain, Cyril Hrubis style), written for Carpatic.
+ * Used by carpatic-clipd for clipboard history. Same idea as the small `clipnotify` tool (public domain, Cyril Hrubis style), written for Carpathian.
  * Build: cc -O2 -o carpatic-clipwatch clipwatch.c -lX11 -lXfixes */
 #include <stdio.h>
 #include <stdlib.h>

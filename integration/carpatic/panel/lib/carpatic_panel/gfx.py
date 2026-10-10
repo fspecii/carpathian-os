@@ -1,4 +1,4 @@
-"""cairo/Pango drawing helpers and the Carpatic UI glyph set (24 px grid, 1.75 stroke, round caps and joins, one colour).
+"""cairo/Pango drawing helpers and the Carpathian UI glyph set (24 px grid, 1.75 stroke, round caps and joins, one colour).
 
 Everything here works on a plain cairo context, so views render identically on screen and into PNGs for the tests."""
 import math, os

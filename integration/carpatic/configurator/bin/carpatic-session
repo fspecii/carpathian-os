@@ -1,7 +1,7 @@
 #!/bin/sh
 # carpatic-session start|restart : (re)start the per-profile helpers (bars, hotkey daemon, super-tap, focus log).
 # Called from the dwm autostart (start) and from carpatic-apply --restart (restart).
-[ -n "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ] || { echo 'Carpatic helpers require their own X11 session.' >&2; exit 1; }
+[ -n "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ] || { echo 'Carpathian helpers require their own X11 session.' >&2; exit 1; }
 export CARPATIC_SESSION=1
 command -v carpatic-session-process >/dev/null 2>&1 || { echo 'Missing carpatic-session-process; reinstall desktop tools.' >&2; exit 1; }
 present_name() { carpatic-session-process present --name "$1"; }
@@ -21,12 +21,12 @@ if [ "$mode" = start ]; then
   if [ -z "$dwmpid" ] || [ "$dwmpid" != "$(cat "$CFG/logins.pid" 2>/dev/null)" ]; then
     mkdir -p "$CFG"; [ -n "$dwmpid" ] && echo "$dwmpid" > "$CFG/logins.pid"
     n=$(cat "$CFG/logins" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$CFG/logins"
-    # -a Carpatic: the notification centre shows the sender's name ("notify-send" is not a name for a person)
+    # -a Carpathian: the notification centre shows the sender's name ("notify-send" is not a name for a person)
     if [ "$n" = 1 ] && command -v notify-send >/dev/null; then
-      (sleep 60; notify-send -a Carpatic -i input-keyboard "Every shortcut, one key away" "Press Super+K any time to see all keyboard shortcuts, and Super+T to turn auto-tiling on or off.") >/dev/null 2>&1 &
+      (sleep 60; notify-send -a Carpathian -i input-keyboard "Every shortcut, one key away" "Press Super+K any time to see all keyboard shortcuts, and Super+T to turn auto-tiling on or off.") >/dev/null 2>&1 &
     fi
     if [ "$n" = 2 ] && command -v notify-send >/dev/null; then
-      (sleep 8; notify-send -a Carpatic -i preferences-desktop-theme "Make it feel like home" "You can change your desktop style, colours, fonts and icons any time: press Super+F2 (Settings) and open Appearance.") >/dev/null 2>&1 &
+      (sleep 8; notify-send -a Carpathian -i preferences-desktop-theme "Make it feel like home" "You can change your desktop style, colours, fonts and icons any time: press Super+F2 (Settings) and open Appearance.") >/dev/null 2>&1 &
     fi
   fi
 fi
@@ -39,7 +39,7 @@ if [ ! -f "$CFG/settings.conf" ]; then
 fi
 [ "$mode" = start ] && { sleep 3; carpatic-apply; }   # let autostart finish; re-assert generated configs
 . "$CFG/profile.env"
-export CARPATIC_SESSION=1   # GUI helpers (panel, flyouts, Quick Look ...) refuse to run outside a Carpatic session
+export CARPATIC_SESSION=1   # GUI helpers (panel, flyouts, Quick Look ...) refuse to run outside a Carpathian session
 
 # GTK live settings daemon (themes, icons, fonts, cursors without restarting apps)
 command -v xsettingsd >/dev/null && ! present_name xsettingsd >/dev/null && bg xsettingsd

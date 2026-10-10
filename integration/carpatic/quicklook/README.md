@@ -25,7 +25,7 @@ Research and numbers: `RESEARCH.md`. Needs for packagers and other owners: `NEED
 `carpatic quicklook --off` / `--on` (`QUICKLOOK="on|off"` in `~/.config/carpatic/settings.conf`), `--status`, `--setup` (re-install the Space key in Thunar), `--stop`. It follows the theme, accent, light/dark, window corner radius and window-button style.
 
 ## Safety
-* Refuses to run outside a Carpatic X11 session (`carpatic-quicklook` and the daemon exit with a message; tests cover this). Never run it on a developer desktop.
+* Refuses to run outside a Carpathian X11 session (`carpatic-quicklook` and the daemon exit with a message; tests cover this). Never run it on a developer desktop.
 * Decoders in a separate process, under bubblewrap when installed, rlimits and a timeout; broken PDFs, images, fonts, archives and media were tested (random bytes with those extensions, a fifo, a dangling link): a friendly card, the daemon lives.
 * mpv: no config, no scripts, no youtube-dl, no playlists. Large files: only the first 512 kB of text, archive listings are capped, folder summaries are time-boxed.
 

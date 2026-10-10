@@ -44,7 +44,7 @@ for suite do
     case "$suite" in
         host) sh tests/host.sh >"$results/$suite.log" 2>&1 || rc=$?;;
         daily) sh tests/daily.sh >"$results/$suite.log" 2>&1 || rc=$?;;
-        themes) python3 tests/theme-port.py >"$results/$suite.log" 2>&1 || rc=$?;;
+        themes) { python3 tests/theme-port.py && python3 integration/carpatic/panel/tests/test_branding.py; } >"$results/$suite.log" 2>&1 || rc=$?;;
         alpine) sh tests/alpine.sh >"$results/$suite.log" 2>&1 || rc=$?;;
         desktop) sh tests/legacy-vm.sh >"$results/$suite.log" 2>&1 || rc=$?;;
         continuity) sh tests/continuity.sh >"$results/$suite.log" 2>&1 || rc=$?;;

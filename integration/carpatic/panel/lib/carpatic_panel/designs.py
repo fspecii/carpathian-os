@@ -119,5 +119,5 @@ def surfaces(cfg):
         dock = Surface("main", pos, th, "main", ["start"], ["tasks"], ([] if side else pager) + ["quick", "clock"], "floating", v["margin"], v["radius"])
         return [dock]
     if name == "minimal":
-        return [Surface("main", pos, th, "main", ["tags", "title"], [], tray + ["quick", "clock"], "minimal")]
+        return [Surface("main", pos, th, "main", ["logo", "tags", "title"], [], tray + ["quick", "clock"], "minimal")]
     raise ValueError(name)

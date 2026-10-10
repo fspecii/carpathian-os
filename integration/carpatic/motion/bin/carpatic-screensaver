@@ -1,5 +1,5 @@
 #!/bin/bash
-# carpatic-screensaver: the idle screen. A fullscreen terminal plays one of four original effects on the Carpatic mark and mountains.
+# carpatic-screensaver: the idle screen. A fullscreen terminal plays one of four original effects on the Carpathian mark and mountains.
 #   carpatic-screensaver start [effect]    start now (fullscreen terminal)          carpatic-screensaver stop     end it
 #   carpatic-screensaver watch             idle watcher (started once per login by the session autostart)
 #   carpatic-screensaver set on|off | timeout MINUTES | effect random|brand|rain|sunrise|stars | battery yes|no
@@ -8,7 +8,7 @@
 # Idle wiring: carpatic-idle runs xautolock (lock after CARPATIC_IDLE_MIN minutes, default 10). The screensaver starts earlier (default 3 minutes, always
 # at least one minute before the lock) and ends itself the moment the locker runs, so the lock screen is never hidden behind or revealed on top of it.
 # It does not start on battery (unless you ask for it), in power-saver, with reduced motion, while a window is fullscreen (video, game), or when disabled.
-# Inspired by Omarchy's ttfx screensaver (MIT, see NOTICE); effects, code and look are Carpatic's own. Pure bash + awk, ~20 frames per second.
+# Inspired by Omarchy's ttfx screensaver (MIT, see NOTICE); effects, code and look are Carpathian's own. Pure bash + awk, ~20 frames per second.
 SELF=$(readlink -f "${BASH_SOURCE[0]}")
 LIB=${CARPATIC_LIB:-$(dirname "$SELF")/../lib}
 [ -r "$LIB/ttylib.sh" ] || LIB=/usr/local/share/carpatic/motion
@@ -94,7 +94,7 @@ cmd_run() {
   . "$LIB/ttylib.sh"
   eff=$(pick_effect "$1"); echo $$ > "$PIDFILE.run" 2>/dev/null
   m_theme_colors
-  # the screensaver is always a night scene: a light theme keeps its accent (lightened) but gets the dark Carpatic background and text colours
+  # the screensaver is always a night scene: a light theme keeps its accent (lightened) but gets the dark Carpathian background and text colours
   if [ "$M_MODE" = light ]; then M_BG='#11151c'; M_BGDEEP='#0b0e13'; M_FG='#e7ecf3'; M_MUTED='#6b778c'; M_ACCENT=$(m_lighten "$M_ACCENT" 35); fi
   case ${CARPATIC_SAVER_DEPTH:-} in 24|256|16) depth=$CARPATIC_SAVER_DEPTH ;; *)
     case ${COLORTERM:-} in truecolor|24bit) depth=24 ;; *) case ${TERM:-} in linux) depth=16 ;; st*|xterm-direct*) depth=24 ;; *) depth=256 ;; esac ;; esac ;; esac

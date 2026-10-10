@@ -1,4 +1,4 @@
-"""Palette and style ("look") of the cards, derived from the active Carpatic theme and desktop style. Pure Python, no GTK."""
+"""Palette and style ("look") of the cards, derived from the active Carpathian theme and desktop style. Pure Python, no GTK."""
 import os, re
 from . import conf
 

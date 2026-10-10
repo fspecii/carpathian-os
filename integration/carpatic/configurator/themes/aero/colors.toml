@@ -1,7 +1,7 @@
 # Aero (light): 7-era glass title bars and light glass taskbar. Era of Windows 7 "Aero".
 # Palette data from the LinPad desktop-themes collection (CC0 1.0),
 # upstream/themes/desktop-themes/colors/aero/colors.toml @ 01246414fe9517d883b9489ba3e9e9f3780f479e.
-# Wallpapers in this folder are original Carpatic artwork (procedural, CC0; port of the upstream "aurora" scene).
+# Wallpapers in this folder are original Carpathian artwork (procedural, CC0; port of the upstream "aurora" scene).
 mode = "light"
 
 accent = "#3399ff"

@@ -1,4 +1,4 @@
-"""Reads the keyboard shortcuts of a Carpatic profile and renders them: text, search list, HTML, PDF.
+"""Reads the keyboard shortcuts of a Carpathian profile and renders them: text, search list, HTML, PDF.
 
 The source of truth is the generated hotkeys.toml (what dwm really reads) plus the profile's sxhkd file for the macOS Cmd shortcuts.
 Nothing here is hand-written per profile. Python 3.11+ standard library; PDF needs pycairo + PangoCairo (installed with the settings app).
@@ -335,7 +335,7 @@ def html_doc(profile, binds, brand_svg=""):
         note = "<p class=note>Cmd is the Super key. Cmd shortcuts are emulated: they send the matching Ctrl shortcut to the active app.</p>"
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Carpatic keyboard shortcuts: {html.escape(label)}</title>
+<title>Carpathian keyboard shortcuts: {html.escape(label)}</title>
 <style>
 :root {{ --bg:#f6f7f9; --surface:#ffffff; --fg:#172029; --muted:#4e5b6c; --border:#d8dee6; --accent:#16806a; --cap:#eef1f5; --capb:#c2cad5; }}
 @media (prefers-color-scheme: dark) {{ :root {{ --bg:#11151c; --surface:#171c25; --fg:#e7ecf3; --muted:#a3aec0; --border:#2c3442; --accent:#5cc8a8; --cap:#1e2430; --capb:#3a4455; }} }}
@@ -359,7 +359,7 @@ kbd {{ font:600 11px "JetBrains Mono","DejaVu Sans Mono",monospace; background:v
 footer {{ color:var(--muted); font-size:12px; margin-top:8px; }}
 </style></head>
 <body><main>
-<header>{brand_svg}<div><h1>Keyboard shortcuts</h1><p class=sub>Carpatic OS, {html.escape(label)}. Press {sup}+Alt+Space for the menu.</p></div></header>
+<header>{brand_svg}<div><h1>Keyboard shortcuts</h1><p class=sub>Carpathian OS, {html.escape(label)}. Press {sup}+Alt+Space for the menu.</p></div></header>
 {note}<div class=grid>{''.join(parts)}</div>
 <footer>Generated from the profile's hotkeys by <code>carpatic keys html</code>. Your own changes in ~/.config/carpatic are included when you generate it on your computer.</footer>
 </main></body></html>
@@ -382,7 +382,7 @@ def pdf_doc(profile, binds, path):
     colw = (W - 2 * M - GAP * (cols - 1)) / cols
     ROW, TITLE = 17.0, 26.0
     surf = cairo.PDFSurface(path, W, H)
-    surf.set_metadata(cairo.PDF_METADATA_TITLE, f"Carpatic keyboard shortcuts: {label}")
+    surf.set_metadata(cairo.PDF_METADATA_TITLE, f"Carpathian keyboard shortcuts: {label}")
     surf.set_metadata(cairo.PDF_METADATA_CREATOR, "carpatic keys pdf")
     cr = cairo.Context(surf)
 

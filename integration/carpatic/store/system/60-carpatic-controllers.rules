@@ -1,4 +1,4 @@
-# Carpatic: game controller access for the logged-in user (Steam Input needs uaccess/input group).
+# Carpathian: game controller access for the logged-in user (Steam Input needs uaccess/input group).
 # Based on the public steam-devices / game-devices-udev rule sets.
 KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess", MODE="0660", GROUP="input"
 # Valve: Steam Controller, Steam Deck, Valve Index

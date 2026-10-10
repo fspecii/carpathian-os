@@ -235,7 +235,7 @@ def toggle_todo(i):
 TIPS = [
     "Super+Space opens the launcher. Type a few letters of any app or file.",
     "Super+F1 shows every keyboard shortcut of your desktop style.",
-    "Super+F2 opens Carpatic Settings: style, colours, fonts, icons and more.",
+    "Super+F2 opens Carpathian Settings: style, colours, fonts, icons and more.",
     "Run `carpatic theme` in a terminal to try any colour theme in one command.",
     "Super+Ctrl+Space changes the wallpaper; the colours follow if you want them to.",
     "Press Print Screen for a region screenshot, Shift+Print for the whole screen.",
@@ -243,7 +243,7 @@ TIPS = [
     "Your files stay yours: nothing leaves this computer unless you start it.",
     "The power profile (performance, balanced, saver) is one click in Battery and power.",
     "Drag a widget in edit mode; it snaps to the grid and remembers its place.",
-    "Super+Alt+Space opens the Carpatic menu with everything in one list.",
+    "Super+Alt+Space opens the Carpathian menu with everything in one list.",
     "Light or dark? `carpatic theme set carpatic-light` switches the whole desktop.",
     "Hold Super and drag a window to move it; Super+right-drag resizes it.",
     "`carpatic widgets disable` turns every widget off and leaves no process behind.",

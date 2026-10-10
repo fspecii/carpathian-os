@@ -1,4 +1,4 @@
 #!/sbin/openrc-run
-description="Prepare the system for the Carpatic compatibility box (rootless containers)"
+description="Prepare the system for the Carpathian compatibility box (rootless containers)"
 depend() { need localmount; }
 start() { ebegin "Preparing rootless containers"; /usr/libexec/carpatic/compat-boot; eend 0; }

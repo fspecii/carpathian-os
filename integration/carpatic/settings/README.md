@@ -1,8 +1,8 @@
-# Carpatic Settings
+# Carpathian Settings
 
-The system settings app of Carpatic OS (GTK3, Python): `carpatic-settings [page]`, Super+F2. The layout follows macOS System Settings (Ventura/Sonoma/Sequoia):
+The system settings app of Carpathian OS (GTK3, Python): `carpatic-settings [page]`, Super+F2. The layout follows macOS System Settings (Ventura/Sonoma/Sequoia):
 a sidebar with a search field and grouped, colour-tiled rows, and a content area of titled grouped cards (label, secondary text, control on the right).
-Colours, accent, fonts and radii come from the active Carpatic theme and `docs/DESIGN-SYSTEM.md` (4 px grid, radii 4/6/10/14, type 11/12/14/16/20/24/32); light and dark follow the theme live.
+Colours, accent, fonts and radii come from the active Carpathian theme and `docs/DESIGN-SYSTEM.md` (4 px grid, radii 4/6/10/14, type 11/12/14/16/20/24/32); light and dark follow the theme live.
 
 ![Appearance](../docs/screenshots/settings-appearance-dark.png)
 
@@ -74,7 +74,7 @@ Found while doing this: the panel's **left/right position is broken for every de
 `sh settings/tests/run.sh` (host, no VM): 30 logic tests (search ranking, every parser, the four helper CLIs with a temp HOME) and 17 GTK tests run on a **private Xvfb** at 1280x800 and 1024x768 against fake system tools (`tests/fakebin`):
 every page builds, every search entry points at a real row, the window and every page fit the screen (no clipping, nothing wider than the window), navigation, aliases, keyboard handling, light and dark CSS.
 Never run Settings on a real desktop from a script: `tests/shot.sh PAGE OUT.png dark|light [--size WxH --sub NAME --query TEXT --anchor ROW]` and `tests/render-all.sh` use `xvfb-run`, unset `WAYLAND_DISPLAY`, set `GDK_BACKEND=x11`, `CSET_DRY=1` (no command that changes the system runs; they are appended to `$CSET_DRY_LOG`) and `CARPATIC_FORCE=1`.
-The app itself refuses to start outside a Carpatic session (`CARPATIC_SESSION`, `/usr/share/carpatic`, or `CARPATIC_FORCE=1`).
+The app itself refuses to start outside a Carpathian session (`CARPATIC_SESSION`, `/usr/share/carpatic`, or `CARPATIC_FORCE=1`).
 `tests/refsheet.py` builds the reference sheets `docs/screenshots/ref-settings-*.png` (no macOS screenshots are available offline; the sheet compares measurable attributes).
 
 ## VM end to end

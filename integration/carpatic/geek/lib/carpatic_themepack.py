@@ -1,6 +1,6 @@
-"""Theme packs for Carpatic: export, import (Carpatic packs and Omarchy theme folders), conversion report, wallpapers.
+"""Theme packs for Carpathian: export, import (Carpathian packs and Omarchy theme folders), conversion report, wallpapers.
 
-Idea from Omarchy's theme install/set/remove tools (MIT, see NOTICE). Omarchy themes and Carpatic themes share the same colors.toml
+Idea from Omarchy's theme install/set/remove tools (MIT, see NOTICE). Omarchy themes and Carpathian themes share the same colors.toml
 palette format, so importing is mostly checking, filling gaps, shrinking wallpapers and keeping the extras (Neovim, VS Code files).
 Python 3.11+ standard library; wallpapers are converted with GdkPixbuf, ImageMagick or ffmpeg when one of them is installed.
 """
@@ -25,7 +25,7 @@ OPTIONAL_FILL = {"magenta": "red", "orange": "yellow", "brown": "red", "bright_r
 KNOWN = set(REQUIRED) | set(OPTIONAL_FILL) | {"selection", "muted", "darker_background", "lighter_background", "dark_foreground", "light_foreground"}
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 # files kept verbatim next to the palette (tools that understand them pick them up)
-EXTRAS_KEPT = {"neovim.lua": "used by the Carpatic Neovim setup", "vscode.json": "VS Code / VSCodium colour theme",
+EXTRAS_KEPT = {"neovim.lua": "used by the Carpathian Neovim setup", "vscode.json": "VS Code / VSCodium colour theme",
                "icons.theme": "icon theme name", "preview.png": "preview picture", "chromium.theme": "browser colour",
                "btop.theme": "btop colours", "light.mode": "marks a light theme"}
 EXTRAS_UNUSED = {"keyboard.rgb": "keyboard lighting (Omarchy hardware)", "shell.lock.toml": "Omarchy shell lock screen",
@@ -234,7 +234,7 @@ class Report:
 
 
 def read_source_dir(d):
-    """A theme folder (Omarchy or Carpatic format). Returns (name, palette text, folder)."""
+    """A theme folder (Omarchy or Carpathian format). Returns (name, palette text, folder)."""
     cp = os.path.join(d, "colors.toml")
     if not os.path.isfile(cp):
         raise Problem(f"{d} has no colors.toml, so it is not a theme folder")
@@ -242,7 +242,7 @@ def read_source_dir(d):
 
 
 def convert_dir(src, dest, name, report, wallpapers=True, origin="omarchy"):
-    """Convert theme folder `src` into Carpatic layout at `dest` (created). Fills the report."""
+    """Convert theme folder `src` into Carpathian layout at `dest` (created). Fills the report."""
     pal_in = parse_palette(open(os.path.join(src, "colors.toml")).read())
     pal, notes, problems = normalise_palette(pal_in)
     for p in problems:
@@ -252,7 +252,7 @@ def convert_dir(src, dest, name, report, wallpapers=True, origin="omarchy"):
     report.add("palette", f"ok, {len(pal_in)} colours, {pal['mode']}" + ("" if not notes else " (" + "; ".join(notes) + ")"))
     os.makedirs(dest, exist_ok=True)
     with open(os.path.join(dest, "colors.toml"), "w") as f:
-        f.write(palette_text(pal, f"Carpatic theme '{name}' (imported from {origin}; palette checked by carpatic theme import)"))
+        f.write(palette_text(pal, f"Carpathian theme '{name}' (imported from {origin}; palette checked by carpatic theme import)"))
     walls = find_wallpapers(src)
     done, before, after, methods = 0, 0, 0, set()
     if wallpapers:
@@ -419,11 +419,11 @@ def do_import(src, name=None, force=False, dry=False, fonts=False, unverified=Fa
             raise Problem("the theme needs a name: add --name my-theme")
         rep = Report(tname)
         if tname in system_theme_names() and not name and not dry:
-            raise Problem(f"a theme called '{tname}' already comes with Carpatic. Import this one under another name: --name {tname}-2")
+            raise Problem(f"a theme called '{tname}' already comes with Carpathian. Import this one under another name: --name {tname}-2")
         if tname in user_theme_names() and not force and not dry:
             raise Problem(f"you already imported a theme called '{tname}'. Replace it with --force.")
         stage = os.path.join(tmp, "stage", tname)
-        # a Carpatic pack is already in final layout; an Omarchy folder is converted
+        # a Carpathian pack is already in final layout; an Omarchy folder is converted
         if origin == "carpatic-pack":
             os.makedirs(stage)
             pal_in = parse_palette(open(os.path.join(folder, "colors.toml")).read())
@@ -570,7 +570,7 @@ def do_export(name, out_path=None, fonts=(), sign=None, out=print):
 
 def do_remove(name, out=print):
     if name in system_theme_names() and name not in user_theme_names():
-        raise Problem(f"'{name}' comes with Carpatic and cannot be removed. You can only remove themes you imported.")
+        raise Problem(f"'{name}' comes with Carpathian and cannot be removed. You can only remove themes you imported.")
     if name not in user_theme_names():
         raise Problem(f"you have not imported a theme called '{name}'. See: carpatic theme packs, or carpatic-themepack list --imported")
     cur = read_settings().get("THEME")
@@ -612,7 +612,7 @@ def wallpaper_list():
             mode = ""
             for f in sorted(os.listdir(sd)):
                 if f.lower().endswith((".jpg", ".png")):
-                    add(os.path.join(sd, f), os.path.splitext(f)[0].replace("-", " ").replace("_", " "), "Carpatic")
+                    add(os.path.join(sd, f), os.path.splitext(f)[0].replace("-", " ").replace("_", " "), "Carpathian")
     pd = os.path.join(home(), "Pictures", "Wallpapers")
     if os.path.isdir(pd):
         for f in sorted(os.listdir(pd)):

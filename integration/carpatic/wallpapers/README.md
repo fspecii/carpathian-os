@@ -1,6 +1,6 @@
-# Carpatic wallpapers
+# Carpathian wallpapers
 
-A wallpaper library, a CLI and a GTK3 widget. Sources: the Carpatic scenes (first and prominent), your own pictures, Wallhaven (safe for work only), generated colours.
+A wallpaper library, a CLI and a GTK3 widget. Sources: the Carpathian scenes (first and prominent), your own pictures, Wallhaven (safe for work only), generated colours.
 
 ![carpatic](../docs/screenshots/wallpapers-carpatic-dark.png)
 ![wallhaven](../docs/screenshots/wallpapers-wallhaven-live-light.png)
@@ -31,7 +31,7 @@ Everything slow runs on worker threads, so the widget never blocks the main loop
 - Light/dark pair and per-theme pictures are resolved by `carpatic wallpaper sync` (see `NEEDS.md` for the two lines `carpatic-apply` needs so the right picture is painted first time).
 
 ## Library
-- **Carpatic**: the 16 design scenes (8 x dark/light, matching mode first) then each theme's pictures (`themes/*/wallpaper*.jpg`, `backgrounds/`). The same picture shipped in two places is listed once.
+- **Carpathian**: the 16 design scenes (8 x dark/light, matching mode first) then each theme's pictures (`themes/*/wallpaper*.jpg`, `backgrounds/`). The same picture shipped in two places is listed once.
 - **My pictures**: `~/Pictures/Wallpapers` (always, removable) + any folders (`Add folder`, drag a folder in) + single files (`Add pictures`, drag a file in). Recursive to depth 4, at most 6000 files. A folder watcher (inotify) refreshes the grid by itself, debounced 0.6 s. Duplicates (identical sha256, hashed only when two files have the same size) get a "Duplicate" badge; pictures smaller than 90 % of the screen get a "Low resolution" badge and the card says "it will look soft". Facts per file (size, EXIF-corrected dimensions, hash) are cached by mtime+size in `~/.cache/carpatic/wallpapers/index.json`.
 - **Drag and drop** onto the widget: files, folders, `file://` URIs, and `wallhaven.cc/w/ID` links (downloaded after the drop). Any other web address is refused with a plain message (nothing is fetched from arbitrary hosts).
 - **Formats**: jpg, png, webp, gif, bmp, tiff always (gdk-pixbuf). avif, jxl, heic when a pixbuf loader exists or ImageMagick / `heif-convert` / `djxl` is installed (tried with argv lists); otherwise the tile says "Preview not available" and the card explains. Animated formats are listed (gif) but only the first frame is drawn and set.

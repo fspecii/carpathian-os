@@ -4,7 +4,7 @@
 { mod="SUPER", key="F2",    desc="Settings",   func="spawn", exec=["carpatic-settings"] },
 { mod="SUPER CTRL ALT", key="f",   desc="Layout: floating (all tags, used by carpatic-layout)", func="setlayout", layout_idx=1 },
 { mod="SUPER CTRL ALT", key="t",  desc="Layout: tiling (all tags, used by carpatic-layout)",   func="setlayout", layout_idx=0 },
-{ mod="SUPER ALT",      key="space", desc="Carpatic menu",          func="spawn", exec=["carpatic-menu"] },
+{ mod="SUPER ALT",      key="space", desc="Carpathian menu",          func="spawn", exec=["carpatic-menu"] },
 { mod="SUPER ALT",      key="w",     desc="Peek at widgets",     func="spawn", exec=["carpatic-widgets", "peek"] },
 { mod="SUPER CTRL",     key="space", desc="Next wallpaper",         func="spawn", exec=["carpatic", "theme", "wallpaper", "next"] },
 { mod="SUPER CTRL SHIFT", key="space", desc="Browse themes (arrows), Esc undoes", func="spawn", exec=["carpatic-theme-picker"] },

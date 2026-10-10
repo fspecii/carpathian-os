@@ -1,4 +1,4 @@
-# Carpatic High Contrast: white on black, yellow accent. Contrast ratios: foreground/background 21:1, accent/background 14.6:1,
+# Carpathian High Contrast: white on black, yellow accent. Contrast ratios: foreground/background 21:1, accent/background 14.6:1,
 # foreground on selection 10:1, muted text 12.6:1. For low-vision users; selected with `carpatic-a11y high-contrast on`.
 mode = "dark"
 

@@ -25,7 +25,7 @@ while ! xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id'; 
 done
 for label in 'Master terminal' 'Stack terminal 1' 'Stack terminal 2'; do
     xterm -fa 'DejaVu Sans Mono' -fs 12 -bg '#111c2b' -fg '#d6e3ef' -title "$label" \
-        -e sh -c 'printf "Carpatic Rust — native Alpine desktop\n\nSuper + Shift + Space: toggle floating\nSuper + drag: move\nSuper + right drag: resize\nSuper + 1–4: workspaces\n\n"; exec sh' \
+        -e sh -c 'printf "Carpathian OS — native Alpine desktop\n\nSuper + Shift + Space: toggle floating\nSuper + drag: move\nSuper + right drag: resize\nSuper + 1–4: workspaces\n\n"; exec sh' \
         >/tmp/carpatic-xterm.log 2>&1 &
     sleep 0.4
 done

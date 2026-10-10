@@ -1,4 +1,4 @@
--- carpatic-starter v1 -- a small, fast Neovim setup from Carpatic OS. No plugins, nothing to download.
+-- carpatic-starter v1 -- a small, fast Neovim setup from Carpathian OS. No plugins, nothing to download.
 -- Yours to change: this file is copied once and never overwritten. Press <Space>? inside Neovim for the key list.
 -- Credit: ideas from Neovim's own defaults and the kickstart.nvim project (MIT), rewritten without plugins.
 
@@ -12,7 +12,7 @@ o.termguicolors, o.scrolloff, o.sidescrolloff, o.wrap = true, 8, 8, false
 o.splitright, o.splitbelow, o.showmode = true, true, false
 o.list, o.listchars = true, { tab = "» ", trail = "·", nbsp = "␣" }
 o.fillchars = { eob = " " }
-pcall(vim.cmd.colorscheme, "carpatic")         -- generated from your Carpatic theme (carpatic dev nvim-theme)
+pcall(vim.cmd.colorscheme, "carpatic")         -- generated from your Carpathian theme (carpatic dev nvim-theme)
 
 -- Editing -------------------------------------------------------------------------------------------------------------
 o.expandtab, o.shiftwidth, o.tabstop, o.smartindent = true, 2, 2, true

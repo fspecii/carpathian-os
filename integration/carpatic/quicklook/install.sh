@@ -1,5 +1,5 @@
 #!/bin/sh
-# Carpatic Quick Look provisioning (run as root on a box that already has the desktop + configurator; idempotent).
+# Carpathian Quick Look provisioning (run as root on a box that already has the desktop + configurator; idempotent).
 # Usage: sh quicklook/install.sh        Env: CARPATIC_USER (default carpatic)
 set -eu
 SRC=$(cd "$(dirname "$0")" && pwd)

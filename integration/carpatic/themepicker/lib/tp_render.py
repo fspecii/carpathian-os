@@ -1,4 +1,4 @@
-"""Carpatic theme picker: drawing. A mock desktop (wallpaper, the desktop style's bars, windows with border / gaps / rounded corners /
+"""Carpathian theme picker: drawing. A mock desktop (wallpaper, the desktop style's bars, windows with border / gaps / rounded corners /
 title-bar buttons, fonts, icons) and the picker card around it. Cairo + Pango only; no widgets, so it also renders to a PNG on the host.
 
 Everything is drawn in a fixed 960x540 reference space and scaled, so thumbnails and the large preview share one code path."""
@@ -173,7 +173,7 @@ def draw_mock(cr, x, y, w, h, look, detail=True):
     elif profile == "macos":
         top = 24; box(0, 0, REF_W, 24, surf, .94)
         if detail:
-            FONTS.text(cr, 14, 4, "Carpatic", ui, fs, fg, weight=Pango.Weight.SEMIBOLD); FONTS.text(cr, REF_W - 14, 4, "Wed 12:30", ui, fs, fg, align="r")
+            FONTS.text(cr, 14, 4, "Carpathian", ui, fs, fg, weight=Pango.Weight.SEMIBOLD); FONTS.text(cr, REF_W - 14, 4, "Wed 12:30", ui, fs, fg, align="r")
         dw = 5 * 52 + 24; box(REF_W / 2 - dw / 2, REF_H - 66, dw, 58, surf, .88, 14)
         for i in range(5): box(REF_W / 2 - dw / 2 + 14 + i * 52, REF_H - 58, 42, 42, mix(lighter, acc, .35) if i == 0 else lighter, 1, 10)
         bottom = 70

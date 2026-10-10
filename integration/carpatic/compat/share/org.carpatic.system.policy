@@ -1,24 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN" "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <policyconfig>
-  <vendor>Carpatic OS</vendor>
+  <vendor>Carpathian OS</vendor>
   <action id="org.carpatic.update">
     <description>Check for and install system updates</description>
-    <message>Carpatic needs your password to check for and install updates.</message>
+    <message>Carpathian needs your password to check for and install updates.</message>
     <defaults><allow_any>auth_admin</allow_any><allow_inactive>auth_admin</allow_inactive><allow_active>auth_admin_keep</allow_active></defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/carpatic-update</annotate>
     <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
   </action>
   <action id="org.carpatic.security">
     <description>Change a security setting (remote login, automatic updates)</description>
-    <message>Carpatic needs your password to change this security setting.</message>
+    <message>Carpathian needs your password to change this security setting.</message>
     <defaults><allow_any>auth_admin</allow_any><allow_inactive>auth_admin</allow_inactive><allow_active>auth_admin_keep</allow_active></defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/carpatic-security</annotate>
     <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
   </action>
   <action id="org.carpatic.rollback">
     <description>Save or restore a system restore point</description>
-    <message>Carpatic needs your password to save or restore a restore point.</message>
+    <message>Carpathian needs your password to save or restore a restore point.</message>
     <defaults><allow_any>auth_admin</allow_any><allow_inactive>auth_admin</allow_inactive><allow_active>auth_admin_keep</allow_active></defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/carpatic-rollback</annotate>
     <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>

@@ -20,9 +20,9 @@ case $mode in
   menu)
     # the full keyboard menu from the geek tools; the small built-in one below is the fallback
     command -v carpatic-menu >/dev/null 2>&1 && exec carpatic-menu
-    c=$(printf 'Apps\nCarpatic Settings\nTheme\nProfile\nKeybindings\nStore\nPower\n' | rofi -dmenu -i -p menu -theme "$RASI")
+    c=$(printf 'Apps\nCarpathian Settings\nTheme\nProfile\nKeybindings\nStore\nPower\n' | rofi -dmenu -i -p menu -theme "$RASI")
     case $c in
-      Apps) exec carpatic-launch ;; "Carpatic Settings") exec carpatic-settings ;;
+      Apps) exec carpatic-launch ;; "Carpathian Settings") exec carpatic-settings ;;
       Theme) t=$(carpatic-theme list | awk '{print $1}' | rofi -dmenu -i -p theme -theme "$RASI") && [ -n "$t" ] && carpatic-theme set "$t" ;;
       Profile) p=$(carpatic-profile list | awk '{print $1}' | rofi -dmenu -i -p profile -theme "$RASI") && [ -n "$p" ] && carpatic-profile set "$p" ;;
       Keybindings) exec carpatic-keys ;; Store) exec carpatic-store ;; Power) exec carpatic-launch power ;;

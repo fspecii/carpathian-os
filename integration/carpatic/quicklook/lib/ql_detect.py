@@ -1,4 +1,4 @@
-"""Carpatic Quick Look: decide what a file is and how to preview it. Pure Python, no GTK, safe to unit-test on any host.
+"""Carpathian Quick Look: decide what a file is and how to preview it. Pure Python, no GTK, safe to unit-test on any host.
 
 kind(path) -> dict(kind=..., mime=..., label=..., lang=...)
 Kinds: folder text code markdown json csv image pdf audio video archive font office ebook binary special missing

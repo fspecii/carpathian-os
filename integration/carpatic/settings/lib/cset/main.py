@@ -25,7 +25,7 @@ def in_carpatic_session():
 def main(argv):
     o = parse(argv)
     if not in_carpatic_session():
-        print("carpatic-settings: this is not a Carpatic session, so Settings will not open here.", file=sys.stderr); return 2
+        print("carpatic-settings: this is not a Carpathian OS session, so Settings will not open here.", file=sys.stderr); return 2
     import gi
     gi.require_version("Gtk", "3.0")
     from gi.repository import Gtk, Gdk, GLib

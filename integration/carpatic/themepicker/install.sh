@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs the Carpatic theme picker (carpatic-theme-picker, carpatic-look). Run as root after configurator/ is installed. Idempotent.
+# Installs the Carpathian theme picker (carpatic-theme-picker, carpatic-look). Run as root after configurator/ is installed. Idempotent.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 PREFIX=${PREFIX:-/usr/local}
@@ -15,4 +15,4 @@ for f in carpatic-theme-picker carpatic-theme-picker-ui carpatic-look; do instal
 for f in "$HERE"/lib/*.py; do install -m 644 "$f" "$LIB/$(basename "$f")"; done
 install -m 644 "$HERE/share/applications/carpatic-theme-picker.desktop" "$PREFIX/share/applications/"
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$PREFIX/share/applications" 2>/dev/null || true
-echo "Carpatic theme picker installed. Press Super+Ctrl+Shift+Space, or run: carpatic-theme-picker"
+echo "Carpathian theme picker installed. Press Super+Ctrl+Shift+Space, or run: carpatic-theme-picker"

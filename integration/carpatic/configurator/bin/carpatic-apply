@@ -91,7 +91,7 @@ MOTION_ANIM_INT=1
 if [ "$(get_setting MOTION full)" = reduced ] || [ -e "$CFG_DIR/reduced-motion" ]; then MOTION_ANIM_INT=0; fi
 THEME=$(get_setting THEME carpatic)
 ACCENT=$(get_setting ACCENT "")
-# a style may bring its own default accent (Ubuntu orange, macOS/Windows blue), but only on the two Carpatic themes: other themes keep their own accent
+# a style may bring its own default accent (Ubuntu orange, macOS/Windows blue), but only on the two Carpathian themes: other themes keep their own accent
 case $THEME in carpatic|carpatic-light) [ -n "$ACCENT" ] || ACCENT=$(profile_get "$PROFILE" ACCENT_$(theme_mode "$THEME")) ;; esac
 WALLPAPER=$(get_setting WALLPAPER "")
 [ -f "$CARPATIC_SHARE/profiles/$PROFILE.conf" ] || die "profile '$PROFILE' missing"
@@ -132,7 +132,7 @@ CURSOR_SZ=$(( $(S CURSOR_SIZE CURSOR_SIZE 24) * SCALE / 100 ))
 BUTTON_LAYOUT=$(pf BUTTON_LAYOUT); [ -n "$BUTTON_LAYOUT" ] || BUTTON_LAYOUT="menu:minimize,maximize,close"
 # GTK: "" = automatic (style's native theme if installed, else adw-gtk3 recoloured by the palette)
 GTKSEL=$(get_setting GTK_THEME ""); GTK_PALETTE=0
-# Carpatic's own style families (gtktheme/: macos windows ubuntu zen kylin carpatic) are the default for every profile that names a GTK_STYLE;
+# Carpathian's own style families (gtktheme/: macos windows ubuntu zen kylin carpatic) are the default for every profile that names a GTK_STYLE;
 # a native pack (WhiteSur, Yaru, Zorin ...) is only used when the user picks it (GTK_THEME in settings.conf).
 GTKSTYLE=$(get_setting GTK_STYLE ""); [ -n "$GTKSTYLE" ] || GTKSTYLE=$(pf GTK_STYLE); [ -n "$GTKSTYLE" ] || GTKSTYLE=carpatic
 case $THEME in nothing|nothing-light) [ -z "$(get_setting GTK_STYLE "")" ] && GTKSTYLE=nothing ;; esac
@@ -151,7 +151,7 @@ if [ -z "$ICONSEL" ]; then
 fi
 have_dir icons "$ICONSEL" || ICONSEL=Adwaita
 # the style's own folder colour (gtktheme/: Papirus with a per-style folder colour) when the style's icon pack is not installed and the user picked none
-if [ -z "$(get_setting ICON_THEME "")" ]; then case $ICONSEL in Papirus-Dark) _ov=Carpatic-$GTKSTYLE-Dark ;; Papirus-Light|Papirus) _ov=Carpatic-$GTKSTYLE-Light ;; *) _ov= ;; esac
+if [ -z "$(get_setting ICON_THEME "")" ]; then case $ICONSEL in Papirus-Dark) _ov=Carpathian-$GTKSTYLE-Dark ;; Papirus-Light|Papirus) _ov=Carpathian-$GTKSTYLE-Light ;; *) _ov= ;; esac
   [ -n "$_ov" ] && have_dir icons "$_ov" && ICONSEL=$_ov; fi
 # rofi takes a single icon theme with no fallback chain: if the selected pack lacks basic app icons, use Papirus there
 ROFI_ICONS=$ICONSEL
@@ -305,7 +305,7 @@ install_if_changed "$CUR/dunstrc" "$HOME/.config/dunst/dunstrc"
 # on-screen display bubbles (volume, brightness ...): the drop-in is regenerated so its px values follow the display scale
 mkdir -p "$HOME/.config/dunst/dunstrc.d"
 cat > "$HOME/.config/dunst/dunstrc.d/90-carpatic-osd.conf" <<EOT
-# Carpatic: on-screen display bubbles (volume, brightness, screenshots, radios). Drop-in, works with any dunstrc theme. Written by carpatic-apply (display scale $SCALE%).
+# Carpathian: on-screen display bubbles (volume, brightness, screenshots, radios). Drop-in, works with any dunstrc theme. Written by carpatic-apply (display scale $SCALE%).
 [global]
     progress_bar_corner_radius = $(( 999 ))
     progress_bar_height = $(( 8 * SCALE / 100 ))

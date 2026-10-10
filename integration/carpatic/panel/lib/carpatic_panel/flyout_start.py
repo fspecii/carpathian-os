@@ -2,7 +2,7 @@
 left, favourites grid on the right, side buttons), launchpad (macOS: full-screen grid)."""
 import glob, json, os, re, shutil, subprocess, time
 from . import uiscale
-from . import gfx, tasks as tk
+from . import gfx, branding, tasks as tk
 from .kit import View, Node, Group, p_button
 
 STATE = os.environ.get("CARPATIC_STATE", os.path.expanduser("~/.local/state/carpatic"))
@@ -189,6 +189,14 @@ class StartView(View):
             gfx.circle(cr, n.x + 22, n.y + n.h / 2, 14, t.accent_soft); gfx.glyph(cr, "user", n.x + 22, n.y + n.h / 2, 16, t.accent)
             gfx.text(cr, self.user or "Account", n.x + 44, n.y + n.h / 2, 13, t.fg, 500, family=t.font)
         nodes.append(Node(id="user", x=x + 16, y=y + 8, w=170, h=h - 16, paint=user, radius=8, on_click=lambda n: (self.spawn("carpatic-settings"), self.close()), tooltip="Account settings"))
+        def brand(cr, n, s):
+            branding.draw_mark(cr, n.x + 10, n.y + n.h / 2, 20, t.fg)
+            gfx.text(cr, branding.NAME, n.x + 27, n.y + n.h / 2, 11, t.fg_muted, 500, family=t.font, maxw=n.w - 30)
+        brand_width = max(0, w - 186 - 16 - 124 - 20)
+        if brand_width >= 135:
+            node = Node(id="brand", x=x + 206, y=y + 8, w=brand_width, h=h - 16, paint=brand)
+            node.focusable = False
+            nodes.append(node)
         def btn(id_, g, bx, tip, cmd):
             def p(cr, n, s): p_button(t, 8)(cr, n, s); gfx.glyph(cr, g, n.x + n.w / 2, n.y + n.h / 2, 18, t.fg)
             return Node(id=id_, x=bx, y=y + 8, w=40, h=h - 16, paint=p, radius=8, on_click=lambda n: (self.spawn(*cmd), self.close()), tooltip=tip)
@@ -292,7 +300,8 @@ class StartView(View):
         x0 = left + 16; cw = mid - 32
         tabs = ["Favourites", "Recent"]
         def tabp(cr, n, s):
-            gfx.text(cr, "Favourites", n.x + 4, n.y + n.h / 2, 14, t.fg, 600, family=t.font)
+            gfx.text(cr, "Favourites", n.x + 4, n.y + n.h / 2, 14, t.fg, 600, family=t.font, maxw=n.w - 30)
+            branding.draw_mark(cr, n.x + n.w - 12, n.y + n.h / 2, 20, t.fg)
         nodes.append(Node(x=x0, y=16, w=cw, h=32, paint=tabp))
         cols = max(3, int(cw // 92)); tw = cw / cols; th = 100; y = 60
         for i, a in enumerate(self.pinned[:15]):
@@ -314,6 +323,12 @@ class StartView(View):
     # ------------------------------------------------------------------ launchpad
     def _build_launchpad(self):
         t = self.theme; W, H = self.W, self.H; nodes = []
+        def brand(cr, n, s):
+            branding.draw_mark(cr, n.x + 10, n.y + n.h / 2, 20, t.fg)
+            gfx.text(cr, branding.NAME, n.x + 28, n.y + n.h / 2, 12, t.fg, 500, family=t.font)
+        node = Node(id="brand", x=W / 2 - 78, y=14, w=156, h=26, paint=brand)
+        node.focusable = False
+        nodes.append(node)
         sw = min(480, W - 80); nodes.append(self._search_box((W - sw) // 2, 56, sw, 40))
         cols = max(4, min(9, int((W - 160) // 150))); tw = 150; th = 128
         gx = (W - cols * tw) // 2

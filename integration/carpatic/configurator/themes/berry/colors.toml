@@ -1,7 +1,7 @@
 # Berry (dark): handheld-era dark chrome bezels and blue focus. Inspired by the BlackBerry handheld era.
 # Palette data from the LinPad desktop-themes collection (CC0 1.0),
 # upstream/themes/desktop-themes/colors/berry/colors.toml @ 01246414fe9517d883b9489ba3e9e9f3780f479e.
-# No vendor names, logos or fonts are shipped. Wallpapers here are original Carpatic artwork
+# No vendor names, logos or fonts are shipped. Wallpapers here are original Carpathian artwork
 # (procedural, CC0; port of the upstream "berry" carbon-weave scene).
 mode = "dark"
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# carpatic-update: safe system updates for Carpatic OS (apk) with a "restart to finish updating" notice.
+# carpatic-update: safe system updates for Carpathian OS (apk) with a "restart to finish updating" notice.
 #
 #   carpatic-update check        count available updates (needs network)
 #   carpatic-update list         show them
@@ -107,7 +107,7 @@ do_status() {
   say "updates: ${u:-unknown}, restart needed: $r"
 }
 
-notify() { command -v notify-send >/dev/null 2>&1 && notify-send -a "Carpatic updates" -i system-software-update "$1" "$2" 2>/dev/null; return 0; }
+notify() { command -v notify-send >/dev/null 2>&1 && notify-send -a "Carpathian updates" -i system-software-update "$1" "$2" 2>/dev/null; return 0; }
 
 do_notify() {
   d=${XDG_RUNTIME_DIR:-/tmp}/carpatic-update-notified; cur=$(do_status)

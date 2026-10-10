@@ -56,7 +56,7 @@ webapp   = "webapp-launch"
 # Comments inside the array are fine — they are skipped automatically.
 
 keys = [
-  # ── Carpatic additions ──
+  # ── Carpathian additions ──
   { mod="SUPER SHIFT", key="space",  desc="Toggle floating",  func="togglefloating" },
   { mod="SUPER",       key="p",      desc="App launcher", func="spawn", exec=["carpatic-launcher"] },
   { mod="SUPER SHIFT", key="p",      desc="Command launcher (dmenu)", func="spawn", exec=["dmenu_run", "-fn", "Inter:size=10.5", "-nb", "#11151c", "-nf", "#e7ecf3", "-sb", "#1d3232", "-sf", "#e7ecf3"] },

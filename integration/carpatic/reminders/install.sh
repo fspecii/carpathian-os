@@ -23,4 +23,4 @@ Terminal=false
 Categories=Office;Utility;
 StartupNotify=true
 EOF
-echo 'Carpatic Reminders program files installed; notifier not started, no autostart added'
+echo 'Carpathian Reminders program files installed; notifier not started, no autostart added'

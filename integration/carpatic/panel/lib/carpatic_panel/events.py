@@ -197,7 +197,7 @@ def write_event(title, day, start=None, end=None, data=None):
     """Writes ~/.local/share/carpatic/calendar/<uid>.ics (atomic) and returns the path."""
     d = os.path.join(data or DATA, "calendar"); os.makedirs(d, exist_ok=True)
     uid = uuid.uuid4().hex
-    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Carpatic OS//panel//EN", "BEGIN:VEVENT", f"UID:{uid}@carpatic",
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Carpathian OS//panel//EN", "BEGIN:VEVENT", f"UID:{uid}@carpatic",
              "DTSTAMP:" + dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")]
     esc = title.replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;")
     if start is None:

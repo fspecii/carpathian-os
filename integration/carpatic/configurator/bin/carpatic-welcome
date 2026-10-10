@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Carpatic Welcome / Theme Configurator (GTK3). All real work is done by the carpatic-profile / carpatic-theme CLI tools."""
+"""Carpathian OS Welcome / Theme Configurator (GTK3). All real work is done by the carpatic-profile / carpatic-theme CLI tools."""
 import os, re, subprocess, sys, shutil, threading, json, time
 import gi
 gi.require_version("Gtk", "3.0")
@@ -8,7 +8,7 @@ from gi.repository import Gtk, Gdk, GLib
 sys.path.insert(0, "/usr/local/lib/carpatic"); sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 from carpatic_ui import *
 import carpatic_mail as cm
-import carpatic_looks as looks   # the style and theme galleries are shared with Carpatic Settings (Appearance) and use the theme picker's previews
+import carpatic_looks as looks   # the style and theme galleries are shared with Carpathian OS Settings (Appearance) and use the theme picker's previews
 
 class Wizard(Gtk.Window):
     def debug_event(self, event, **values):
@@ -20,7 +20,7 @@ class Wizard(Gtk.Window):
             except OSError: pass
 
     def __init__(self):
-        super().__init__(title="Carpatic Welcome")
+        super().__init__(title="Carpathian OS Welcome")
         self.set_default_size(980, 640); self.set_position(Gtk.WindowPosition.CENTER)
         self.profile = sh("carpatic-profile", "current") if os.path.exists(f"{CFG}/settings.conf") else "windows"
         self.theme = "carpatic" if not os.path.exists(f"{CFG}/settings.conf") else sh("carpatic-theme", "current")
@@ -52,7 +52,7 @@ class Wizard(Gtk.Window):
         titles = [("Pick a look", "Pick the desktop that feels most familiar. Not sure? Choose the closest one. A style sets the dock or bar, the window buttons and the shortcuts; change it any time in Settings (Super+F2), under Appearance, and fine-tune the dock under Desktop & Dock."),
                   ("How should windows behave?", "Auto-tiling is on by default. You can switch at any time: Super+T flips the current workspace, or use Settings, under Desktop & Dock. Press Super+K whenever you want to see every keyboard shortcut."),
                   ("Pick a theme", "Dark or light, a colour theme, an accent and a wallpaper. Changes show straight away. Press Super+Ctrl+Shift+Space any time to try themes with the arrow keys. Fonts and icons are in Settings, under Appearance."),
-                  ("Typing in another language?", "Carpatic's menus are in English for now; more languages are planned. If you write Chinese, Japanese, Korean or Vietnamese, Carpatic can add the keyboard and fonts for it. Everyone else can skip this."),
+                  ("Typing in another language?", "The desktop’s menus are in English for now; more languages are planned. If you write Chinese, Japanese, Korean or Vietnamese, Carpathian OS can add the keyboard and fonts for it. Everyone else can skip this."),
                   ("Do you want a mail client?", "Nothing is installed unless you choose it. You can change this any time in Settings, under Default Apps.")]
         self.titles = titles
         for i, p in enumerate(self.pages): self.stack.add_named(p, str(i))
@@ -218,7 +218,7 @@ class Wizard(Gtk.Window):
         sw = Gtk.ScrolledWindow(); sw.add(self.tflow); sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         v.pack_start(sw, True, True, 0)
         wr = Gtk.Box(spacing=8); wr.pack_start(Gtk.Label(label="Wallpaper"), False, False, 0)
-        for lab, fn in (("Theme wallpaper", lambda *_: self.set_wall("default")), ("Carpatic default", lambda *_: self.set_wall("/usr/local/share/carpatic/wallpaper.png")), ("Choose file...", self.choose_wall)):
+        for lab, fn in (("Theme wallpaper", lambda *_: self.set_wall("default")), ("Carpathian OS default", lambda *_: self.set_wall("/usr/local/share/carpatic/wallpaper.png")), ("Choose file...", self.choose_wall)):
             b = Gtk.Button(label=lab); b.connect("clicked", fn); wr.pack_start(b, False, False, 0)
         v.pack_start(wr, False, False, 0)
         self.fill_themes(); return v
@@ -262,7 +262,7 @@ class Wizard(Gtk.Window):
         for key, label in (("", "English or another language that needs no extra keyboard"), ("chinese", "Chinese"), ("japanese", "Japanese"), ("korean", "Korean"), ("vietnamese", "Vietnamese")):
             b = Gtk.RadioButton.new_with_label_from_widget(group, label) if group else Gtk.RadioButton.new_with_label(None, label)
             group = group or b; b.connect("toggled", lambda w, k=key: setattr(self, "lang", k) if w.get_active() else None); v.pack_start(b, False, False, 0)
-        n = Gtk.Label(label="Choosing a language installs it (about 100 MB) and asks for your password. You can add more later in Carpatic Settings, under Typing in other languages.", xalign=0, wrap=True)
+        n = Gtk.Label(label="Choosing a language installs it (about 100 MB) and asks for your password. You can add more later in Carpathian OS Settings, under Typing in other languages.", xalign=0, wrap=True)
         n.get_style_context().add_class("sub"); v.pack_start(n, False, False, 12)
         return v
 

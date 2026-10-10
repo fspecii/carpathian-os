@@ -1,4 +1,4 @@
-"""Carpatic App Store GUI (GTK3, no webkit). Looks come from the OS style layer: the user's ~/.config/gtk-3.0/gtk.css defines the
+"""Carpathian App Store GUI (GTK3, no webkit). Looks come from the OS style layer: the user's ~/.config/gtk-3.0/gtk.css defines the
 @cp_* colours and the shared cp-* classes (cp-card, cp-primary, cp-sidebar, cp-sidebar-row, cp-section, cp-search, cp-pill, cp-badge) for the
 six styles x light/dark; this module only adds store-specific layout classes (st-*) that use those colours, so a style switch restyles
 the store live. Spacing grid 4/8, type scale 11/12/14/18/28 (docs/DESIGN-SYSTEM.md)."""
@@ -107,7 +107,7 @@ def appearance_mode():
 
 
 def style_layer_text():
-    """The user's rendered gtk.css when it carries the cp_* layer, otherwise the bundled Carpatic style (first boot, tests, other desktops)."""
+    """The user's rendered gtk.css when it carries the cp_* layer, otherwise the bundled Carpathian style (first boot, tests, other desktops)."""
     over = os.environ.get("CARPATIC_STYLE_CSS")
     cands = [over] if over else [USER_GTK_CSS]
     for p in cands:
@@ -372,7 +372,7 @@ class RoundPix(Gtk.DrawingArea):
 SOURCE = {
     "apk": ("Alpine", "System package from the Alpine repositories. Installing it needs your administrator password."),
     "flatpak": ("Flathub", "Flatpak from Flathub. Runs in its own sandbox and installs in your home folder, no password needed."),
-    "ai": ("AI tool", "Installed by Carpatic into your home folder. No administrator rights, nothing runs in the background."),
+    "ai": ("AI tool", "Installed by Carpathian into your home folder. No administrator rights, nothing runs in the background."),
     "compat": ("Ubuntu box", "Runs inside the Ubuntu compatibility box for software that is not built for Alpine."),
 }
 
@@ -945,7 +945,7 @@ class Store(Gtk.Window):
         return [self.cat.apps[i] for i in FEATURED if i in self.cat.apps]
 
     def render_home(self):
-        self.page_head("Discover", "Free apps, checked by Carpatic. One click installs, no terminal needed.")
+        self.page_head("Discover", "Free apps, checked by Carpathian. One click installs, no terminal needed.")
         self.hero_box = vbox(10); self.put(self.hero_box); self.fill_hero()
         # AI one-click strip
         self.section("AI tools, one click", "Coding agents and local models. Installed into your home folder, no password.", ("See all", lambda: self.select_nav("ai")))
@@ -966,7 +966,7 @@ class Store(Gtk.Window):
         card.pack_start(self.tint_icon("computer-symbolic", hues()[0], 44), False, False, 0)
         v = vbox(2); v.set_valign(Gtk.Align.CENTER)
         v.pack_start(label("Drivers and hardware", "st-name"), False, False, 0)
-        v.pack_start(label("Carpatic looks at your graphics, Wi-Fi, Bluetooth, printer and fingerprint reader and installs what is missing.", "st-cap", wrap=True), False, False, 0)
+        v.pack_start(label("Carpathian looks at your graphics, Wi-Fi, Bluetooth, printer and fingerprint reader and installs what is missing.", "st-cap", wrap=True), False, False, 0)
         card.pack_start(v, True, True, 0)
         b = Gtk.Button(label="Check my computer"); add_cls(b, "st-open"); b.set_valign(Gtk.Align.CENTER); b.connect("clicked", lambda *_: self.select_nav("drivers")); card.pack_end(b, False, False, 0)
         self.put(card)
@@ -1035,7 +1035,7 @@ class Store(Gtk.Window):
 
     # ------------------------------------------------------------ AI page
     def render_ai(self):
-        self.page_head("AI & Agents", "Install the tools, then follow the short note on each page to sign in. Carpatic never stores your keys.")
+        self.page_head("AI & Agents", "Install the tools, then follow the short note on each page to sign in. Carpathian never stores your keys.")
         have_all = [self.cat.apps[i] for i in HOME_AI if i in self.cat.apps and not self.state.installed(self.cat.apps[i])]
         for title, lead, ids in AI_GROUPS:
             apps = [self.cat.apps[i] for i in ids if i in self.cat.apps]
@@ -1244,7 +1244,7 @@ class Store(Gtk.Window):
             b = Gtk.Button(label="Search all of Alpine and Flathub"); add_cls(b, "st-open"); b.set_halign(Gtk.Align.START)
             b.connect("clicked", lambda *_: self.remote_search(q)); self.put(b)
         else:
-            self.section("From Alpine and Flathub", "Not in the Carpatic catalog. Not checked by us.")
+            self.section("From Alpine and Flathub", "Not in the Carpathian catalog. Not checked by us.")
             hits = [h for h in self.remote_hits if h["id"] not in self.cat.apps]
             if hits:
                 self.app_list(hits[:30])
@@ -1276,7 +1276,7 @@ class Store(Gtk.Window):
     # ------------------------------------------------------------ installed / updates / drivers
     def render_installed(self):
         apps = [a for a in self.cat.apps.values() if self.state.installed(a)]
-        self.page_head("Installed", f"{len(apps)} from the Carpatic catalog." if apps else "")
+        self.page_head("Installed", f"{len(apps)} from the Carpathian catalog." if apps else "")
         if not apps:
             self.empty("package-x-generic-symbolic", "Nothing installed from here yet", "Apps you install from the store show up here. Open Discover to find something you like.")
             return
@@ -1344,7 +1344,7 @@ class Store(Gtk.Window):
         self.task("update", "Updating", lambda cb, pw: cs.update_all(cb, pw), done=lambda: setattr(self, "pending", None), retry=self.do_update_all)
 
     def render_drivers(self):
-        self.page_head("Drivers & Hardware", "Carpatic looked at your computer. Install only what you need; each card says what it does.")
+        self.page_head("Drivers & Hardware", "Carpathian looked at your computer. Install only what you need; each card says what it does.")
         finds = drv.detect()
         card = vbox(); add_cls(card, "cp-card")
         for i, f in enumerate(finds):

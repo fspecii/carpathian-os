@@ -1,4 +1,4 @@
-"""Carpatic AI: one-click installers for AI tools on Alpine/musl. Stdlib only.
+"""Carpathian AI: one-click installers for AI tools on Alpine/musl. Stdlib only.
 
 Tiers (hidden from the user): native (apk, static musl binary, upstream installer), rootless podman container, glibc
 compat container (distrobox). Installs go to ~/.local (no root) unless an apk package is involved. No API keys are stored.

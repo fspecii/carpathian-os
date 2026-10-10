@@ -43,7 +43,7 @@
 @define-color theme_selected_fg_color {{ accent_fg }};
 @define-color borders {{ mix lighter_background muted 35 }};
 @define-color unfocused_borders {{ mix lighter_background muted 35 }};
-/* Carpatic widget polish for GTK3 and GTK4. Import AFTER colors-<mode>.css.
+/* Carpathian widget polish for GTK3 and GTK4. Import AFTER colors-<mode>.css.
    Radii/spacing come from tokens: sm=6 md=10 lg=14. Generated, do not edit. */
 window, .background { font-family: "Inter", "Noto Sans", sans-serif; font-size: 14px; }
 .monospace, textview.monospace, .terminal { font-family: "JetBrains Mono", monospace; }

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Procedural wallpapers for the LinPad-era Carpatic themes (classic-98, luna, aero, aero-night,
+"""Procedural wallpapers for the LinPad-era Carpathian themes (classic-98, luna, aero, aero-night,
 platinum, aqua, aqua-metal, berry).
 
 Port of the CC0 generator upstream/themes/desktop-themes/make-wallpapers.py (LinPad,
 commit 01246414fe9517d883b9489ba3e9e9f3780f479e) from numpy to pure Pillow, because this
 scratch workspace has no numpy. Same scenes and colour script, recomposed with Pillow
-primitives (gradient LUTs, low-res masks upscaled and blurred); Carpatic wallpapers are
+primitives (gradient LUTs, low-res masks upscaled and blurred); Carpathian wallpapers are
 1920x1080 like every other shipped theme. Everything is drawn from gradients, curves and
-noise; no third-party imagery. Output is CC0 1.0 (original Carpatic artwork).
+noise; no third-party imagery. Output is CC0 1.0 (original Carpathian artwork).
 
 Run from the workspace root:  python3 tests/make-era-wallpapers.py
 """

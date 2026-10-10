@@ -1,4 +1,4 @@
-"""Carpatic Quick Look: the parts that need no GTK. Markdown parser, CSV/JSON readers, archive listing, EXIF, Office text,
+"""Carpathian Quick Look: the parts that need no GTK. Markdown parser, CSV/JSON readers, archive listing, EXIF, Office text,
 hex dump, folder summary, Unix permission strings. Every function reads a bounded amount of data and never executes anything."""
 import os, re, io, csv, json, time, stat, zipfile, tarfile, struct, hashlib, pwd, grp, xml.etree.ElementTree as ET
 from datetime import datetime

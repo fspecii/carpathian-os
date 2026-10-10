@@ -1,4 +1,4 @@
 #!/bin/sh
-# carpatic-system [page]: opens Carpatic Settings on one of the system pages (updates, access, touchpad, display, language).
+# carpatic-system [page]: opens Carpathian Settings on one of the system pages (updates, access, touchpad, display, language).
 # There is one Settings app; this command only exists so scripts, notifications and old shortcuts can jump to a page.
 exec carpatic-settings --page "${1:-updates}"

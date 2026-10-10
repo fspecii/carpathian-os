@@ -1,4 +1,4 @@
-"""Hardware detection and driver/firmware recommendations for Carpatic (Alpine, apk). Stdlib only.
+"""Hardware detection and driver/firmware recommendations for Carpathian (Alpine, apk). Stdlib only.
 
 Everything reads /sys and /proc so it works without pciutils. Detection can be pointed at a fake root for tests with
 the CARPATIC_SYSROOT environment variable (a directory containing sys/ and proc/).
@@ -124,7 +124,7 @@ def detect():
             pk = pk_common + ["mesa-vulkan-nouveau", "linux-firmware-nvidia", "xf86-video-nouveau"]
             honest = ("NVIDIA on Alpine uses the open 'nouveau' kernel driver with Mesa (OpenGL) and NVK (Vulkan, newer cards). "
                       "The proprietary NVIDIA driver and CUDA are glibc-only and do not run on Alpine/musl. What works: desktop, games through Vulkan/NVK "
-                      "(slower than the proprietary driver), llama.cpp via Vulkan. For CUDA use the Carpatic compatibility container "
+                      "(slower than the proprietary driver), llama.cpp via Vulkan. For CUDA use the Carpathian compatibility container "
                       "(glibc Ubuntu, 'carpatic-ai compat'); that path is designed but untested on real NVIDIA hardware.")
         else:
             pk = ["mesa-dri-gallium", "mesa-egl", "mesa-gl", "mesa-vulkan-swrast", "vulkan-loader"]

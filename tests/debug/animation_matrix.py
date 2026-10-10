@@ -48,7 +48,7 @@ def policy_actions(iterations):
         display.x.XGetSelectionOwner.restype = c.c_ulong
         display.x.XGetSelectionOwner.argtypes = [c.c_void_p, c.c_ulong]
         owner = display.x.XGetSelectionOwner(display.handle, display.atom('_NET_WM_CM_S0'))
-        base = display.create('Carpatic instant-policy fixture', module.COLOR, 400, 260)
+        base = display.create('Carpathian instant-policy fixture', module.COLOR, 400, 260)
         display.x.XMapWindow(display.handle, base)
         display.sync()
         for iteration in range(iterations):

@@ -2,7 +2,7 @@
  * GTK3 reads the user stylesheet once per process, so a running Thunar/Mousepad/Evince keeps the OLD colours (half light, half dark) when
  * carpatic-apply switches theme or accent. This module loads the same file a second time at a higher priority and reloads it whenever the
  * file changes (GFileMonitor), so every running GTK3 app follows the palette within a frame. Enabled through gtk-modules=carpatic-livecss
- * (settings.ini and xsettings). No effect in GTK4 programs (they never load GTK3 modules). MIT, part of Carpatic gtktheme/. */
+ * (settings.ini and xsettings). No effect in GTK4 programs (they never load GTK3 modules). MIT, part of Carpathian gtktheme/. */
 #include <gtk/gtk.h>
 #include <gmodule.h>
 

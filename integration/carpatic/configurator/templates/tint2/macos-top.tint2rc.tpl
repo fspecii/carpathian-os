@@ -29,7 +29,7 @@ wm_menu = 1
 autohide = 0
 
 button = new
-button_text = Carpatic
+button_text = Carpathian
 button_font = {{ @HEAD }} Bold {{ @SZ }}
 button_font_color = {{ foreground }} 100
 button_background_id = 2

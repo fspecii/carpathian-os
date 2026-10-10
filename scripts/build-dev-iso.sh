@@ -60,6 +60,12 @@ trap 'exit 130' INT TERM
 xorriso -osirrox on -indev "$base" -extract /carpatic-live.apkovl.tar.gz "$stage/base-overlay.tar.gz" >"$stage/extract.log" 2>&1
 mkdir -p "$stage/overlay" "$stage/payload"
 tar -xzf "$stage/base-overlay.tar.gz" -C "$stage/overlay"
+# The greeter uses the Python already carried by the motion package. Make it
+# an explicit live dependency and verify the original medium carries its APK.
+xorriso -indev "$base" -find /apks -name 'python3-*.apk' -exec echo -- >"$run/live-python-packages.txt" 2>"$run/live-python-inventory.log"
+grep -q '/python3-[0-9]' "$run/live-python-packages.txt" || { echo 'Base medium lacks the live greeter Python dependency.' >&2; exit 1; }
+python3 integration/carpatic/installer-branding/lib/prepare_overlay.py "$stage/overlay" "$legacy" >"$run/installer-branding-files.txt"
+sh integration/carpatic/installer-branding/install.sh --root "$stage/overlay"
 cp -R alpine config integration "$stage/payload/"
 mkdir -p "$stage/payload/scripts" "$stage/payload/prebuilt"
 cp scripts/carpatic-rust-session "$stage/payload/scripts/"

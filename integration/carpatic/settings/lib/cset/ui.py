@@ -1,4 +1,4 @@
-"""Reusable GTK3 components of Carpatic Settings: icon tiles, Clamp, GroupCard and the Row family (SwitchRow, PopupRow, SliderRow, SpinRow,
+"""Reusable GTK3 components of Carpathian OS Settings: icon tiles, Clamp, GroupCard and the Row family (SwitchRow, PopupRow, SliderRow, SpinRow,
 EntryRow, ButtonRow, NavRow, InfoRow, ColorRow, ProgressRow, CustomRow), PageBuilder, PopupButton, Segmented, Gallery.
 Every row is a Gtk.ListBoxRow inside a GroupCard (rounded list); look comes from theme.CSS (class names here are part of that contract)."""
 import gi

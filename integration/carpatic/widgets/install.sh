@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install the Carpatic widgets (host, CLI, tips, Settings page) into a running system or a target tree. Idempotent. Usage: install.sh [--root DIR]
+# Install the Carpathian widgets (host, CLI, tips, Settings page) into a running system or a target tree. Idempotent. Usage: install.sh [--root DIR]
 # Paths: program -> /usr/local/bin, python package + Settings page -> /usr/local/lib/carpatic, shared files -> /usr/local/share/carpatic/widgets.
 # Installing does NOT turn widgets on: the user does that in Settings > Widgets or with `carpatic widgets enable`.
 set -eu

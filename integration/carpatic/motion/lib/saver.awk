@@ -1,4 +1,4 @@
-# saver.awk: the Carpatic screensaver effects. One long-lived awk process: it reads one line per frame tick from stdin and writes the changes for that
+# saver.awk: the Carpathian screensaver effects. One long-lived awk process: it reads one line per frame tick from stdin and writes the changes for that
 # frame to stdout (cursor addressing, direct emission, only the cells that change). Records on stdin:
 #   T            next frame            R rows cols   terminal was resized (screen is cleared, the effect restarts)            Q   quit
 # Variables (-v): ROWS COLS DEPTH(24|256|16) FPS SEED EFFECTS("brand rain sunrise stars") LIFE(seconds per effect, 0 = forever)

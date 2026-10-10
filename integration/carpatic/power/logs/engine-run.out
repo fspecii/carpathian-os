@@ -1,4 +1,4 @@
-[00:38:13] === Carpatic install engine started: /dev/vda -> btrfs+LUKS2 (bios) ===
+[00:38:13] === Carpathian install engine started: /dev/vda -> btrfs+LUKS2 (bios) ===
 [00:38:13] > Preparing live environment
 [00:38:18]   done in 5s
 [00:38:18] > Partitioning disk
@@ -19,7 +19,7 @@
 [00:38:48] > Installing bootloader
 [00:38:48] cmdline: root=/dev/mapper/carpatic_root ro rootfstype=btrfs modules=sd-mod,usb-storage,virtio_blk,virtio_pci rootflags=subvol=@,noatime,compress=zstd cryptroot=UUID=4cf69981-bc69-438f-b1bc-31d37975fe60 cryptdm=carpatic_root keymap=us/us quiet console=tty0 console=ttyS0,115200
 [00:38:48]   done in 0s
-[00:38:48] > Running Carpatic setup
+[00:38:48] > Running Carpathian setup
 [00:38:48] running carpatic-install stages in the target (desktop=no, containers=none)
 [00:39:26]   done in 38s
 [00:39:26] > Finalizing user

@@ -1,4 +1,4 @@
-"""Carpatic theme picker: the card (header, large live preview, option strip, row list, key hints). Pure drawing + hit regions, driven by a
+"""Carpathian theme picker: the card (header, large live preview, option strip, row list, key hints). Pure drawing + hit regions, driven by a
 tp_model.Session; the GTK shell (bin/carpatic-theme-picker-ui) only forwards events and keeps time. Renders to a PNG on the host for tests."""
 import math, os
 import gi

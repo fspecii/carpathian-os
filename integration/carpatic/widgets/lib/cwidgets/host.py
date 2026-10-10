@@ -617,7 +617,7 @@ class Host:
 
 
 def run():
-    if not conf.in_carpatic_session(): print("Widgets only run on a Carpatic desktop."); return 1
+    if not conf.in_carpatic_session(): print("Widgets only run on a Carpathian desktop."); return 1
     os.makedirs(conf.STATE, exist_ok=True)
     fd = os.open(conf.PIDFILE, os.O_RDWR | os.O_CREAT, 0o644)
     try: fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)

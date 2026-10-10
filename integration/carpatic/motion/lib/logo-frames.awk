@@ -1,4 +1,4 @@
-# logo-frames.awk: frames of the Carpatic ASCII mountain logo for a terminal, using ONLY the 16 indexed ANSI colours (the console palette from
+# logo-frames.awk: frames of the Carpathian ASCII mountain logo for a terminal, using ONLY the 16 indexed ANSI colours (the console palette from
 # design tokens decides the real look; truecolour would be crushed by the Linux framebuffer console).
 # Usage: awk -v LOGO=logo.txt -v TOP=5 -v LEFT=10 -v FPS=30 -v MODE=rise|shift|final|static -v RS_OUT=... -f logo-frames.awk
 #   MODE=rise   frames of the entrance (rows climb from the bottom, ember sun last, wordmark fades in): ends on the "final" look

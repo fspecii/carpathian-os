@@ -1,4 +1,4 @@
-"""Carpatic Quick Look: the look. Reads the active theme (palette), accent, corner radius and window-button style the same way the
+"""Carpathian Quick Look: the look. Reads the active theme (palette), accent, corner radius and window-button style the same way the
 rest of the desktop does (~/.config/carpatic/settings.conf + the theme's colors.toml). No GTK here: unit-testable."""
 import os, re
 

@@ -1,4 +1,4 @@
-# Carpatic store catalog: AI & Agents. source = "ai" means a Carpatic recipe in store/ai/tools.toml (pkg = recipe id).
+# Carpathian store catalog: AI & Agents. source = "ai" means a Carpathian recipe in store/ai/tools.toml (pkg = recipe id).
 [category]
 id = "ai"
 name = "AI & Agents"
@@ -17,7 +17,7 @@ newcomer = true
 size_mb = 235
 term = "claude"
 description = "Anthropic's coding agent in your terminal. Reads your project, edits files, runs commands."
-detail = "Official native installer. Sign in with your Claude account or use an API key from your own shell; Carpatic never stores keys."
+detail = "Official native installer. Sign in with your Claude account or use an API key from your own shell; Carpathian never stores keys."
 
 [[app]]
 id = "codex"

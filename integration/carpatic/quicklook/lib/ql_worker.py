@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Carpatic Quick Look decoder worker.
+"""Carpathian Quick Look decoder worker.
 
 Runs in its own process (optionally inside bubblewrap, see carpatic-quicklookd) so a broken PNG, PDF, font or media file can only
 crash THIS process, never the preview window. Memory, CPU time and file size are capped with rlimits; the daemon also enforces a wall-clock timeout

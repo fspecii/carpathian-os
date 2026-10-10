@@ -1,4 +1,4 @@
-"""The wallpaper library: built-in Carpatic pictures, the user's local folders and files, with hashing and folder watching."""
+"""The wallpaper library: built-in Carpathian pictures, the user's local folders and files, with hashing and folder watching."""
 import ctypes, ctypes.util, hashlib, json, os, re, shutil, struct, urllib.parse
 from dataclasses import dataclass, field
 
@@ -139,7 +139,7 @@ def remove_folder(path):
 def add_file(path):
     path = os.path.abspath(os.path.expanduser(path))
     if not os.path.isfile(path): raise ValueError("That file does not exist.")
-    if not is_image_name(os.path.basename(path)): raise ValueError("That is not a picture type Carpatic can use (jpg, png, webp, avif, jxl, heic, gif, bmp, tiff).")
+    if not is_image_name(os.path.basename(path)): raise ValueError("That is not a picture type Carpathian can use (jpg, png, webp, avif, jxl, heic, gif, bmp, tiff).")
     with open(path, "rb") as f:
         if imageinfo.sniff(f.read(32)) is None: raise ValueError("That file does not look like a picture.")
     d = load_config()

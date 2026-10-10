@@ -1,12 +1,12 @@
-# Carpatic command table: one line per `carpatic <area> <verb>`.
+# Carpathian command table: one line per `carpatic <area> <verb>`.
 # Format:  area|verb|tool|fixed arguments|completion command|summary
 # '@area|name|summary' lines set the order and the one-line description of an area.
 # verb '*' = anything else is passed through to the tool. The completion command prints candidate words for the next argument.
 # Editing this file is all it takes to add a command; man page and completions are generated/derived from it.
 @area|theme|Colours, wallpapers, theme packs, Omarchy theme import
-@area|wallpaper|Wallpapers: Carpatic scenes, your own pictures, Wallhaven, rotation
+@area|wallpaper|Wallpapers: Carpathian scenes, your own pictures, Wallhaven, rotation
 @area|intro|The login animation (mountains rise over your wallpaper)
-@area|screensaver|The idle screen (Carpatic mark, mountains, stars)
+@area|screensaver|The idle screen (Carpathian mark, mountains, stars)
 @area|widgets|Desktop widgets: clock, calendar, weather and more (off until you turn them on)
 @area|profile|The desktop you feel at home in (windows, macos, ubuntu, tiling, beginner)
 @area|appearance|Fonts, icons, cursors, scaling
@@ -26,13 +26,13 @@
 @area|snapshot|Shortcut for taking and listing snapshots
 @area|compat|Run Ubuntu-only programs in a compatibility box
 @area|hook|Scripts that run on events (theme change, update, screenshot)
-@area|dotfiles|Keep your Carpatic settings in your own git repository
+@area|dotfiles|Keep your Carpathian settings in your own git repository
 @area|trigger|Screenshot, screen recording, colour picker, clipboard history, share
 @area|quicklook|Preview any file with Space, like on a Mac
 @area|tour|The one-screen welcome to the keyboard-driven desktop
 @area|system|About this computer
 @default|keys|show
-wallpaper|open|carpatic-wallpapers|||Open the wallpaper browser (Carpatic, My pictures, Wallhaven, Colours)
+wallpaper|open|carpatic-wallpapers|||Open the wallpaper browser (Carpathian, My pictures, Wallhaven, Colours)
 wallpaper|list|carpatic-wallpaper|list|printf 'carpatic\nmine\nall\n'|List the pictures (carpatic, mine, all; --json)
 wallpaper|set|carpatic-wallpaper|set||Set the wallpaper from a path, id or title (--fill MODE, --theme, --light, --dark, --monitor NAME)
 wallpaper|fill|carpatic-wallpaper|fill|printf 'fill\nfit\nstretch\ncenter\ntile\n'|How the picture covers the screen
@@ -171,8 +171,8 @@ trigger|idle|carpatic-trigger|idle|printf 'toggle\non\noff\nstatus\n'|Lock the s
 quicklook|*|carpatic-quicklook|||Preview files without opening an app (Space in Files). Also: --on, --off, --status, --setup
 tour|*|carpatic-tour|||Show the welcome card for the keyboard-driven desktop
 system|info|carpatic-sysinfo|||Show this computer at a glance
-system|doctor|carpatic-sysinfo|doctor||Check that the Carpatic tools are all in place
-system|version|carpatic-sysinfo|version||Show the Carpatic version
+system|doctor|carpatic-sysinfo|doctor||Check that the Carpathian tools are all in place
+system|version|carpatic-sysinfo|version||Show the Carpathian version
 intro|play|carpatic-intro|play||Play the login animation now
 intro|set|carpatic-intro|set|printf 'first-login-only\nevery-login\noff\n'|Choose when it plays: first-login-only, every-login or off
 intro|status|carpatic-intro|status||Show the setting and whether it would play now

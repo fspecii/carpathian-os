@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""carpatic-theme-picker-ui: the Carpatic theme picker window and its resident helper (GTK3 + cairo).
+"""carpatic-theme-picker-ui: the Carpathian theme picker window and its resident helper (GTK3 + cairo).
 
 Left/Right change the focused row (the real desktop follows, debounced), Up/Down move between rows, Enter keeps, Esc puts everything back.
 Run through `carpatic-theme-picker` (the hotkey command); `--daemon` keeps this process alive after the window closes so the next
@@ -57,7 +57,7 @@ class Picker(Gtk.Window):
         self.proc = None
         self.applier = Applier(self.run_job, lambda d, fn: GLib.timeout_add(int(d * 1000), self._once(fn)), GLib.source_remove, delay=DELAY, abort=self.abort_job)
         self.anim_id = None; self.grabbed = False; self.t_key = None; self.prefetch_id = None
-        self.set_title("Carpatic theme picker"); self.set_wmclass("carpatic-theme-picker", "Carpatic-theme-picker")
+        self.set_title("Carpathian theme picker"); self.set_wmclass("carpatic-theme-picker", "Carpathian-theme-picker")
         self.set_app_paintable(True); self.set_decorated(False); self.set_resizable(False)
         scr = self.get_screen(); vis = scr.get_rgba_visual()
         self.composited = bool(vis and scr.is_composited())

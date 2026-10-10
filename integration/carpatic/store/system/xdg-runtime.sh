@@ -1,4 +1,4 @@
-# Carpatic: make sure XDG_RUNTIME_DIR exists even without an elogind PAM session
+# Carpathian: make sure XDG_RUNTIME_DIR exists even without an elogind PAM session
 # (Alpine tty autologin through busybox login). Needed by dbus, pipewire, flatpak portals.
 if [ -z "${XDG_RUNTIME_DIR:-}" ] && [ "$(id -u)" -ne 0 ]; then
   XDG_RUNTIME_DIR="/tmp/runtime-$(id -u)"

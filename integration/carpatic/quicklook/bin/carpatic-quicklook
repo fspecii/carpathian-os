@@ -8,7 +8,7 @@ RT = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
 SOCK = os.path.join(RT, "carpatic-quicklook.sock" if RT != "/tmp" else "carpatic-quicklook-%d.sock" % os.getuid())
 
 def carpatic_session():
-    """Quick Look only ever runs inside a Carpatic desktop: CARPATIC_SESSION=1 (set by carpatic-session) or the configurator install marker,
+    """Quick Look only ever runs inside a Carpathian desktop: CARPATIC_SESSION=1 (set by carpatic-session) or the configurator install marker,
     on an X11 display and never under Wayland. This keeps it from attaching to someone else's desktop (a dev host, a test run)."""
     if os.environ.get("WAYLAND_DISPLAY") or not os.environ.get("DISPLAY"): return False
     if os.environ.get("CARPATIC_SESSION") == "1": return True
@@ -85,7 +85,7 @@ def main(argv):
     if cmd in ("show", "toggle") and not files and cmd == "show":
         print("Which file? Try: carpatic quicklook photo.jpg", file=sys.stderr); return 2
     if cmd in ("show", "toggle") and not carpatic_session():
-        print("Quick Look only works inside the Carpatic desktop.", file=sys.stderr); return 3
+        print("Quick Look only works inside the Carpathian desktop.", file=sys.stderr); return 3
     r = send({"cmd": cmd, "files": files}, start=cmd in ("show", "toggle"))
     if r is None:
         if cmd in ("hide", "quit", "reload"): return 0

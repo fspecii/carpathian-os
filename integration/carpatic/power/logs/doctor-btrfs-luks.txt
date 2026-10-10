@@ -1,5 +1,5 @@
 # carpatic-power doctor  (Btrfs + LUKS2 + Limine, QEMU)
-Carpatic power doctor: can this machine hibernate?
+Carpathian power doctor: can this machine hibernate?
 
 Kernel and firmware
   [ ok ] the kernel offers hibernation ('disk' sleep state: freeze mem disk)
@@ -27,7 +27,7 @@ Result: hibernate should work.
 Not testable in software: whether your graphics, Wi-Fi and USB devices come back cleanly; see power/HARDWARE-TEST-PLAN.md.
 
 # carpatic-power status
-Carpatic power 0.1
+Carpathian power 0.1
 battery   : none (desktop)
 profile   : auto (currently performance)
 cpu       : governor n/a

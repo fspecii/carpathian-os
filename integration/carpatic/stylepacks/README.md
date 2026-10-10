@@ -39,7 +39,7 @@ The profile marks itself with `STYLEPACK=<id>`; `LAUNCHER=<id>` makes `carpatic-
 VERIFIED = run in the VM (golden-full clone, `tests/vm-e2e.sh`: 28 checks pass; screenshots `docs/screenshots/stylepack-*.png`, side-by-side `ref-stylepack-kylin.png`, `ref-stylepack-zen.png`) and looked at. HOST = rendered / tested on the host only. NO = cannot on dwm + X without a compositor. OPEN = possible, not built.
 
 ### Zen vs Zorin OS
-| Attribute | Zorin | Carpatic | Status |
+| Attribute | Zorin | Carpathian | Status |
 |---|---|---|---|
 | Taskbar | 48 px bottom panel, grouped icons, pinned, indicator, previews, show-desktop strip | tint2 48 px, icon-only tasks (one per window), pinned launchers, accent line under tasks, tray, two-line clock | VERIFIED; grouping NO; show-desktop strip: tint2's `button` item does NOT render in the VM (same as the configurator saw), so it is not shown (the `button` lines stay in the template, harmless) |
 | Window previews on hover | live thumbnails | card (rounded, title, icon, thumbnail of the last time the window had focus, click raises, cross closes); starts from an invisible tint2 `execp` item | VERIFIED (thumbnail of a terminal seen); covered windows cannot be captured live: NO |
@@ -54,7 +54,7 @@ VERIFIED = run in the VM (golden-full clone, `tests/vm-e2e.sh`: 28 checks pass; 
 
 ### Kylin vs UKUI 4 (reference: LinPad's native Kylin style, `ref-stylepack-kylin.png`)
 Differences read off the sheet: reference panel is frosted with a rounded tile behind every task and a pill indicator, windows have shadows and a native-looking file manager; ours is a solid panel, a 3 px line indicator, Thunar, no shadows. The start glyph (7 dots), search and task-view icons now follow the reference; wallpaper is original on purpose.
-| Attribute | UKUI | Carpatic | Status |
+| Attribute | UKUI | Carpathian | Status |
 |---|---|---|---|
 | Panel | 48 px, frosted, start / search / task view, tasks, tray, clock, show-desktop | solid 48 px, same items (separator omitted), two-line clock `HH:mm Thu` / `yyyy/MM/dd` | VERIFIED; blur NO; show-desktop strip not rendered (tint2 `button`) |
 | Task indicator | pill 8 / 16 px | 3 px bottom line | PARTLY |

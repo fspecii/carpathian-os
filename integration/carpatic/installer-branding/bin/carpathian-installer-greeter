@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+export PYTHONUTF8=1
+exec python3 /usr/local/share/carpatic/installer-branding/lib/greeter.py "$@"

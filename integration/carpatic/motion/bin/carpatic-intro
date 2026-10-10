@@ -10,7 +10,7 @@
 # or the battery is under 20 %, it already played in this login (or ever, in first-login-only), or an earlier try showed that this screen cannot draw it smoothly
 # (software rendering in a virtual machine): then it stays off until you run `carpatic-intro reset`.
 # Optional per-theme video, like Omarchy's intros: <theme>/intros/<wallpaper name>.mp4 (mp4 m4v mov webm mkv) is played with mpv/ffplay instead, when one of them is installed.
-# Inspired by Omarchy's theme background intros (MIT, see NOTICE); the animation itself is drawn by Carpatic.
+# Inspired by Omarchy's theme background intros (MIT, see NOTICE); the animation itself is drawn by Carpathian.
 SELF=$(readlink -f "$0")
 LIB=${CARPATIC_LIB:-$(dirname "$SELF")/../lib}
 [ -r "$LIB/motionconf.sh" ] || LIB=/usr/local/share/carpatic/motion

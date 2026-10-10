@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# ttylib.sh: terminal helpers shared by the Carpatic greeter and screensaver animations (bash 4+; sourced, no side effects on load).
+# ttylib.sh: terminal helpers shared by the Carpathian greeter and screensaver animations (bash 4+; sourced, no side effects on load).
 #   ttl_open        open the tty, hide the cursor, stop echo, remember the old settings, install the restore trap, watch for resize
 #   ttl_close       restore everything (also runs on EXIT, INT, TERM, HUP): `stty sane`, attributes off, cursor on
 #   ttl_sleep SEC   sleep without forking (a timed read on a pipe that never gets data)

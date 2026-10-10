@@ -55,7 +55,7 @@ def hostname():
     return su.read_file("/etc/hostname") or platform.node()
 
 def machine_model():
-    if FAKE: return "Carpatic Laptop 14"
+    if FAKE: return "Carpathian Laptop 14"
     for p in ("/sys/class/dmi/id/product_name", "/sys/devices/virtual/dmi/id/product_name"):
         v = su.read_file(p)
         if v and v.lower() not in ("to be filled by o.e.m.", "system product name", "standard pc (i440fx + piix, 1996)"): return v

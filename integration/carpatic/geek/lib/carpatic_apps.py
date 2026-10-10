@@ -124,7 +124,7 @@ def write_desktop(kind, e, categories, comment):
     cls = f"carpatic-{kind}-{s}"
     lines = ["[Desktop Entry]", "Type=Application", f"Name={desktop_escape(e['name'])}", f"Comment={desktop_escape(comment)}",
              f"Exec=carpatic-{kind} launch {exec_quote(s)}", f"Icon={desktop_escape(e.get('icon', ''))}" if e.get("icon") else "Icon=applications-internet",
-             f"StartupWMClass={cls}", f"Categories={categories}", "StartupNotify=false", f"X-Carpatic-{kind}={s}"]
+             f"StartupWMClass={cls}", f"Categories={categories}", "StartupNotify=false", f"X-Carpathian-{kind}={s}"]
     if kind == "tui":
         lines.append("Terminal=false")
     p = desktop_path(kind, s)
@@ -331,7 +331,7 @@ def tui_command(e):
         pass
     font = font or "JetBrains Mono:size=10"
     osc = os.path.join(os.environ.get("CARPATIC_STATE", os.path.join(home(), ".local", "state", "carpatic")), "current", "osc")
-    return ["st", "-c", cls, "-t", "Carpatic: " + e["name"], "-g", "110x34", "-f", font, "-e", "sh", "-c",
+    return ["st", "-c", cls, "-t", "Carpathian: " + e["name"], "-g", "110x34", "-f", font, "-e", "sh", "-c",
             'cat "$0" 2>/dev/null; exec ' + e["command"], osc]
 
 

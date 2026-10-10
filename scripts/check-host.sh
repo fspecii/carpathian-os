@@ -1,5 +1,5 @@
 #!/bin/sh
-# check-host.sh - read-only host dependency check for Carpatic Rust.
+# check-host.sh - read-only host dependency check for Carpathian OS.
 #
 # POSIX sh (Alpine busybox ash compatible). Verifies that the commands
 # required to build and test the workspace are present in PATH:
@@ -16,7 +16,7 @@ set -u
 usage() {
     printf 'Usage: check-host.sh [-h | --help]\n'
     printf '\n'
-    printf 'Read-only check for commands required by Carpatic Rust:\n'
+    printf 'Read-only check for commands required by Carpathian OS:\n'
     printf '\n'
     printf '    cargo rustc Xvfb xdotool python3\n'
     printf '\n'

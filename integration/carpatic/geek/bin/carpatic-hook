@@ -60,11 +60,11 @@ case ${1:-list} in
       args=$(grep "^$p|" "$SHARE/hooks.tsv" | cut -d'|' -f2); when=$(grep "^$p|" "$SHARE/hooks.tsv" | cut -d'|' -f3)
       cat > "$f" <<T
 #!/bin/sh
-# Carpatic hook '$p': runs $when.
+# Carpathian hook '$p': runs $when.
 # Arguments: $args
 # It runs with your rights, in the background of the tool that called it. Keep it quick. Delete this file to stop it.
 # Try it by hand: carpatic hook run $p ${args:+EXAMPLE}
-notify-send -a carpatic "Carpatic hook: $p" "\$*" 2>/dev/null
+notify-send -a carpatic "Carpathian hook: $p" "\$*" 2>/dev/null
 T
       chmod +x "$f"
       printf 'Created %s\n' "$f"

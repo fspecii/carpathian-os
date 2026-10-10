@@ -369,7 +369,7 @@ class Client:
             except OSError: pass
         side = {"source": "wallhaven", "id": w.id, "page": w.url, "file": w.path, "original_source": w.source, "uploader": w.uploader,
                 "tags": w.tags, "resolution": f"{w.width}x{w.height}", "attribution": w.attribution,
-                "licence": "Uploaded by a Wallhaven user; the licence is set by the creator. Not bundled with Carpatic OS.",
+                "licence": "Uploaded by a Wallhaven user; the licence is set by the creator. Not bundled with Carpathian OS.",
                 "downloaded": int(self.clock())}
         with open(dest + ".json", "w") as f: json.dump(side, f, indent=1)
         return dest

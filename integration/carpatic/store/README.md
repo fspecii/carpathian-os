@@ -1,4 +1,4 @@
-# Carpatic App Store
+# Carpathian App Store
 
 One place for system apps (apk, Alpine repos) and Flatpak apps (Flathub). Newbie-first: a curated catalog, bundles,
 a graphical store, and a CLI for scripts.
@@ -10,7 +10,7 @@ store/
   lib/carpatic_ai.py      AI tool installers, Ollama models, containers, doctor
   lib/carpatic_drivers.py hardware detection (GPU, microcode, Wi-Fi/BT firmware, print, scan, fingerprint)
   ai/                     tools.toml (recipes), models.toml (verified sizes), services/ (OpenRC for Ollama), RESEARCH.md
-  gui/                    bundled Carpatic style layer (theme/style-*.css), token copies, app icon
+  gui/                    bundled Carpathian style layer (theme/style-*.css), token copies, app icon
   lib/carpatic_storeui.py the GTK3 GUI (see "GUI" below); RESEARCH.md = reference study
   bin/carpatic-store      CLI
   bin/carpatic-ai         AI CLI: status | install | remove | update | models | gpu | llama | webui | compat | doctor
@@ -106,7 +106,7 @@ User tools install to `~/.local` (no root); `/etc/profile.d/carpatic-localbin.sh
 * Claude Code is proprietary; Open WebUI has a branding clause licence; see the table in RESEARCH.md.
 
 ### Catalog source types
-`apk` (Alpine package), `flatpak` (Flathub, per-user), `ai` (Carpatic recipe in `ai/tools.toml`), `compat` (glibc-only software through
+`apk` (Alpine package), `flatpak` (Flathub, per-user), `ai` (Carpathian recipe in `ai/tools.toml`), `compat` (glibc-only software through
 `carpatic-compat`: `pkg` is an apt name, a URL to a .deb/AppImage or a local file; `remove_as` the apt name for removal; the launcher entry
 is created by carpatic-compat). Direct refs work on the CLI: `carpatic-store install apk:htop flatpak:org.gnome.Calculator compat:x11-apps`.
 Example: Google Chrome (`id = "chrome"`) installs its own .deb in the Ubuntu box and gets a normal launcher entry (verified).
@@ -116,7 +116,7 @@ Example: Google Chrome (`id = "chrome"`) installs its own .deb in the Ubuntu box
 `lib/carpatic_storeui.py` (launched by `bin/carpatic-store-gui`). The look comes from the OS: the user's `~/.config/gtk-3.0/gtk.css` (rendered by
 `carpatic-apply`) defines the `@cp_*` colours and the shared `cp-card`, `cp-primary`, `cp-sidebar(-row)`, `cp-section`, `cp-search`, `cp-badge` classes for the six
 styles (macos, windows, ubuntu, zen, kylin, carpatic) in light and dark; the store adds only `st-*` layout classes on top, so a style or accent change restyles it
-live. When that file is not rendered yet (first boot, tests) the bundled `gui/theme/style-{dark,light}.css` (Carpatic style, from `gtktheme/bin/gtk-gen`, refresh with
+live. When that file is not rendered yet (first boot, tests) the bundled `gui/theme/style-{dark,light}.css` (Carpathian style, from `gtktheme/bin/gtk-gen`, refresh with
 `store/system/sync-theme.sh`) is used. Research and measurements: `RESEARCH.md`.
 
 Pages: **Discover** (hero carousel with arrows/dots, "AI tools, one click" strip, categories, games, drivers shortcut, bundles, good first picks), **AI & Agents**

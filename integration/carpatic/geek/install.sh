@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs the Carpatic geek tools (carpatic router, menu, shortcut sheet, dev environments, web apps, hooks, theme packs, dotfiles).
+# Installs the Carpathian geek tools (carpatic router, menu, shortcut sheet, dev environments, web apps, hooks, theme packs, dotfiles).
 # Run as root after desktop/ and configurator/ are installed. Idempotent.  Options: CAPTURE=1 also installs ffmpeg, satty, redshift.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -37,4 +37,4 @@ elif ! [ -x "$PREFIX/bin/carpatic-clipwatch" ] && command -v cc >/dev/null 2>&1;
 fi
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$PREFIX/share/applications" 2>/dev/null || true
 [ -f "$HERE/share/VERSION" ] && install -D -m 644 "$HERE/share/VERSION" "$PREFIX/share/carpatic/VERSION"
-echo "Carpatic geek tools installed. Try: carpatic --help"
+echo "Carpathian geek tools installed. Try: carpatic --help"

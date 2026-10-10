@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Carpatic Settings: the system settings app (GTK3). Usage: carpatic-settings [page] [--page NAME] [--anchor ROW]
+"""Carpathian Settings: the system settings app (GTK3). Usage: carpatic-settings [page] [--page NAME] [--anchor ROW]
 Deep links: wifi bluetooth network notifications sound appearance accessibility desktop wallpaper displays battery lock keyboard mouse
 trackpad printers users language datetime privacy updates apps storage about general; old names (style colours fonts icons cursors
 wallpapers touchpad display startup widgets) still work. Test options: --shot FILE (render the window and quit), --theme NAME, --size WxH."""
 import os, sys
-os.environ["GDK_BACKEND"] = "x11"   # Carpatic is an X11 desktop; never attach to a Wayland session
+os.environ["GDK_BACKEND"] = "x11"   # Carpathian is an X11 desktop; never attach to a Wayland session
 os.environ.pop("WAYLAND_DISPLAY", None)
 HERE = os.path.dirname(os.path.realpath(__file__))
 if HERE not in os.environ.get("PATH", "").split(":"): os.environ["PATH"] = os.environ.get("PATH", "") + ":" + HERE   # carpatic-mouse, -keyboard, ... next to this file

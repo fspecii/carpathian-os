@@ -33,7 +33,7 @@ def settings_conf():
     return os.path.join(config_dir(), "settings.conf")
 
 def builtin_dirs():
-    """Directories with the shipped Carpatic wallpapers (installed share, then the repo checkout)."""
+    """Directories with the shipped Carpathian wallpapers (installed share, then the repo checkout)."""
     here = os.path.dirname(os.path.abspath(__file__))
     repo = os.path.abspath(os.path.join(here, "..", "..", ".."))
     cands = [os.environ.get("CARPATIC_WALLPAPER_DIR", ""),

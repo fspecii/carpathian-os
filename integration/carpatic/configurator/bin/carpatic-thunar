@@ -1,5 +1,5 @@
 #!/bin/sh
-# carpatic-thunar [STYLE] : give Thunar the layout of a Carpatic GTK style (gtktheme/): headerbar or toolbar, menubar, icon size and colour,
+# carpatic-thunar [STYLE] : give Thunar the layout of a Carpathian GTK style (gtktheme/): headerbar or toolbar, menubar, icon size and colour,
 # default view. Written to the xfconf channel "thunar" (live for a running Thunar except the headerbar/menubar switch, which needs a new window).
 # 2nd argument "titlebars": dwm already draws a title bar for every window, so Thunar must not add its own headerbar (a double title bar): CSD is then off.
 # STYLE: macos windows ubuntu zen kylin nothing carpatic (default: GTK_STYLE from settings.conf / the profile). Safe without a session bus (does nothing).

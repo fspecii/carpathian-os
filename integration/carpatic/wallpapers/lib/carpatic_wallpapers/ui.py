@@ -6,7 +6,7 @@
     browser.connect("wallpaper-set", lambda b, path: ...)
     browser.connect("accent-picked", lambda b, hex: ...)
 
-Tabs: Carpatic / My pictures / Wallhaven / Colours. Everything slow (decoding, network) runs on worker threads; the main loop only draws."""
+Tabs: Carpathian / My pictures / Wallhaven / Colours. Everything slow (decoding, network) runs on worker threads; the main loop only draws."""
 import math, os, subprocess, threading, time
 
 import gi
@@ -53,7 +53,7 @@ def _token_dirs():
 
 def install_css(mode="dark", standalone=False):
     """Style the widget. Embedded (default): only this widget's own rules, all scoped under `.wp-browser` / `.wp-*`, so nothing else in the host
-    app is restyled; the colour names (@card_bg_color ...) come from the host, and are defined from the Carpatic tokens only when the host lacks them.
+    app is restyled; the colour names (@card_bg_color ...) come from the host, and are defined from the Carpathian tokens only when the host lacks them.
     standalone=True (the carpatic-wallpapers window): also loads colors-<mode>.css and carpatic-widgets.css for the whole window."""
     screen = Gdk.Screen.get_default()
     if _installed["css"]:
@@ -335,7 +335,7 @@ class WallpaperBrowser(Gtk.Box):
         name = (bi.title + (f" ({bi.mode})" if bi.mode else "")) if bi else os.path.splitext(os.path.basename(p))[0].replace("-", " ").replace("_", " ").title() if p else "No wallpaper"
         self.title.set_text(name)
         d = imageinfo_dims(p)
-        src = "Carpatic" if bi else "Wallhaven" if "/Wallhaven/" in p else "My pictures" if p else ""
+        src = "Carpathian" if bi else "Wallhaven" if "/Wallhaven/" in p else "My pictures" if p else ""
         self.sub.set_text(("  ·  ".join(x for x in (src, f"{d[0]} × {d[1]}" if d else "") if x)) or "Choose a picture below")
         small = bool(d and (d[0] < self.dw * 0.9 or d[1] < self.dh * 0.9))
         self.small_warn.set_text(f"Smaller than your screen ({self.dw} × {self.dh}): it will look soft." if small else ""); self.small_warn.set_visible(small); self.small_warn.set_no_show_all(True)
@@ -358,7 +358,7 @@ class WallpaperBrowser(Gtk.Box):
         seg = Gtk.Box(); seg.get_style_context().add_class("wp-seg"); bar.pack_start(seg, False, False, 0)
         self.stack = Gtk.Stack(); self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE); self.stack.set_transition_duration(120)
         self.tab_btns, first = {}, None
-        for key, text in (("carpatic", "Carpatic"), ("mine", "My pictures"), ("wallhaven", "Wallhaven"), ("colours", "Colours")):
+        for key, text in (("carpatic", "Carpathian"), ("mine", "My pictures"), ("wallhaven", "Wallhaven"), ("colours", "Colours")):
             b = Gtk.RadioButton.new_with_label_from_widget(first, text); b.set_mode(False); first = first or b
             b.connect("toggled", lambda b, k=key: b.get_active() and self._show_tab(k)); seg.pack_start(b, False, False, 0); self.tab_btns[key] = b
         self.tab_extra = Gtk.Box(spacing=8); bar.pack_end(self.tab_extra, False, False, 0)
@@ -386,7 +386,7 @@ class WallpaperBrowser(Gtk.Box):
         if key == "wallhaven" and self._wh["res"] is None and not self._wh["loading"]: self._wh_search(reset=True)
         if key == "mine": self._load_local()
 
-    # ---- Carpatic
+    # ---- Carpathian
     def _load_carpatic(self):
         items = library.builtin_items()
         cells = []
@@ -607,7 +607,7 @@ class WallpaperBrowser(Gtk.Box):
         self.grid_wh, sw = self._scrolled_grid()
         self.grid_wh.disconnect_by_func(self._on_activated); self.grid_wh.connect("activated", self._wh_open); self.grid_wh.connect("need-more", lambda *a: self._wh_more())
         browse.pack_start(sw, True, True, 0)
-        note = label("Pictures come from wallhaven.cc and belong to the people who made them; each has its own licence. Carpatic OS does not ship any. "
+        note = label("Pictures come from wallhaven.cc and belong to the people who made them; each has its own licence. Carpathian OS does not ship any. "
                      "Only safe-for-work pictures are shown. Nothing is downloaded until you choose Download or Set as wallpaper.", "wp-note", wrap=True)
         browse.pack_start(note, False, False, 0)
         dsw = Gtk.ScrolledWindow(); dsw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC); dsw.add(self._wh_detail_page())

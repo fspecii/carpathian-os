@@ -1,5 +1,5 @@
 #!/bin/sh
-# carpatic-power: one command for laptop-grade power management on Carpatic OS (Alpine, OpenRC, elogind).
+# carpatic-power: one command for laptop-grade power management on Carpathian OS (Alpine, OpenRC, elogind).
 #
 #   carpatic-power status                       battery, AC, profile, sleep states, hibernate readiness
 #   carpatic-power doctor                       explain in plain words whether (and why not) hibernate works
@@ -395,14 +395,14 @@ bad()  { printf '  [FAIL] %s\n' "$1"; [ -n "$2" ] && printf '         -> %s\n' "
 cmd_doctor() {
   D_FAIL=0; D_WARN=0
   cmdline=$(cat "$PROC/cmdline" 2>/dev/null)
-  say "Carpatic power doctor: can this machine hibernate?"; say
+  say "Carpathian power doctor: can this machine hibernate?"; say
   say "Kernel and firmware"
   if has_disk_state; then ok "the kernel offers hibernation ('disk' sleep state: $(cat "$SYS/power/state"))"
   else bad "the kernel does not offer hibernation (/sys/power/state has no 'disk')" "the kernel was built or booted without hibernation support; use the stock Alpine linux-lts kernel and make sure no 'nohibernate' is on the boot line"; fi
   case " $cmdline " in *" nohibernate "*) bad "'nohibernate' is on the kernel command line" "remove it from your bootloader config" ;; esac
   lm=$(lockdown_mode)
   case "$lm" in
-    integrity|confidentiality) bad "kernel lockdown is '$lm', and Linux refuses hibernation under lockdown" "this happens with UEFI Secure Boot on. Turn Secure Boot off in the firmware (Carpatic does not ship signed kernels yet), reboot, and run doctor again" ;;
+    integrity|confidentiality) bad "kernel lockdown is '$lm', and Linux refuses hibernation under lockdown" "this happens with UEFI Secure Boot on. Turn Secure Boot off in the firmware (Carpathian does not ship signed kernels yet), reboot, and run doctor again" ;;
     none) ok "kernel lockdown is off, so nothing blocks hibernation" ;;
     *) ok "no kernel lockdown information (fine: lockdown is not active)" ;;
   esac
@@ -459,7 +459,7 @@ cmd_doctor() {
   say; say "Services"
   if elogind_up; then ok "elogind is running (lid, power key and 'loginctl hibernate' work)"
   else wn "elogind is not running" "rc-service elogind start; rc-update add elogind default"; fi
-  if [ -f "$ETC/elogind/logind.conf.d/10-carpatic.conf" ]; then ok "lid and power-key policy installed"; else wn "no Carpatic lid/power policy yet" "run: doas carpatic-power apply-config"; fi
+  if [ -f "$ETC/elogind/logind.conf.d/10-carpatic.conf" ]; then ok "lid and power-key policy installed"; else wn "no Carpathian lid/power policy yet" "run: doas carpatic-power apply-config"; fi
   grep -Rqs '^AllowHibernation=no' "$ETC/elogind/" 2>/dev/null && bad "AllowHibernation=no in /etc/elogind" "remove that line"
 
   say
@@ -480,7 +480,7 @@ apply_config_files() {
   if has_battery; then lid=suspend; pk=suspend; else lid=ignore; pk=poweroff; fi
   [ -n "${CP_DRY:-}" ] && { say "[dry-run] write $d/logind.conf.d/10-carpatic.conf (lid=$lid power key=$pk)"; return; }
   cat >"$d/logind.conf.d/10-carpatic.conf" <<EOF
-# Carpatic OS: written by 'carpatic-power apply-config'. Edit freely; it is not overwritten if you add your own file after it.
+# Carpathian OS: written by 'carpatic-power apply-config'. Edit freely; it is not overwritten if you add your own file after it.
 [Login]
 HandleLidSwitch=$lid
 HandleLidSwitchExternalPower=$lid
@@ -492,7 +492,7 @@ InhibitDelayMaxSec=10
 IdleAction=ignore
 EOF
   cat >"$d/sleep.conf.d/10-carpatic.conf" <<EOF
-# Carpatic OS sleep policy. 'platform shutdown': try ACPI S4, fall back to a plain power-off after the image is written.
+# Carpathian OS sleep policy. 'platform shutdown': try ACPI S4, fall back to a plain power-off after the image is written.
 [Sleep]
 AllowSuspend=yes
 AllowHibernation=yes
@@ -525,7 +525,7 @@ cmd_sleep() {
     *) die "usage: carpatic-power sleep suspend|hibernate|hybrid|suspend-then-hibernate [minutes]" ;;
   esac
   if [ "$k" = hibernate ] || [ "$k" = hybrid-sleep ] || [ "$k" = suspend-then-hibernate ]; then
-    cmd_ready || { warn "hibernate is not set up on this machine (run: carpatic-power doctor)"; if have notify-send; then notify-send -a "Carpatic power" "Hibernate not available" "Run carpatic-power doctor" 2>/dev/null; fi; exit 1; }
+    cmd_ready || { warn "hibernate is not set up on this machine (run: carpatic-power doctor)"; if have notify-send; then notify-send -a "Carpathian power" "Hibernate not available" "Run carpatic-power doctor" 2>/dev/null; fi; exit 1; }
   fi
   if [ "$k" = suspend-then-hibernate ]; then
     mins=${2:-$STH_DELAY_MIN}
@@ -634,7 +634,7 @@ notify_all() { # urgency title body
   for r in /run/user/*; do
     [ -S "$r/bus" ] || continue
     uid=${r##*/}; u=$(awk -F: -v i="$uid" '$3==i {print $1}' "$ETC/passwd")
-    [ -n "$u" ] && have notify-send && su -s /bin/sh "$u" -c "DBUS_SESSION_BUS_ADDRESS=unix:path=$r/bus notify-send -u $1 -a 'Carpatic power' '$2' '$3'" >/dev/null 2>&1
+    [ -n "$u" ] && have notify-send && su -s /bin/sh "$u" -c "DBUS_SESSION_BUS_ADDRESS=unix:path=$r/bus notify-send -u $1 -a 'Carpathian power' '$2' '$3'" >/dev/null 2>&1
   done
   have wall && [ "$1" = critical ] && echo "$2: $3" | wall 2>/dev/null
   logger -t carpatic-power "$2: $3" 2>/dev/null
@@ -707,7 +707,7 @@ cmd_menu() {
 
 # ---------------------------------------------------------------- status
 cmd_status() {
-  say "Carpatic power $VERSION"
+  say "Carpathian power $VERSION"
   if has_battery; then
     p=$(battery_pct); st=$(battery_status)
     say "battery   : ${p:-?}% ${st:-} ($(on_ac && echo 'AC connected' || echo 'on battery'))"

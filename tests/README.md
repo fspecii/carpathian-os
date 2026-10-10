@@ -17,3 +17,7 @@ The base must include the development desktop and build/test dependencies; missi
 Results are written under ignored artifacts/test-run-* with suite logs and actual exit status. Real compositor suites test installed guest code, so deploy the intended native binary and helper versions before running them. Renderer identity comes from `glxinfo -B`; a virtual 3D device alone does not prove acceleration.
 
 Performance runs must be exclusive of builds and other suites. Root-pixel checks do not measure physical FPS. Restore preferences and destroy disposable fixtures after testing; retain evidence outside source commits.
+
+## Installer identity
+
+The quick suite includes five private controlling-terminal checks for the selected wordmark, mountain alignment, animation/reduced motion, resize and terminal restoration. They require no graphical desktop. Theme checks include canonical/symbolic logo geometry and palette contrast.

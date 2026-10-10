@@ -1,9 +1,9 @@
-# Carpatic geek tools
+# Carpathian geek tools
 
-The keyboard-driven, hackable, themeable side of Carpatic OS, for people who came from Omarchy, ricers and developers. One front door
+The keyboard-driven, hackable, themeable side of Carpathian OS, for people who came from Omarchy, ricers and developers. One front door
 (`carpatic`), one keyboard menu, one searchable shortcut sheet, one-command dev environments, web apps, hooks, theme packs and dotfiles.
 Credit and what was adapted from Omarchy (MIT): see `NOTICE`. The code is new, for Alpine (musl, OpenRC), dwm, X11 and rofi, in the
-Carpatic design system.
+Carpathian design system.
 
 Users: read `docs/USER-GUIDE-geek.md`. This file is for people who work on the tools.
 
@@ -25,7 +25,7 @@ Users: read `docs/USER-GUIDE-geek.md`. This file is for people who work on the t
 ## Install
 `doas sh geek/install.sh` after `desktop/install.sh` and `configurator/install.sh` (idempotent). It installs `packages.txt`, the tools to
 `/usr/local/bin`, libraries to `/usr/local/lib/carpatic-geek`, data to `/usr/local/share/carpatic/geek`, completions, the man page, two launcher
-entries (Carpatic Menu, Keyboard Shortcuts) and builds `carpatic-clipwatch`. `CAPTURE=1` also installs ffmpeg, satty and redshift.
+entries (Carpathian Menu, Keyboard Shortcuts) and builds `carpatic-clipwatch`. `CAPTURE=1` also installs ffmpeg, satty and redshift.
 Everything also runs straight from the repository (`geek/bin/carpatic`), which is how the host tests work.
 
 ## Design rules followed

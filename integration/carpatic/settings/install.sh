@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install Carpatic Settings (run as root; idempotent). The launcher /usr/local/bin/carpatic-settings (configurator/) starts this app and
+# Install Carpathian Settings (run as root; idempotent). The launcher /usr/local/bin/carpatic-settings (configurator/) starts this app and
 # falls back to the old Appearance-only window when it is not installed.
 set -eu
 SRC=$(cd "$(dirname "$0")" && pwd)

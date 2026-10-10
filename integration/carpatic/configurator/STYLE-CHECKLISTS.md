@@ -18,7 +18,7 @@ VERIFIED on screen or by command in the VM (screenshots in docs/screenshots/styl
 NOT verified: Launchpad grid on F4, dock running-indicator dots with real running apps, Ubuntu dock "Show applications" button (never built, see NEEDS), the Ubuntu/macOS light after-shots and the remaining unopened after-shots, Windows Start pinned apps launching, `carpatic-pack style` as one command (the individual packs were installed), Fluent GTK theme (not built), Selawik/Ubuntu font actually used by the UI (installed, not screenshotted), WhiteSur/Yaru/Qogir installs on this run, quick-settings tiles with real hardware.
 
 ## macOS
-| Attribute | The real thing | Carpatic | Status |
+| Attribute | The real thing | Carpathian | Status |
 |---|---|---|---|
 | Top bar | 24-28 px, light, translucent, app name bold, menus, status icons + clock right | 28 px light bar (`surface`), logo + bold active-app name left, tray + "Thu 8 Oct  10:59" right | DONE (opaque: **no-compositor**) |
 | Global menu | File Edit View ... of the focused app | not possible without per-app D-Bus menu export (dead labels would be worse than none) | NO |
@@ -37,7 +37,7 @@ NOT verified: Launchpad grid on F4, dock running-indicator dots with real runnin
 | Keys | Cmd = Super, Cmd+Space, Cmd+Q/W/Tab, Cmd+C/V (emulated) | as before | PARTLY (limits in README) |
 
 ## Windows 11
-| Attribute | The real thing | Carpatic | Status |
+| Attribute | The real thing | Carpathian | Status |
 |---|---|---|---|
 | Taskbar | 48 px, icons centred, Start in the middle group, tray + clock right | 48 px bar, Start + pinned + tasks centred, tray + two-line clock right, 8 px rounded task plates | DONE |
 | Fonts | Segoe UI Variable | Selawik (OFL, metric-compatible, pinned 3 files) via pack, Noto Sans fallback | DONE |
@@ -53,7 +53,7 @@ NOT verified: Launchpad grid on F4, dock running-indicator dots with real runnin
 | Mica / acrylic / snap layouts flyout | translucency, snap bar | **no-compositor**; snap keys (Super+arrows) exist | NO |
 
 ## Ubuntu (GNOME)
-| Attribute | The real thing | Carpatic | Status |
+| Attribute | The real thing | Carpathian | Status |
 |---|---|---|---|
 | Top panel | 28-32 px dark, Activities left, clock centre, system menu right | 28 px bar, Activities, centred clock, tray + system-menu icon that opens the quick settings | DONE |
 | Dock | left, 48-56 px, rounded, active-app dot, running apps | left dock 56 px, 40 px icons, running indicator dot on the left edge, orange | DONE |

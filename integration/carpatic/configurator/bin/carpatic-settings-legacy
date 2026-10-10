@@ -65,7 +65,7 @@ class Preview(Gtk.DrawingArea):
             for i in range(3): rect(34 + i*52, H-19, 46, 16, rgb(c.get("lighter_background", "#444")))
             text(W-40, H-18, "12:30", ui, fg, 8)
         elif prof == "macos":
-            top = 14; rect(0, 0, W, 14, bar, 0.92); text(8, 0, "Carpatic", ui, fg, 7); text(W-70, 0, "Wed 12:30", ui, fg, 7)
+            top = 14; rect(0, 0, W, 14, bar, 0.92); text(8, 0, "Carpathian", ui, fg, 7); text(W-70, 0, "Wed 12:30", ui, fg, 7)
             rect(W/2-70, H-34, 140, 28, bar, 0.85)
             for i in range(5): rect(W/2-62 + i*26, H-31, 20, 20, rgb(c.get("lighter_background", "#444")))
         elif prof == "ubuntu":
@@ -102,7 +102,7 @@ class Preview(Gtk.DrawingArea):
 
 class App(Gtk.Window):
     def __init__(self):
-        super().__init__(title="Carpatic Settings")
+        super().__init__(title="Carpathian Settings")
         self.set_default_size(1180, 720); self.set_position(Gtk.WindowPosition.CENTER)
         self.css = Gtk.CssProvider(); install_css(self.css)
         self.pending = []; self.proc = None
@@ -416,7 +416,7 @@ class App(Gtk.Window):
             if c.get("mode", "dark") != mode: continue
             b = Gtk.Button(); b.get_style_context().add_class("card")
             area = Gtk.DrawingArea(); area.set_size_request(120, 64); area.connect("draw", lambda w, cr, c=c: draw_theme_swatch(w, cr, c))
-            lab = Gtk.Label(label="Carpatic" if t == "carpatic" else ("Carpatic Light" if t == "carpatic-light" else t.replace("-", " ").title())); lab.get_style_context().add_class("ctitle")
+            lab = Gtk.Label(label="Carpathian" if t == "carpatic" else ("Carpathian Light" if t == "carpatic-light" else t.replace("-", " ").title())); lab.get_style_context().add_class("ctitle")
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6); box.pack_start(area, False, False, 0); box.pack_start(lab, False, False, 0)
             b.add(box); b.connect("clicked", lambda _b, t=t: self.queue("carpatic-theme", "set", t)); 
             if t == s.get("THEME"): b.get_style_context().add_class("selected")

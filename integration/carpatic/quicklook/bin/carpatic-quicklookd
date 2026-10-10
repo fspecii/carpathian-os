@@ -6,5 +6,5 @@ sys.path.insert(0, LIB)
 os.environ.setdefault("GDK_BACKEND", "x11")
 import ql_daemon
 if not ql_daemon.carpatic_session():
-    print("carpatic-quicklookd only runs inside the Carpatic desktop.", file=sys.stderr); sys.exit(3)
+    print("carpatic-quicklookd only runs inside the Carpathian desktop.", file=sys.stderr); sys.exit(3)
 sys.exit(ql_daemon.main())

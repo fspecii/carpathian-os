@@ -1,5 +1,5 @@
 #!/bin/sh
-# carpatic-lockscreen: when the screen locks and turns off. Used by Carpatic Settings > Lock Screen.
+# carpatic-lockscreen: when the screen locks and turns off. Used by Carpathian Settings > Lock Screen.
 #   carpatic-lockscreen status            "lock-after <minutes|never>", "screen-off-after <minutes|never>", "lock-on-sleep yes|no"
 #   carpatic-lockscreen lock-after <minutes|never>
 #   carpatic-lockscreen screen-off-after <minutes|never>

@@ -1,4 +1,4 @@
-"""Palette and CSS of Carpatic Settings. Colours come from the active theme (configurator/themes/<name>/colors.toml, the same file
+"""Palette and CSS of Carpathian OS Settings. Colours come from the active theme (configurator/themes/<name>/colors.toml, the same file
 design/tokens/out/ is generated into), so the app follows the user's theme and accent. Sizes come from docs/DESIGN-SYSTEM.md:
 4 px spacing grid, radii 4/6/10/14, type scale 11/12/14/16/20/24/32."""
 import os, re

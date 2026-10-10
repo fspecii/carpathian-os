@@ -1,4 +1,4 @@
-# Carpatic geek tools: runtime packages (Alpine 3.24). One per line; # comments ok.
+# Carpathian geek tools: runtime packages (Alpine 3.24). One per line; # comments ok.
 python3
 py3-gobject3
 py3-cairo

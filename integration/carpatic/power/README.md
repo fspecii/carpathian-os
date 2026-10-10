@@ -1,4 +1,4 @@
-# power/: suspend, hibernate and laptop power for Carpatic OS
+# power/: suspend, hibernate and laptop power for Carpathian OS
 
 One CLI (`carpatic-power`, POSIX sh, idempotent) plus OpenRC/elogind/udev/acpid/TLP config. Research and decisions: [RESEARCH.md](RESEARCH.md).
 Integration requests for other agents: [NEEDS.md](NEEDS.md). Human test on a laptop (15 min): [HARDWARE-TEST-PLAN.md](HARDWARE-TEST-PLAN.md).

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install the Carpatic motion pieces (login animation, screensaver, installer greeter animation, boot helpers, Settings page) into a running system
+# Install the Carpathian motion pieces (login animation, screensaver, installer greeter animation, boot helpers, Settings page) into a running system
 # or into a target tree. Idempotent. Usage: install.sh [--root DIR]
 # Paths: programs -> /usr/local/bin, shared files -> /usr/local/share/carpatic/motion, Settings page -> next to carpatic_ui.py of the configurator.
 set -eu

@@ -1,4 +1,4 @@
-# Carpatic theme picker
+# Carpathian theme picker
 
 `carpatic-theme-picker` (Super+Ctrl+Shift+Space, `carpatic theme pick`, Style > Theme picker in the menu, "Browse themes" in Settings > Appearance).
 A centred card with a large live preview, a strip of options and a list of rows. **Left/Right change the focused row and the real desktop follows**
@@ -30,7 +30,7 @@ wheel over the strip changes the value, wheel over the rows moves rows, a touch 
 | Row | settings.conf key | Notes |
 |---|---|---|
 | Theme | `THEME` | every theme in `configurator/themes` and `~/.config/carpatic/themes`; a new theme drops the accent, wallpaper and border-colour overrides so it shows as designed |
-| Light or dark | `THEME` | the paired theme (catppuccin and catppuccin-latte...), otherwise Carpatic / Carpatic Light |
+| Light or dark | `THEME` | the paired theme (catppuccin and catppuccin-latte...), otherwise Carpathian / Carpathian Light |
 | Wallpaper | `WALLPAPER` | the theme's pictures, the Carpathian scenes of its mode, `~/.config/carpatic/backgrounds/<theme>/`, `~/Pictures/Wallpapers` |
 | Accent colour | `ACCENT` | theme colour, the six design accents, the theme's own palette colours, custom hex |
 | Window border, Border colour | `BORDER_WIDTH` `BORDER_ACTIVE` | width 0-8 px, colour from the palette or any hex (dwm `border_width`, `border_active`) |
@@ -40,7 +40,7 @@ wheel over the strip changes the value, wheel over the rows moves rows, a touch 
 | Icons, Cursor | `ICON_THEME` `CURSOR_THEME` | the installed packs |
 | Font, Font size, Code font | `UI_FONT` `UI_SIZE` `MONO_FONT` | the curated families that are installed |
 | Desktop style | `PROFILE` | Windows, macOS, Ubuntu, tiling, simple. **Applies when you press Enter** (it restarts the bars), the preview shows it at once |
-The rows write the same keys as Carpatic Settings and `carpatic-appearance`, so both stay truthful. Every row shows what the default is ("Default (Papirus-Light)").
+The rows write the same keys as Carpathian Settings and `carpatic-appearance`, so both stay truthful. Every row shows what the default is ("Default (Papirus-Light)").
 A dot in front of a row means it overrides the default.
 
 ## How it works
@@ -94,6 +94,6 @@ Wired into `tests/run.sh` as suites `themepicker-logic` (quick) and `themepicker
 - `carpatic-apply` is the bottleneck of the live retint (0.5-1.0 s, mostly small forks inside the shell script); see `NEEDS.md`.
 - The window bar font and the `Font` row of the dwm bar take effect at the next login (dwm reads it at start): the Settings app has the same limit.
 - Video wallpapers and `preview.png` files of Omarchy themes are not used: previews are drawn. The wallpaper row lists pictures only.
-- Cursor size, GTK theme and the hinting options are not rows here; they live in Carpatic Settings.
+- Cursor size, GTK theme and the hinting options are not rows here; they live in Carpathian Settings.
 - Touch: swipes work, but there is no on-screen keyboard for the custom colour / save-as boxes.
 - Only the dwm on X11 desktop is supported.

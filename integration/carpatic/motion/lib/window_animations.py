@@ -190,7 +190,7 @@ def render(state, backend=None):
              # rounded 8px border. Clip that parent too, preserving menu motion.
              '{ match = ' + json.dumps("window_type *= 'menu'") + '; corner-radius = 8; }',
              rule("_CARPATIC_DRAGGING = 1 || _CARPATIC_DRAGGING@ = 1", [instant(["geometry"])]),
-             rule("window_type = 'dock' || window_type = 'desktop' || class_g = 'i3lock' || class_g = 'slock' || name = 'Carpatic intro'", [all_instant])]
+             rule("window_type = 'dock' || window_type = 'desktop' || class_g = 'i3lock' || class_g = 'slock' || name = 'Carpathian intro'", [all_instant])]
     # Picom 13 XRender partial repainting leaves stale exposed client regions
     # after animated occlusion (pixel regression reproduces this reliably).
     # Repaint the scene on damage events; this does not add an idle frame loop.
@@ -202,10 +202,10 @@ def render(state, backend=None):
 
 def session_guard():
     if os.environ.get("WAYLAND_DISPLAY") or os.environ.get("XDG_CURRENT_DESKTOP") == "COSMIC":
-        raise ValueError("Run window animations inside the Carpatic X11 desktop.")
+        raise ValueError("Run window animations inside the Carpathian X11 desktop.")
     if not os.environ.get("DISPLAY"): return False
     if os.environ.get("CARPATIC_SESSION") != "1" and os.environ.get("XDG_CURRENT_DESKTOP") != "CarpaticRust":
-        raise ValueError("Run window animations inside the Carpatic desktop.")
+        raise ValueError("Run window animations inside the Carpathian desktop.")
     return True
 
 def runtime_dir():
@@ -307,7 +307,7 @@ def _apply():
     version = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=5).stdout.strip().lstrip("v")
     try: supported = int(version.split(".", 1)[0].split("-", 1)[0]) >= 13
     except ValueError: supported = False
-    if not supported: raise ValueError("Window animations require the updated Carpatic compositor.")
+    if not supported: raise ValueError("Window animations require the updated Carpathian compositor.")
     runtime = runtime_dir(); runtime.mkdir(parents=True, exist_ok=True); runtime.chmod(0o700)
     with (runtime / "compositor.log").open("a") as log:
         process = subprocess.Popen([binary, "--config", str(config_dir() / "window-animations.conf")],
@@ -319,7 +319,7 @@ def _apply():
     prepare_minimise(delay)
 
 def main():
-    parser = argparse.ArgumentParser(description="Configure Carpatic window animations")
+    parser = argparse.ArgumentParser(description="Configure Carpathian window animations")
     sub = parser.add_subparsers(dest="command")
     get = sub.add_parser("get"); get.add_argument("--json", action="store_true")
     setter = sub.add_parser("set"); setter.add_argument("key"); setter.add_argument("value"); setter.add_argument("--no-apply", action="store_true")
@@ -336,7 +336,7 @@ def main():
         elif args.command == "reset": save(DEFAULTS); apply()
         elif args.command == "apply": apply()
         elif args.command == "preview":
-            if not session_guard(): raise ValueError("Open Preview from the Carpatic desktop.")
+            if not session_guard(): raise ValueError("Open Preview from the Carpathian desktop.")
             from animation_preview import show
             show()
     except (ValueError, OSError, subprocess.SubprocessError) as error:

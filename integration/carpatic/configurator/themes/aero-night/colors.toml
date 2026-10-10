@@ -2,7 +2,7 @@
 # The dark partner of the Aero palette: pick "aero" for the 7-era light look, this for the night one.
 # Palette data from the LinPad desktop-themes collection (CC0 1.0),
 # upstream/themes/desktop-themes/colors/aero-night/colors.toml @ 01246414fe9517d883b9489ba3e9e9f3780f479e.
-# Wallpapers in this folder are original Carpatic artwork (procedural, CC0; port of the upstream "aurora-night" scene).
+# Wallpapers in this folder are original Carpathian artwork (procedural, CC0; port of the upstream "aurora-night" scene).
 mode = "dark"
 
 accent = "#4cc2ff"

@@ -1,4 +1,4 @@
-"""Appearance: everything about how Carpatic LOOKS. The desktop style preset, light/dark, accent, the colour theme gallery (same cards as the Welcome and the keyboard
+"""Appearance: everything about how Carpathian OS LOOKS. The desktop style preset, light/dark, accent, the colour theme gallery (same cards as the Welcome and the keyboard
 theme picker), wallpaper, fonts, icon packs, cursors, window buttons, window corners/borders/gaps. Everything goes through the CLI (carpatic-theme, carpatic-appearance,
 carpatic-profile, carpatic-pack) so scripts and the GUI stay equivalent. Behaviour (bar/dock design and position, window layout) lives in Desktop & Dock."""
 import os, math, sys
@@ -16,7 +16,7 @@ import carpatic_looks as looks
 ACCENTS = [("spruce", "Spruce", "#5cc8a8", "#16806a"), ("glacier", "Glacier", "#6cb4f0", "#1e6fb8"), ("dusk", "Dusk", "#a99bf0", "#6a4fd0"),
            ("rose", "Rose", "#f08aa8", "#c2386a"), ("ember", "Ember", "#f2a65a", "#b8640f"), ("moss", "Moss", "#a3d36b", "#4f8a1c")]
 
-def theme_label(t): return {"carpatic": "Carpatic", "carpatic-light": "Carpatic Light"}.get(t, t.replace("-", " ").title())
+def theme_label(t): return {"carpatic": "Carpathian OS", "carpatic-light": "Carpathian Light"}.get(t, t.replace("-", " ").title())
 
 def draw_mode_tile(cr, W, H, c, selected=False):
     r = 8
@@ -49,7 +49,7 @@ class AppearancePage(Page):
     id = "appearance"; title = "Appearance"; icon = "applications-graphics"; color = "#5e5ce6"; group = 2
     aliases = ("style", "colours", "colors", "fonts", "icons", "cursors", "theme", "themes", "buttons", "windowlook")
     keywords = "look theme dark light mode accent colour color style preset desktop windows macos ubuntu tiling fonts icons cursor window buttons corners borders gaps picker"
-    sub = "How Carpatic looks. Changes apply at once and are kept after a restart."
+    sub = "How Carpathian OS looks. Changes apply at once and are kept after a restart."
     entries = (("Desktop style", "preset profile windows macos ubuntu zen kylin tiling beginner layout look", "style"), ("Light or dark", "mode night day", "mode"), ("Accent colour", "highlight color", "accent"),
                ("Colour theme", "palette nord gruvbox catppuccin themes swatches", "themes"), ("Browse themes", "theme picker live preview arrow keys keyboard", "picker"),
                ("App colours", "gtk qt follow colours terminal editors browser app theme", "appcolours"), ("Wallpaper", "background picture image", "wallpaper-link"),

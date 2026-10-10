@@ -1,4 +1,4 @@
-# Carpatic widgets
+# Carpathian widgets
 
 Small cards on the desktop (clock, calendar, weather, system monitor, now playing, battery, notes, to-do, quick settings, wallpaper frame,
 app shortcuts, tip of the day). **Off by default**: nothing runs, nothing is autostarted, no D-Bus name is claimed and no network request is made

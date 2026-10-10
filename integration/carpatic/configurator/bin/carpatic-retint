@@ -5,7 +5,7 @@
 #   terminal: kitty, foot, ghostty configs (alacritty, st, xterm and the open terminals are done by carpatic-apply, OSC 4/10/11/12/17/19)
 #   editors:  VS Code / VSCodium / Code - OSS (workbench + semantic tokens), Helix; Neovim is done by the geek hook (carpatic-dev nvim-theme)
 #   browser:  Chromium/Chrome (Preferences colour + optional managed policy file), Firefox (userChrome/userContent + prefs)
-#   qt:       Kvantum theme "Carpatic" recoloured from the palette (+ QT_STYLE_OVERRIDE via env.sh)
+#   qt:       Kvantum theme "Carpathian" recoloured from the palette (+ QT_STYLE_OVERRIDE via env.sh)
 #   cli:      btop, tmux, starship, bat, lazygit, fzf, eza/ls, gum (env.sh)
 # Targets run in parallel; apps that are not installed are still given their files (cheap) except where a config dir would be invented.
 . "$(dirname "$0")/carpatic-lib" 2>/dev/null || . carpatic-lib

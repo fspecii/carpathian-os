@@ -168,7 +168,7 @@ class AccessibilityPage(Page):
     id = "accessibility"; title = "Accessibility"; icon = "preferences-desktop-accessibility"; color = "#0a84ff"; group = 2
     aliases = ("access", "a11y")
     keywords = "larger text bigger font high contrast screen reader orca keyboard sticky slow bounce mouse keys vision hearing motor"
-    sub = "Make Carpatic easier to see, hear and use. Choices are kept for the next login."
+    sub = "Make Carpathian OS easier to see, hear and use. Choices are kept for the next login."
     entries = (("Larger text", "bigger font size cursor", "large-text"), ("High contrast", "white on black yellow", "high-contrast"), ("Screen reader", "orca speech blind", "screen-reader"), ("On-screen keyboard", "onboard virtual typing", "keyboard"),
                ("Sticky keys", "modifiers one at a time shift ctrl", "sticky"), ("Slow keys", "brief touches", "slow"), ("Bounce keys", "double press", "bounce"), ("Mouse keys", "number pad pointer", "mousekeys"))
     def available(self): return su.which("carpatic-a11y")

@@ -43,7 +43,7 @@ def main():
     args = parser.parse_args()
     display = os.environ.get('DISPLAY', '')
     if not display or os.environ.get('WAYLAND_DISPLAY') or os.environ.get('CARPATIC_SESSION') != '1':
-        parser.error('an owned Carpatic X11 session is required')
+        parser.error('an owned Carpathian X11 session is required')
     label = args.name or args.script
     if '/' in label or not label or label.startswith('-'):
         parser.error('provide an exact executable or script basename')

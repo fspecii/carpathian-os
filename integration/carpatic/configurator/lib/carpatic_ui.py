@@ -1,4 +1,4 @@
-"""Shared helpers for the Carpatic GTK front ends (carpatic-welcome, carpatic-settings). All real work is done by the CLI tools."""
+"""Shared helpers for the Carpathian GTK front ends (carpatic-welcome, carpatic-settings). All real work is done by the CLI tools."""
 import os, re, subprocess, glob
 import gi
 gi.require_version("Gtk", "3.0")

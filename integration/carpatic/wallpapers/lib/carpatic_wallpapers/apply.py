@@ -116,7 +116,7 @@ def build_commands(default, fill="fill", per_monitor=None, mons=None, have=shuti
         def setting(prop, kind, value):
             return ["xfconf-query", "--channel", "xfce4-desktop", "--property", prop,
                     "--create", "--type", kind, "--set", str(value)]
-        # Carpatic stores one global wallpaper per monitor, across workspaces.
+        # Carpathian stores one global wallpaper per monitor, across workspaces.
         cmds = [setting("/backdrop/single-workspace-number", "int", 0),
                 setting("/backdrop/single-workspace-mode", "bool", "true")]
         for name, *_ in mons:
@@ -156,7 +156,7 @@ def validate(path):
     if not os.path.isfile(path): raise WallpaperError("That picture is not there any more.")
     with open(path, "rb") as f:
         k = imageinfo.sniff(f.read(32))
-    if k is None: raise WallpaperError("That file is not a picture Carpatic can use.")
+    if k is None: raise WallpaperError("That file is not a picture Carpathian can use.")
     return path
 
 def set_wallpaper(path, fill=None, monitor=None, for_theme=False, pair=None, paint_now=True, run=subprocess.run):

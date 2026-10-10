@@ -53,7 +53,7 @@ class DisplaysPage(Page):
         self.top.set_footer(su.SCALE_NOTE) if su.which("carpatic-appearance") else None
         self.screens = pb.group("Screens", key="screens")
         self.arr = None
-        self.multi = pb.group("More than one screen", "Carpatic sets up screens when you plug them in or out. Pick how they are used right now.", key="arrange")
+        self.multi = pb.group("More than one screen", "Carpathian OS sets up screens when you plug them in or out. Pick how they are used right now.", key="arrange")
         self.layout_seg = Segmented([("extend", "Extend"), ("mirror", "Mirror"), ("external", "Only other"), ("internal", "Only this")], None, lambda m: self.win.apply("carpatic-display", m, msg="Changing screens...", done=lambda *_: self.refresh()))
         self.multi.add(CustomRow(self.layout_seg, key="arrange", pad=12))
         if su.which("carpatic-display"):

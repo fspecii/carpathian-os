@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """carpatic-flyout quick|calendar|start [--look win|mac|ubuntu|kylin] : taskbar flyouts (quick settings, calendar + notifications, Start menu).
-Calling the same mode again closes it. Only runs inside a Carpatic session (CARPATIC_SESSION=1 or CARPATIC_FORCE=1)."""
+Calling the same mode again closes it. Only runs inside a Carpathian session (CARPATIC_SESSION=1 or CARPATIC_FORCE=1)."""
 import os, sys, argparse
 HERE = os.path.dirname(os.path.abspath(__file__))
 for p in ("/usr/local/lib/carpatic-panel", os.path.join(HERE, "..", "lib")):

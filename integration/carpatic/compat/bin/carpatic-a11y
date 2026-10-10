@@ -1,5 +1,5 @@
 #!/bin/sh
-# carpatic-a11y: accessibility switches for the Carpatic desktop. Used by the Accessibility page of Carpatic System and by the session.
+# carpatic-a11y: accessibility switches for the Carpathian desktop. Used by the Accessibility page of Carpathian System and by the session.
 #
 #   carpatic-a11y status                         what is on
 #   carpatic-a11y large-text on|off              bigger UI font, mono font and mouse pointer

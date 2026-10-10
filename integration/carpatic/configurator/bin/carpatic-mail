@@ -4,7 +4,7 @@
 RC=$HOME/.pinerc
 if [ ! -f "$RC" ]; then
   cat > "$RC" <<'EOT'
-# Carpatic defaults for Alpine mail (edit freely; Setup is the S key in the main menu)
+# Carpathian defaults for Alpine mail (edit freely; Setup is the S key in the main menu)
 last-version-used=Alpine 2.26
 feature-list=enable-mouse-in-xterm,enable-8bit-esmtp-negotiation,quell-flowed-text,auto-open-next-unread,suppress-initial-keymenu-hint
 use-only-domain-name=yes

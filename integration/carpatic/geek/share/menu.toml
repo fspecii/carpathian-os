@@ -1,4 +1,4 @@
-# The Carpatic menu (Super+Alt+Space). Plain data: add or change entries without touching code.
+# The Carpathian menu (Super+Alt+Space). Plain data: add or change entries without touching code.
 #
 # Every table is an entry. A table with sub-tables is a sub-menu, a table with `action` runs a command, a table with `provider`
 # fills itself at run time. Fields:

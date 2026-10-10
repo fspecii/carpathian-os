@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extra sprites for the animated Carpatic Plymouth theme (design/plymouth/carpatic/): three parallax ridge layers, the ember glow,
+"""Extra sprites for the animated Carpathian Plymouth theme (design/plymouth/carpatic/): three parallax ridge layers, the ember glow,
 the progress fill and the two 'motion flag' images. Host tool: python3 + pycairo. Deterministic (fixed seeds).
 Does not touch the sprites of design/tools/plymouth-assets.py (logo, text, dialog); it only adds files.
 

@@ -240,8 +240,8 @@ def main():
     original_desktop = int(command('xprop', '-root', '_NET_CURRENT_DESKTOP').split('=')[1])
     settle = .7 if args.actions else .45
     try:
-        base = display.create('Carpatic pixel regression', COLOR, 420, 260)
-        overlay = display.create('Carpatic occlusion regression', 0xDC683B, 220, 180)
+        base = display.create('Carpathian pixel regression', COLOR, 420, 260)
+        overlay = display.create('Carpathian occlusion regression', 0xDC683B, 220, 180)
         display.x.XMapWindow(display.handle, base)
         display.sync()
         time.sleep(1)
@@ -297,7 +297,7 @@ def main():
                     command('xdotool', 'set_desktop', str(original_desktop))
                     command('xdotool', 'windowactivate', '--sync', str(base))
                 elif phase == 'popup':
-                    popup = display.create('Carpatic popup regression', 0xDC683B, 220, 180, '_NET_WM_WINDOW_TYPE_POPUP_MENU', True)
+                    popup = display.create('Carpathian popup regression', 0xDC683B, 220, 180, '_NET_WM_WINDOW_TYPE_POPUP_MENU', True)
                     display.x.XMapWindow(display.handle, popup)
                     display.sync()
                     command('xdotool', 'windowmove', str(popup), '260', '210')

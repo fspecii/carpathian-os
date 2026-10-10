@@ -10,13 +10,13 @@ say() { printf '%s\n' "$*"; }
 die() { printf 'carpatic-boot: %s\n' "$*" >&2; exit 1; }
 CONFS=
 for f in "$ROOT/boot/limine/limine.conf" "$ROOT/boot/limine.conf" "$ROOT/boot/EFI/BOOT/limine.conf"; do [ -f "$f" ] && CONFS="$CONFS $f"; done
-[ -n "$CONFS" ] || die "I cannot find the boot menu settings (limine.conf) under $ROOT/boot. Is this a Carpatic install with Limine?"
-[ -z "$ROOT" ] && [ "$(id -u)" != 0 ] && die "this needs administrator rights. Use Carpatic Settings, or run it with sudo."
+[ -n "$CONFS" ] || die "I cannot find the boot menu settings (limine.conf) under $ROOT/boot. Is this a Carpathian install with Limine?"
+[ -z "$ROOT" ] && [ "$(id -u)" != 0 ] && die "this needs administrator rights. Use Carpathian Settings, or run it with sudo."
 MAIN=$(for f in $CONFS; do echo "$f"; break; done)
 
 # other operating systems: extra entries in limine.conf, a Windows boot manager on any EFI partition, or an NTFS/BitLocker partition
 other_os() {
-  extra=$(grep -E '^/' "$MAIN" | grep -vE '^/Carpatic OS( \(recovery shell\))?$' | grep -viE 'firmware' | head -1)
+  extra=$(grep -E '^/' "$MAIN" | grep -vE '^/Carpathian OS( \(recovery shell\))?$' | grep -viE 'firmware' | head -1)
   [ -n "$extra" ] && { say "the boot menu already lists $extra"; return 0; }
   [ -z "$ROOT" ] || return 1
   for d in /sys/class/block/*/partition; do

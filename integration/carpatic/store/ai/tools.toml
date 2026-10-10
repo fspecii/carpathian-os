@@ -11,7 +11,7 @@ version_cmd = "claude --version"
 size_mb = 235
 license = "proprietary (Anthropic terms)"
 env = { USE_BUILTIN_RIPGREP = "0" }
-post = "Run 'claude' and sign in with your Claude account, or export ANTHROPIC_API_KEY in your shell. Carpatic never stores keys."
+post = "Run 'claude' and sign in with your Claude account, or export ANTHROPIC_API_KEY in your shell. Carpathian never stores keys."
 
 [[tool]]
 id = "codex"

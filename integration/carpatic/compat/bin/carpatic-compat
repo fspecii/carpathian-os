@@ -1,5 +1,5 @@
 #!/bin/sh
-# carpatic-compat: run glibc-only software (Chrome, Zoom, vendor tools, AppImages, prebuilt SDKs) on Carpatic OS.
+# carpatic-compat: run glibc-only software (Chrome, Zoom, vendor tools, AppImages, prebuilt SDKs) on Carpathian OS.
 #
 # Alpine uses musl, so many downloaded programs cannot start. This tool keeps one small Ubuntu "box" (a rootless
 # Podman container managed by distrobox) that shares your home folder, display, sound and clipboard with the desktop.
@@ -227,7 +227,7 @@ Exec=$SELF run env APPIMAGE_EXTRACT_AND_RUN=1 $dest %U
 Icon=$icon
 Terminal=false
 Categories=$cats
-X-Carpatic-Compat=appimage:$base
+X-Carpathian-Compat=appimage:$base
 D
   update_desktop_db
   say "Done. $nm is in your launcher."
@@ -251,7 +251,7 @@ cmd_remove() {
   case $n in -*|.*|*[!A-Za-z0-9.+_:=-]*) die "'$n' is not a package or app name (letters, numbers and . + - _ only).";; esac
   for f in "$APPS"/carpatic-appimage-*.desktop; do
     [ -f "$f" ] || continue
-    b=$(sed -n 's/^X-Carpatic-Compat=appimage://p' "$f")
+    b=$(sed -n 's/^X-Carpathian-Compat=appimage://p' "$f")
     if [ "$b" = "$n" ] || [ "${b%.*}" = "$n" ] || [ "$(basename "$f" .desktop)" = "carpatic-appimage-$n" ]; then
       rm -f "$f"; [ -n "$b" ] && rm -f "${APPIMG:?}/$b"
       update_desktop_db; say "Removed $n."; return 0
@@ -274,7 +274,7 @@ cmd_list() {
   found=0
   for f in "$APPS"/*.desktop; do
     [ -f "$f" ] || continue
-    if grep -q "X-Carpatic-Compat\|distrobox-enter.*$NAME\|distrobox.*$NAME" "$f" 2>/dev/null; then
+    if grep -q "X-Carpathian-Compat\|distrobox-enter.*$NAME\|distrobox.*$NAME" "$f" 2>/dev/null; then
       printf '  app   %s\n' "$(sed -n 's/^Name=//p' "$f" | head -1)"; found=1
     fi
   done

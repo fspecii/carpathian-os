@@ -69,7 +69,7 @@ offscreen render), `barview` (bars for all designs), `designs`/`config` (surface
 
 ## Safety
 
-`carpatic-panel run` and `carpatic-flyout` exit immediately outside a Carpatic session (`CARPATIC_SESSION=1`, or the install marker and no Wayland;
+`carpatic-panel run` and `carpatic-flyout` exit immediately outside a Carpathian session (`CARPATIC_SESSION=1`, or the install marker and no Wayland;
 `CARPATIC_FORCE=1` overrides). All host tests run on a private Xvfb with a throwaway HOME (`tests/xrun.sh`).
 
 ## Verification (see docs/STATUS.md for the board)
@@ -108,3 +108,23 @@ Screenshots: `docs/screenshots/vm-panel-*.png` (8 designs, flyouts for windows11
   (appindicator) icons (apps without an XEmbed icon need `snixembed`, in NEEDS.md), hotspot tile, Wi-Fi enterprise networks (WPA-EAP).
 * Not exercised on real hardware or with real Wi-Fi / Bluetooth / battery / audio (the VM has none), so those panes were only run against fakes and the parsers' unit tests.
 * Every shipped profile now has `BAR=panel` with its `PANEL_DESIGN`; if `carpatic-panel` is missing `carpatic-session` falls back to the profile's tint2 templates (or the dwm bar for tiling). Profile -> design: windows, beginner = windows11; macos = macos; ubuntu = ubuntu; tiling = minimal; zen = zorin; kylin = kylin. `panel/tests/vm-profiles.sh` (suite `panel-vm`) checks each of them, light and dark, a profile round trip, the fallback and a reboot.
+
+## Carpathian OS branding
+
+Launcher and menu branding use the canonical 36 × 30 mountain geometry from
+`website/dist/assets/mark.svg`. Panel drawing uses the current palette foreground
+and a transparent snow notch, retaining contrast on light, dark and high-contrast
+surfaces. Application, account, power and other functional glyphs remain unchanged.
+All eight panel designs expose a branded launcher; Ubuntu retains its Activities
+label and applications grid, and Minimal adds a compact launcher before workspaces.
+The three Start flyout layouts share the same mark.
+
+The installer stages `carpathian-os.svg` and `carpathian-os-symbolic.svg` under
+`$PREFIX/share/carpatic/panel/branding`. Distribution-wide icon registration can
+copy these to the chosen icon theme; the panel package does not override app icons.
+Package names, commands, theme identifiers and configuration paths remain compatible.
+
+`python3 integration/carpatic/panel/tests/test_branding.py` checks canonical asset
+geometry, context restoration, all shipped palette contrasts, launcher design
+coverage and a disposable DESTDIR install. These are pure checks; actual panel
+and flyout window layout still needs isolated-session visual verification.

@@ -3,7 +3,7 @@
 
   export THEME [--out FILE] [--font FAMILY ...] [--sign KEYFILE]   pack a theme (palette, wallpapers, checksums) into one file
   import FOLDER|FILE|LINK [--name N] [--force] [--fonts] [--sha256 H] [--verify SIGNERS --identity ID] [--unverified] [--dry-run]
-  convert FOLDER                      check an Omarchy or Carpatic theme folder and print a conversion report (installs nothing)
+  convert FOLDER                      check an Omarchy or Carpathian theme folder and print a conversion report (installs nothing)
   share THEME [--serve]               export and show what to send to a friend; --serve offers the file on your network for 15 minutes
   remove NAME                         remove a theme you imported
   list [--imported]                   themes (system and imported)

@@ -1,5 +1,5 @@
 #!/bin/sh
-# carpatic-qt-theme COLORS.toml OUTDIR : generate the Kvantum theme "Carpatic" from the palette (Qt5 and Qt6 apps with the kvantum style).
+# carpatic-qt-theme COLORS.toml OUTDIR : generate the Kvantum theme "Carpathian" from the palette (Qt5 and Qt6 apps with the kvantum style).
 # Base = KvFlat (dark) / KvFlatLight; greys are re-mapped between the palette's background and foreground, blue accents become the accent.
 # Apps pick it up with QT_STYLE_OVERRIDE=kvantum (set by ~/.config/carpatic/env.sh, /etc/profile.d and carpatic-launch/carpatic-term).
 COLORS=$1; OUT=${2:-/tmp}; K=/usr/share/Kvantum

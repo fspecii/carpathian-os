@@ -133,7 +133,7 @@ def run(cmd, a, client):
         elif sub == "off": apply.set_rotation(False)
         elif sub == "daemon":
             if os.environ.get("CARPATIC_SESSION") != "1" and not os.environ.get("CARPATIC_FORCE"):
-                err("The wallpaper timer only runs inside a Carpatic session."); return 1
+                err("The wallpaper timer only runs inside a Carpathian session."); return 1
             apply.rotate_loop()
         elif sub == "resume":   # called by carpatic-session at login: advance once (At login) and start the timer when it is on
             r = state.load()["rotation"]

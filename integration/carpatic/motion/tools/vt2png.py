@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""vt2png.py: tiny terminal emulator that renders ANSI text to PNG with pycairo (no Pillow). Understands what the Carpatic animations emit:
+"""vt2png.py: tiny terminal emulator that renders ANSI text to PNG with pycairo (no Pillow). Understands what the Carpathian animations emit:
 cursor addressing (CSI r;c H, A/B/C/D, G, K, J), SGR (0,1,2,7,22,27, 30-37, 40-47, 90-97, 100-107, 38/48;5;n, 38/48;2;r;g;b), \\r \\n, ?25 h/l.
 API: Screen(cols, rows).feed(text); Screen.png(path, cell_w=9, cell_h=18). CLI: vt2png.py COLS ROWS out.png < ansi.txt
-Palette: the Carpatic dark ANSI colours from design/tokens/tokens.toml (what the live console uses)."""
+Palette: the Carpathian dark ANSI colours from design/tokens/tokens.toml (what the live console uses)."""
 import re, sys, os, tomllib
 import cairo
 

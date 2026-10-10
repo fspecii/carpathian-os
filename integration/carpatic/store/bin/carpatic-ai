@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""carpatic-ai: install and manage AI tools (agents, local models, GPU) on Carpatic."""
+"""carpatic-ai: install and manage AI tools (agents, local models, GPU) on Carpathian."""
 import argparse
 import signal
 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
@@ -171,7 +171,7 @@ def cmd_doctor(a):
 
 
 def main():
-    ap = argparse.ArgumentParser(prog="carpatic-ai", description="AI tools for Carpatic: agents, local models, GPU.")
+    ap = argparse.ArgumentParser(prog="carpatic-ai", description="AI tools for Carpathian: agents, local models, GPU.")
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("status")
     p = sub.add_parser("install"); p.add_argument("tools", nargs="+"); p.add_argument("--force", action="store_true")

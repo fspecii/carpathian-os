@@ -29,7 +29,7 @@ def update(fn):
     d = load(); fn(d); save(d); return d
 
 # collections: user lists of picture paths. Virtual ones: carpatic-dark, carpatic-light, carpatic-mode (matches the theme), my-pictures, all
-VIRTUAL = {"carpatic-mode": "Carpatic, matching dark/light", "carpatic-dark": "Carpatic (dark)", "carpatic-light": "Carpatic (light)",
+VIRTUAL = {"carpatic-mode": "Carpathian, matching dark/light", "carpatic-dark": "Carpathian (dark)", "carpatic-light": "Carpathian (light)",
            "my-pictures": "My pictures", "all": "Everything"}
 
 def collection_paths(name, mode="dark", st=None):

@@ -1,7 +1,7 @@
-# Carpatic configurator: Welcome + Appearance / Theme Manager
+# Carpathian configurator: Welcome + Appearance / Theme Manager
 
 First-run wizard that makes the dwm desktop feel familiar: pick where you come from (profile), pick a look (theme), optionally pick apps.
-Re-runnable any time as **Carpatic Settings** (launcher entry / `Super+F2`).
+Re-runnable any time as **Carpathian Settings** (launcher entry / `Super+F2`).
 
 ![wizard](../docs/screenshots/configurator-wizard-1-profile.png)
 
@@ -18,7 +18,7 @@ Settings: the Style page marks the active style with an accent border plus an "I
 | Category | Targets | How it is applied | Where the files go |
 |---|---|---|---|
 | terminal | kitty, foot, ghostty (+ alacritty, st, xterm by apply) | 16 ANSI + cursor + selection + fonts; kitty reloads on SIGUSR1; every open pty gets the OSC sequences at once | `~/.config/kitty/current-theme.conf` (+ `include`), `~/.config/foot/carpatic.ini`, `~/.config/ghostty/carpatic.conf` |
-| editors | VSCodium / Code - OSS / VS Code (native, compat box, Flatpak), Helix; Neovim via the geek hook `carpatic-dev nvim-theme` | full workbench + semantic-token theme (Omarchy template, 1300 lines) installed as extension `carpatic.carpatic-theme` AND copied into `workbench.colorCustomizations["[Carpatic]"]`, which running windows watch | `~/.config/VSCodium/User` + `~/.vscode-oss/extensions`; `~/.config/Code - OSS/User`; `~/.config/Code/User` + `~/.vscode/extensions` (the Ubuntu compat box shares `$HOME`); Flatpak `~/.var/app/com.vscodium.codium/config/VSCodium/User` + `.../data/codium/extensions` (same pattern for `com.visualstudio.code-oss`, `com.visualstudio.code`) |
+| editors | VSCodium / Code - OSS / VS Code (native, compat box, Flatpak), Helix; Neovim via the geek hook `carpatic-dev nvim-theme` | full workbench + semantic-token theme (Omarchy template, 1300 lines) installed as extension `carpatic.carpatic-theme` AND copied into `workbench.colorCustomizations["[Carpathian]"]`, which running windows watch | `~/.config/VSCodium/User` + `~/.vscode-oss/extensions`; `~/.config/Code - OSS/User`; `~/.config/Code/User` + `~/.vscode/extensions` (the Ubuntu compat box shares `$HOME`); Flatpak `~/.var/app/com.vscodium.codium/config/VSCodium/User` + `.../data/codium/extensions` (same pattern for `com.visualstudio.code-oss`, `com.visualstudio.code`) |
 | browser | Chromium/Chrome/Brave/Edge, Firefox (and Flatpak/LibreWolf profiles) | Chromium: seed colour + scheme written into each profile's `Preferences` while the browser is closed; `chromium-policy.json` (BrowserThemeColor) is ready for `carpatic-browser-theme --install-policy` (root, live). Firefox: `chrome/userChrome.css` + `userContent.css` + a marked block in `user.js` (`toolkit.legacyUserProfileCustomizations.stylesheets`), takes effect at the next start | profile dirs |
 | qt | Qt5/Qt6 apps via Kvantum | theme "CarpaticA/B" generated from KvFlat/KvFlatLight (greys remapped between background and foreground, blues -> accent); the name alternates so a running app that polls Kvantum can notice; `QT_STYLE_OVERRIDE=kvantum` from `env.sh`; Kate gets Breeze Dark/Light | `~/.config/Kvantum` |
 | cli | btop, tmux (live `source-file`), starship, bat, lazygit, fzf, eza/ls, gum | files + `~/.config/carpatic/env.sh`, sourced by new shells (`/etc/profile.d/carpatic-theme.sh`, `carpatic-term`, `carpatic-launch`) | `~/.config/btop/themes/carpatic.theme`, `~/.config/tmux/carpatic.conf`, `~/.config/carpatic/starship.toml`, `~/.config/bat/themes/carpatic.tmTheme`, ... |
@@ -29,7 +29,7 @@ Measured in the VM: `carpatic-apply` returns after 0.48 s; the app files are all
 Verified live (screenshots `configurator-retint-*.png`, dark `carpatic` and light `carpatic-light`): st, Alacritty and kitty (open windows retint instantly, switching theme from dark to light changed all three), btop, Neovim (in kitty), bat/eza/gum/fzf colours, Kate + QTerminal (Kvantum), Firefox (dark). Host tests (112 checks) cover every theme x every template, JSON validity of the VS Code theme, category switches and the install paths with a fake HOME.
 Not verified: VS Code/VSCodium itself (no apk package on Alpine 3.24 musl and no Flatpak was installed in the VM; the generator, install paths and settings merge are tested, the editor was never started), Chromium's Preferences route and managed policy (file written and tested, browser not screenshotted), foot and ghostty (not installed in the VM; files are generated and rendered by tests; foot has no live reload apart from the OSC broadcast), already-running Qt apps do not restyle live (restart them), running Firefox/Chromium need a restart, helix/lazygit/starship only checked as generated files, Obsidian/Spotify not done.
 
-## Carpatic Settings (Appearance manager) - `carpatic-settings`, Super+F2
+## Carpathian Settings (Appearance manager) - `carpatic-settings`, Super+F2
 GTK3 app, one live preview pane on the right (mini desktop with the style's bar/dock, window buttons, fonts and icons). Pages:
 
 | Page | What |
@@ -97,7 +97,7 @@ settings.conf (PROFILE THEME ACCENT WALLPAPER)
 ```
 Profiles are declarative: `profiles/<name>.conf` (bar, launcher style, default layout, supertap, titlebar options), `<name>.keys` (dwm TOML bindings;
 `unbind MODS KEY` removes a desktop default), optional `<name>.sxhkd`. Add a profile = add three files.
-Themes: 10 palettes copied from upstream-omarchy/themes (MIT, credit in NOTICE): catppuccin, catppuccin-latte, everforest, flexoki-light, gruvbox, kanagawa, nord, rose-pine, tokyo-night, white, only the colour palettes come from Omarchy: every theme's two wallpapers (`wallpaper.jpg`, `wallpaper-2.jpg`, 1920x1080) are Carpatic originals, Carpathian scenes recoloured from the theme's own palette by `design/tools/theme-wallpapers.py` (deterministic, no third-party picture). `tests/test-wallpaper-provenance.sh` fails if a shipped picture is not ours.
+Themes: 10 palettes copied from upstream-omarchy/themes (MIT, credit in NOTICE): catppuccin, catppuccin-latte, everforest, flexoki-light, gruvbox, kanagawa, nord, rose-pine, tokyo-night, white, only the colour palettes come from Omarchy: every theme's two wallpapers (`wallpaper.jpg`, `wallpaper-2.jpg`, 1920x1080) are Carpathian originals, Carpathian scenes recoloured from the theme's own palette by `design/tools/theme-wallpapers.py` (deterministic, no third-party picture). `tests/test-wallpaper-provenance.sh` fails if a shipped picture is not ours.
 Add one by dropping `themes/<name>/colors.toml` (+ `wallpaper.jpg`).
 
 ## Profiles

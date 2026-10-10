@@ -1,4 +1,4 @@
-"""Carpatic Quick Look daemon: one warm GTK process that shows and hides the preview window when asked over a Unix socket."""
+"""Carpathian Quick Look daemon: one warm GTK process that shows and hides the preview window when asked over a Unix socket."""
 import os, sys, json, time, socket, subprocess, shutil, math, threading, hashlib, signal, gc, stat, urllib.parse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gi
@@ -155,7 +155,7 @@ class QuickLook:
     def build(self):
         L_ = self.look
         self.win = Gtk.Window(type=Gtk.WindowType.POPUP if self.mode == "popup" else Gtk.WindowType.TOPLEVEL)
-        self.win.set_title("Carpatic Quick Look"); self.win.set_role("carpatic-quicklook"); self.win.set_wmclass("carpatic-quicklook", "CarpaticQuickLook")
+        self.win.set_title("Carpathian Quick Look"); self.win.set_role("carpatic-quicklook"); self.win.set_wmclass("carpatic-quicklook", "CarpaticQuickLook")
         self.win.set_decorated(False); self.win.set_skip_taskbar_hint(True); self.win.set_keep_above(True); self.win.set_accept_focus(True)
         self.win.get_style_context().add_class("ql")
         self.win.connect("key-press-event", self.on_key)
@@ -599,7 +599,7 @@ class QuickLook:
         d = os.path.join(GLib.get_user_cache_dir(), "carpatic", "quicklook", "styles"); os.makedirs(d, exist_ok=True)
         c = lambda n, v: f'<color name="{n}" value="{v}"/>'
         xml = f'''<?xml version="1.0" encoding="UTF-8"?>
-<style-scheme id="{sid}" name="Carpatic Quick Look" version="1.0">
+<style-scheme id="{sid}" name="Carpathian Quick Look" version="1.0">
  {c('bg', L_['bg'])}{c('fg', L_['fg'])}{c('sel', L_['selection'])}{c('muted', L_['subtle'])}{c('acc', L_['accent'])}{c('red', L_['red'])}{c('grn', L_['green'])}
  {c('yel', L_['yellow'])}{c('blu', L_['blue'])}{c('mag', L_['magenta'])}{c('cyn', L_['cyan'])}{c('org', L_['orange'])}{c('surf', L_['surface'])}
  <style name="text" foreground="fg" background="bg"/>

@@ -82,7 +82,7 @@ def load_pixbuf(path, max_side):
     except OSError:
         raise ValueError("This file cannot be read.")
     kind = imageinfo.sniff(head)
-    if kind is None: raise ValueError("This is not a picture type Carpatic can use.")
+    if kind is None: raise ValueError("This is not a picture type Carpathian can use.")
     dim = imageinfo.dimensions(path)
     if dim and dim[0] * dim[1] > MAX_PIXELS: raise ValueError("This picture is too large to preview safely.")
     try:

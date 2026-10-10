@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=Add to Carpatic (AppImage or .deb)
+Name=Add to Carpathian (AppImage or .deb)
 Comment=Install an AppImage or .deb package into the compatibility box and add it to the launcher
-Exec=carpatic-progress --title "Adding this app to Carpatic" -- carpatic-compat install %f
+Exec=carpatic-progress --title "Adding this app to Carpathian" -- carpatic-compat install %f
 Icon=carpatic-compat
 Terminal=false
 NoDisplay=true

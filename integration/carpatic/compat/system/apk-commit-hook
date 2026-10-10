@@ -27,13 +27,13 @@ case "${1:-}" in
       grep -q "^Name=$name\$" "$f" && continue
       sed -i "0,/^Name=.*/s//Name=$name/" "$f"
     done
-    # icons that Carpatic installs by hand (App Store, Compatibility Box) are invisible to GTK until the icon cache is rebuilt: the taskbar, Start menu
+    # icons that Carpathian installs by hand (App Store, Compatibility Box) are invisible to GTK until the icon cache is rebuilt: the taskbar, Start menu
     # and Store showed a grey gear instead. Rebuild only when something in hicolor is newer than the cache (cheap on every other transaction).
     ic=${CARPATIC_ICON_DIR:-/usr/share/icons/hicolor}
     if [ -d "$ic" ] && command -v gtk-update-icon-cache >/dev/null 2>&1 && [ -n "$(find "$ic" -newer "$ic/icon-theme.cache" -type f -name '*carpatic*' 2>/dev/null | head -n1)$([ -f "$ic/icon-theme.cache" ] || echo nocache)" ]; then
       gtk-update-icon-cache -qft "$ic" 2>/dev/null || true
     fi
-    # Carpatic identity (os-release, issue, motd): an upgrade of alpine-release must not turn the system back into "Alpine Linux"
+    # Carpathian identity (os-release, issue, motd): an upgrade of alpine-release must not turn the system back into "Alpine Linux"
     [ -z "${CARPATIC_APPS_DIR:-}" ] && [ -f /usr/libexec/carpatic/brand-os ] && { sh /usr/libexec/carpatic/brand-os || true; }
     [ -x /usr/local/bin/carpatic-update ] && /usr/local/bin/carpatic-update --mark >/dev/null 2>&1
     ;;

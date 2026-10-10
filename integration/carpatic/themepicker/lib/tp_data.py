@@ -1,4 +1,4 @@
-"""Carpatic theme picker: what exists on this machine (themes, wallpapers, icon packs, cursors, fonts). Pure Python, no GTK.
+"""Carpathian theme picker: what exists on this machine (themes, wallpapers, icon packs, cursors, fonts). Pure Python, no GTK.
 
 Every path can be redirected (share, config, home) so the tests run against a fake tree. Nothing here writes."""
 import os, re, glob, subprocess
@@ -31,8 +31,8 @@ def _sh_escape(v):
 
 
 def label_for(name):
-    if name == "carpatic": return "Carpatic"
-    if name == "carpatic-light": return "Carpatic Light"
+    if name == "carpatic": return "Carpathian"
+    if name == "carpatic-light": return "Carpathian Light"
     return re.sub(r"[-_]+", " ", name).title()
 
 
@@ -102,7 +102,7 @@ class Catalog:
         return self.colors(name).get("mode", "dark")
 
     def counterpart(self, name, want):
-        """The theme to use when the user flips Light/Dark: the pair when one exists, otherwise Carpatic's own."""
+        """The theme to use when the user flips Light/Dark: the pair when one exists, otherwise Carpathian's own."""
         if self.mode(name) == want: return name
         names = self.theme_names()
         cand = PAIRS.get(name)
@@ -241,7 +241,7 @@ def default_for(cat, state, key):
 
 
 def theme_accent(cat, state, theme=None):
-    """The accent a theme really shows: the user's pick, else (Carpatic themes only) the desktop style's accent, else the palette's."""
+    """The accent a theme really shows: the user's pick, else (Carpathian themes only) the desktop style's accent, else the palette's."""
     theme = theme or state.get("THEME") or "carpatic"
     if theme == (state.get("THEME") or "carpatic") and state.get("ACCENT"): return state["ACCENT"]
     if theme in ("carpatic", "carpatic-light"):

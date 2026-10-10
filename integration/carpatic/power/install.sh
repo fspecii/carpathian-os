@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install Carpatic power management into a root (default /). Idempotent.
+# Install Carpathian power management into a root (default /). Idempotent.
 #   sh install.sh [--root DIR] [--packages] [--no-enable] [--hibernate]
 # --packages   apk add the packages in packages.txt (online)
 # --hibernate  also run `carpatic-power hibernate-setup` (needs the real, running system)
@@ -24,7 +24,7 @@ i etc/acpi/carpatic-ac /etc/acpi/events/carpatic-ac 644
 i etc/tlp.d/10-carpatic.conf /etc/tlp.d/10-carpatic.conf 644
 [ -e "$ROOT/etc/carpatic/power.conf" ] || i etc/power.conf /etc/carpatic/power.conf 644
 # zram-init config only if the package's conf.d exists and was not customised
-if [ -d "$ROOT/etc/conf.d" ] && ! grep -qs "Carpatic" "$ROOT/etc/conf.d/zram-init" 2>/dev/null; then
+if [ -d "$ROOT/etc/conf.d" ] && ! grep -qs "Carpathian" "$ROOT/etc/conf.d/zram-init" 2>/dev/null; then
   [ -e "$ROOT/etc/conf.d/zram-init" ] && cp "$ROOT/etc/conf.d/zram-init" "$ROOT/etc/conf.d/zram-init.orig"
   i etc/conf.d/zram-init /etc/conf.d/zram-init 644
 fi

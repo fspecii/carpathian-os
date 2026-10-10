@@ -1,4 +1,4 @@
-# Carpatic store catalog: Utilities
+# Carpathian store catalog: Utilities
 # Each [[app]]: id (unique), name, description, source (apk|flatpak|ai|compat), pkg (apk package or Flathub app id),
 # icon (icon-theme name), newcomer (good for newcomers), optional: size_mb, note, detail (long text), exec (launch cmd), term (run in a terminal), launch="none" (daemon, no Open button)
 [category]
