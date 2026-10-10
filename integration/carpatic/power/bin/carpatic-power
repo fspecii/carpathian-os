@@ -1,0 +1,752 @@
+#!/bin/sh
+# carpatic-power: one command for laptop-grade power management on Carpatic OS (Alpine, OpenRC, elogind).
+#
+#   carpatic-power status                       battery, AC, profile, sleep states, hibernate readiness
+#   carpatic-power doctor                       explain in plain words whether (and why not) hibernate works
+#   carpatic-power profile [performance|balanced|saver|auto]
+#   carpatic-power auto                         apply the profile for the current AC/battery state
+#   carpatic-power sleep suspend|hibernate|hybrid|suspend-then-hibernate [minutes]
+#   carpatic-power lock
+#   carpatic-power menu [--print | --choose ENTRY]
+#   carpatic-power hibernate-setup [--size MiB] [--no-rebuild] [--no-swapon] [--dry-run] [--force]
+#   carpatic-power hibernate-remove [--delete]
+#   carpatic-power hibernate-ready              exit 0 when hibernate can work right now
+#   carpatic-power apply-config                 write the elogind lid/power-key policy for this machine
+#   carpatic-power brightness up|down|set N|get      (screen, percent)
+#   carpatic-power kbd-backlight up|down|off|on
+#   carpatic-power battery-limit [N|reset]      stop charging at N percent (if the firmware supports it)
+#   carpatic-power monitor | boot | hook pre|post KIND   (used by the OpenRC service and elogind hook)
+#
+# POSIX sh, idempotent. Test hooks: CP_SYS CP_PROC CP_ETC CP_BOOT CP_STATE CP_RUN redirect the system paths;
+# CP_DRY=1 prints instead of changing the system.
+
+SYS=${CP_SYS:-/sys}
+PROC=${CP_PROC:-/proc}
+ETC=${CP_ETC:-/etc}
+BOOT=${CP_BOOT:-/boot}
+STATE=${CP_STATE:-/var/lib/carpatic-power}
+RUN=${CP_RUN:-/run/carpatic-power}
+CONF=$ETC/carpatic/power.conf
+PS=$SYS/class/power_supply
+VERSION=0.1
+
+# defaults, overridden by $CONF
+LOW_PCT=15
+CRIT_PCT=5
+CRIT_ACTION=hibernate        # hibernate | suspend | poweroff
+SAVER_PCT=20                 # on battery below this, switch to saver
+AC_PROFILE=performance
+BAT_PROFILE=balanced
+LOCK_ON_SLEEP=yes
+LOCK_CMD=slock
+STH_DELAY_MIN=60             # suspend-then-hibernate delay
+SLEEP_UNLOAD_MODULES=        # e.g. "rtw88_8821ce": unloaded before sleep, loaded after
+BATTERY_LIMIT=               # percent, empty = firmware default
+POLL_SEC=30
+[ -r "$CONF" ] && . "$CONF"
+
+say()  { printf '%s\n' "$*"; }
+warn() { printf 'carpatic-power: %s\n' "$*" >&2; }
+die()  { warn "$*"; exit 1; }
+run()  { if [ -n "${CP_DRY:-}" ]; then say "[dry-run] $*"; else "$@"; fi; }
+have() { command -v "$1" >/dev/null 2>&1; }
+need_root() { [ -n "${CP_NOROOT:-}" ] || [ "$(id -u)" = 0 ] || die "this needs root (try: doas carpatic-power $CMD)"; }
+rd() { [ -r "$1" ] || return 1; _v=; read -r _v <"$1" || [ -n "$_v" ]; printf '%s' "$_v"; }
+wr() { if [ -n "${CP_DRY:-}" ]; then say "[dry-run] echo $2 > $1"; else printf '%s' "$2" >"$1" 2>/dev/null; fi; }
+
+# ---------------------------------------------------------------- power supply
+battery_dirs() {
+  for d in "$PS"/*; do
+    [ -d "$d" ] || continue
+    [ "$(rd "$d/type")" = Battery ] || continue
+    [ "$(rd "$d/scope")" = Device ] && continue      # wireless mouse/keyboard batteries
+    printf '%s\n' "$d"
+  done
+}
+has_battery() { [ -n "$(battery_dirs)" ]; }
+on_ac() {      # 0 when mains is present (desktops without a battery always count as AC)
+  has_battery || return 0
+  for d in "$PS"/*; do
+    [ -d "$d" ] || continue
+    case "$(rd "$d/type")" in Mains|USB*) [ "$(rd "$d/online")" = 1 ] && return 0 ;; esac
+  done
+  # no mains device reported at all: fall back on battery status
+  for b in $(battery_dirs); do case "$(rd "$b/status")" in Charging|Full|"Not charging") return 0 ;; esac; done
+  return 1
+}
+battery_pct() { # average capacity of all batteries, empty if none
+  _n=0; _s=0
+  for b in $(battery_dirs); do _c=$(rd "$b/capacity"); [ -n "$_c" ] && { _s=$((_s + _c)); _n=$((_n + 1)); }; done
+  [ "$_n" -gt 0 ] && echo $((_s / _n))
+}
+battery_status() { for b in $(battery_dirs); do rd "$b/status"; return; done; }
+
+# ---------------------------------------------------------------- profiles
+PLAT=$SYS/firmware/acpi/platform_profile
+CPUF=$SYS/devices/system/cpu
+cur_profile_file() { echo "$STATE/profile"; }
+have_epp() { [ -w "$CPUF/cpu0/cpufreq/energy_performance_preference" ] || [ -e "$CPUF/cpu0/cpufreq/energy_performance_preference" ]; }
+avail_gov() { rd "$CPUF/cpu0/cpufreq/scaling_available_governors"; }
+pick_gov() { for g in "$@"; do case " $(avail_gov) " in *" $g "*) echo "$g"; return; esac; done; }
+set_all_cpus() { # file value
+  for c in "$CPUF"/cpu[0-9]*/cpufreq; do [ -e "$c/$1" ] && wr "$c/$1" "$2"; done
+}
+apply_profile() { # performance|balanced|saver
+  p=$1
+  case "$p" in
+    performance) gov=$(pick_gov performance schedutil ondemand powersave); epp=performance;        plat=performance;  turbo=0 ;;
+    balanced)    gov=$(pick_gov schedutil ondemand powersave);              epp=balance_performance; plat=balanced;   turbo=0 ;;
+    saver)       gov=$(pick_gov powersave schedutil conservative);          epp=power;              plat=low-power;   turbo=1 ;;
+    *) die "unknown profile '$p' (performance, balanced, saver)" ;;
+  esac
+  # amd-pstate-epp / intel_pstate active mode only allow performance|powersave; EPP does the real work there
+  case "$(rd "$CPUF/cpu0/cpufreq/scaling_driver")" in
+    intel_pstate|amd-pstate-epp|amd_pstate_epp) [ "$p" = performance ] && gov=performance || gov=powersave ;;
+  esac
+  [ -n "$gov" ] && set_all_cpus scaling_governor "$gov"
+  [ -e "$CPUF/cpu0/cpufreq/energy_performance_preference" ] && set_all_cpus energy_performance_preference "$epp"
+  if [ -e "$PLAT" ]; then
+    case " $(rd "$SYS/firmware/acpi/platform_profile_choices") " in
+      *" $plat "*) wr "$PLAT" "$plat" ;;
+      *) [ "$plat" = performance ] && wr "$PLAT" balanced ;;     # not every laptop offers 'performance'
+    esac
+  fi
+  [ -e "$CPUF/intel_pstate/no_turbo" ] && wr "$CPUF/intel_pstate/no_turbo" "$turbo"
+  [ -e "$CPUF/cpufreq/boost" ] && wr "$CPUF/cpufreq/boost" "$((1 - turbo))"
+  mkdir -p "$RUN" 2>/dev/null; printf '%s\n' "$p" >"$RUN/applied" 2>/dev/null
+}
+mode_file() { echo "$STATE/mode"; }   # "auto" or a fixed profile chosen by the user
+get_mode() { _m=$(cat "$(mode_file)" 2>/dev/null); echo "${_m:-auto}"; }
+auto_profile() {   # which profile the current situation wants
+  if on_ac; then echo "$AC_PROFILE"; return; fi
+  _p=$(battery_pct)
+  if [ -n "$_p" ] && [ "$_p" -le "$SAVER_PCT" ]; then echo saver; else echo "$BAT_PROFILE"; fi
+}
+cmd_auto() {
+  need_root
+  case "${1:-}" in --async) ( setsid "$0" auto >/dev/null 2>&1 & ); return 0 ;; esac
+  m=$(get_mode)
+  if [ "$m" = auto ]; then p=$(auto_profile); else p=$m; fi
+  apply_profile "$p"
+  say "profile: $p ($( [ "$m" = auto ] && echo automatic || echo fixed ))"
+}
+cmd_profile() {
+  case "${1:-}" in
+    "") m=$(get_mode); a=$(cat "$RUN/applied" 2>/dev/null)
+        if [ "$m" = auto ]; then say "auto (currently ${a:-$(auto_profile)})"; else say "$m"; fi ;;
+    performance|balanced|saver|auto) need_root
+        mkdir -p "$STATE" && printf '%s\n' "$1" >"$(mode_file)"
+        cmd_auto ;;
+    power-saver) cmd_profile saver ;;
+    *) die "usage: carpatic-power profile [performance|balanced|saver|auto]" ;;
+  esac
+}
+
+# ---------------------------------------------------------------- filesystem / boot facts
+root_dev()  { awk '$2=="/" {d=$1} END {print d}' "$PROC/mounts"; }
+root_fs()   { awk '$2=="/" {t=$3} END {print t}' "$PROC/mounts"; }
+mem_kib()   { awk '/^MemTotal:/ {print $2}' "$PROC/meminfo"; }
+mem_avail_kib() { awk '/^MemAvailable:/ {print $2}' "$PROC/meminfo"; }
+real_dev()  { # follow /dev/mapper symlinks, resolve UUID=/LABEL=
+  case "$1" in UUID=*|LABEL=*|PARTUUID=*) have findfs && findfs "$1" 2>/dev/null && return ;; esac
+  readlink -f "$1" 2>/dev/null || echo "$1"
+}
+devnum() { # major:minor of a block device node (decimal), empty if not a device
+  set -- $(stat -Lc '%t %T' "$1" 2>/dev/null) || return 1
+  [ -n "$1" ] && printf '%d:%d' "0x$1" "0x$2"
+}
+is_luks() { # device node is a dm-crypt mapping?
+  _mm=$(devnum "$1")
+  case "$(cat "$SYS/dev/block/$_mm/dm/uuid" 2>/dev/null)" in CRYPT-*) return 0 ;; esac
+  return 1
+}
+fs_dev_of() { # block device that holds the file system of path $1 (strips btrfs [/subvol])
+  if have findmnt; then findmnt -no SOURCE -T "$1" 2>/dev/null | sed 's/\[.*\]//'; return; fi
+  df -P "$1" 2>/dev/null | awk 'NR==2 {print $1}'
+}
+swap_entries() { awk 'NR>1 && $1 !~ /zram/ {print $1, $2, $3}' "$PROC/swaps"; }   # name type size_kib
+swap_total_kib() { awk 'NR>1 && $1 !~ /zram/ {s+=$3} END {print s+0}' "$PROC/swaps"; }
+secure_boot_on() {
+  for f in "$SYS"/firmware/efi/efivars/SecureBoot-*; do
+    [ -r "$f" ] && [ "$(od -An -tu1 -j4 -N1 "$f" 2>/dev/null | tr -d ' ')" = 1 ] && return 0
+  done
+  return 1
+}
+lockdown_mode() { # none|integrity|confidentiality|unknown
+  _l=$(cat "$SYS/kernel/security/lockdown" 2>/dev/null)
+  [ -z "$_l" ] && { echo unknown; return; }
+  echo "$_l" | sed -n 's/.*\[\([a-z]*\)\].*/\1/p'
+}
+has_disk_state() { grep -qw disk "$SYS/power/state" 2>/dev/null; }
+detect_bootloader() { # limine | grub | syslinux | unknown
+  if [ -f "$BOOT/limine/limine.conf" ] || [ -f "$BOOT/limine.conf" ] || [ -f "$BOOT/EFI/BOOT/limine.conf" ] || [ -f "$BOOT/limine/limine.cfg" ]; then echo limine
+  elif [ -f "$BOOT/grub/grub.cfg" ] || [ -f "$ETC/default/grub" ]; then echo grub
+  elif [ -f "$ETC/update-extlinux.conf" ] || [ -f "$BOOT/extlinux.conf" ] || [ -f "$BOOT/syslinux/syslinux.cfg" ]; then echo syslinux
+  else echo unknown; fi
+}
+
+# ---------------------------------------------------------------- kernel command line editing
+# cmdline_edit "<cmdline>" "resume=X resume_offset=N" : drop old resume params, append new ones
+cmdline_edit() {
+  _out=
+  for t in $1; do case "$t" in resume=*|resume_offset=*) ;; *) _out="$_out${_out:+ }$t" ;; esac; done
+  printf '%s' "$_out${2:+${_out:+ }$2}"
+}
+limine_files() { for f in "$BOOT/limine/limine.conf" "$BOOT/limine.conf" "$BOOT/EFI/BOOT/limine.conf" "$BOOT/EFI/carpatic/limine.conf" "$BOOT/limine/limine.cfg"; do [ -f "$f" ] && echo "$f"; done; }
+limine_set() { # file params
+  _f=$1; _new=
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      *kernel_cmdline:*|*cmdline:*|*CMDLINE=*)
+        _pre=${line%%[:=]*}; _sep=${line#"$_pre"}; _sep=${_sep%"${_sep#?}"}
+        _rest=${line#*[:=]}; _rest=${_rest# }
+        line="$_pre$_sep $(cmdline_edit "$_rest" "$2")" ;;
+    esac
+    _new="$_new$line
+"
+  done <"$_f"
+  if [ -n "${CP_DRY:-}" ]; then say "[dry-run] rewrite $_f cmdline with: $2"; else printf '%s' "$_new" >"$_f.new" && mv "$_f.new" "$_f"; fi
+}
+bootloader_set_params() { # "resume=... resume_offset=..." (empty string removes)
+  case "$(detect_bootloader)" in
+    limine) for f in $(limine_files); do limine_set "$f" "$1"; done ;;
+    grub)
+      g=$ETC/default/grub
+      cur=$(sed -n 's/^GRUB_CMDLINE_LINUX_DEFAULT="\(.*\)"/\1/p' "$g")
+      new=$(cmdline_edit "$cur" "$1")
+      if [ -n "${CP_DRY:-}" ]; then say "[dry-run] grub cmdline: $new"; else
+        sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"$new\"|" "$g"
+        have grub-mkconfig && grub-mkconfig -o "$BOOT/grub/grub.cfg" >/dev/null 2>&1; fi ;;
+    syslinux)
+      u=$ETC/update-extlinux.conf
+      cur=$(sed -n 's/^default_kernel_opts="\(.*\)"/\1/p' "$u")
+      new=$(cmdline_edit "$cur" "$1")
+      if [ -n "${CP_DRY:-}" ]; then say "[dry-run] extlinux cmdline: $new"; else
+        sed -i "s|^default_kernel_opts=.*|default_kernel_opts=\"$new\"|" "$u"
+        have update-extlinux && update-extlinux >/dev/null 2>&1; fi ;;
+    *) die "no supported bootloader found (limine, grub or syslinux)" ;;
+  esac
+}
+bootloader_cmdline() { # first configured cmdline, for doctor
+  case "$(detect_bootloader)" in
+    limine) for f in $(limine_files); do sed -n 's/^[[:space:]]*\(kernel_cmdline\|cmdline\):[[:space:]]*//p;s/^[[:space:]]*CMDLINE=//p' "$f" | head -1; return; done ;;
+    grub) sed -n 's/^GRUB_CMDLINE_LINUX_DEFAULT="\(.*\)"/\1/p' "$ETC/default/grub" ;;
+    syslinux) sed -n 's/^default_kernel_opts="\(.*\)"/\1/p' "$ETC/update-extlinux.conf" ;;
+  esac
+}
+param_of() { for t in $1; do case "$t" in "$2"=*) echo "${t#*=}"; return ;; esac; done; }
+
+# ---------------------------------------------------------------- swap file helpers
+swapfile_path() { case "$(root_fs)" in btrfs) echo /swap/swapfile ;; *) echo /swapfile ;; esac; }
+swap_mib_for_ram() { # RAM in MiB (rounded up), minimum 1024. Same rule as Omarchy: swap = RAM.
+  _m=$(( ($(mem_kib) + 1023) / 1024 )); [ "$_m" -lt 1024 ] && _m=1024; echo "$_m"
+}
+swapfile_offset() { # resume_offset in pages for swap file $1
+  case "$(root_fs)" in
+    btrfs) btrfs inspect-internal map-swapfile -r "$1" 2>/dev/null ;;
+    *) have filefrag || return 1
+       filefrag -v "$1" 2>/dev/null | awk '$1 ~ /^0:/ {gsub(/\./,"",$4); print $4; exit}' ;;
+  esac
+}
+resume_spec_for() { # file -> "dev" on stdout; LUKS-aware
+  _d=$(fs_dev_of "$1")
+  [ -z "$_d" ] && _d=$(root_dev)
+  _d=$(readlink -f "$_d" 2>/dev/null || echo "$_d")
+  # prefer the mapper name when the file system sits inside LUKS; the Alpine initramfs unlocks it before resuming
+  _dn=$(devnum "$_d")
+  for m in /dev/mapper/*; do [ -n "$_dn" ] && [ "$(devnum "$m")" = "$_dn" ] && { echo "$m"; return; }; done
+  _u=$(blkid -s UUID -o value "$_d" 2>/dev/null)
+  [ -n "$_u" ] && echo "UUID=$_u" || echo "$_d"
+}
+rebuild_initramfs() {
+  have mkinitfs || { warn "mkinitfs not installed; cannot rebuild"; return 1; }
+  for k in "$BOOT"/vmlinuz-*; do
+    [ -f "$k" ] || continue
+    fl=${k##*/vmlinuz-}
+    rel=$(ls /lib/modules 2>/dev/null | grep -- "-$fl\$" | tail -1)
+    [ -n "$rel" ] || { warn "no /lib/modules for flavor $fl"; continue; }
+    say "rebuilding initramfs-$fl ($rel)"
+    run mkinitfs -o "$BOOT/initramfs-$fl" "$rel" || return 1
+  done
+}
+initramfs_has_resume() { # 0 yes, 1 no, 2 cannot inspect
+  _any=2
+  for i in "$BOOT"/initramfs-*; do
+    [ -f "$i" ] || continue
+    case "$i" in *.new|*-old) continue ;; esac
+    if gzip -dc <"$i" 2>/dev/null | grep -aq resume_from_disk; then _any=0; else
+      if gzip -t <"$i" 2>/dev/null; then return 1; fi
+    fi
+  done
+  return $_any
+}
+
+# ---------------------------------------------------------------- hibernate-setup / remove
+cmd_hibernate_setup() {
+  need_root
+  size=; rebuild=1; swapon_now=1; force=
+  while [ $# -gt 0 ]; do case "$1" in
+    --size) size=$2; shift ;; --no-rebuild) rebuild= ;; --no-swapon) swapon_now= ;;
+    --dry-run) CP_DRY=1 ;; --force) force=1 ;;
+    *) die "unknown option $1" ;; esac; shift; done
+
+  has_disk_state || die "this kernel/firmware offers no 'disk' sleep state (hibernation unsupported). Run: carpatic-power doctor"
+  [ -e "$SYS/power/resume" ] || die "kernel has no resume support (/sys/power/resume missing)"
+  case "$(lockdown_mode)" in integrity|confidentiality) die "kernel lockdown ($(lockdown_mode)) is active, usually because Secure Boot is on. Hibernation is blocked; turn Secure Boot off in firmware." ;; esac
+
+  fs=$(root_fs); sf=$(swapfile_path); res=; off=
+  say "root file system: $fs   bootloader: $(detect_bootloader)"
+  [ "$(detect_bootloader)" = unknown ] && die "cannot find a bootloader config in $BOOT (limine, grub, syslinux)"
+
+  # 1. reuse an existing swap partition that is big enough, otherwise (re)use / create a swap file
+  need_kib=$(( $(mem_kib) * 9 / 10 ))
+  part=$(swap_entries | awk -v n="$need_kib" '$2=="partition" && $3>=n {print $1; exit}')
+  if [ -n "$part" ] && [ -z "$force" ] && [ ! -f "$sf" ]; then
+    say "using existing swap partition $part"
+    d=$(readlink -f "$part")
+    if is_luks "$d"; then res=$part; else res=$(blkid -s UUID -o value "$d" 2>/dev/null | sed 's/^/UUID=/'); fi
+    [ -n "$res" ] || res=$d
+    off=
+  else
+    case "$fs" in btrfs|ext4|ext3|ext2|xfs) ;; *) die "swap files for hibernation need ext4, xfs or btrfs; root is $fs" ;; esac
+    case "$fs" in btrfs)
+      have btrfs || die "btrfs-progs missing (apk add btrfs-progs)"
+      if [ ! -d /swap ] || ! btrfs subvolume show /swap >/dev/null 2>&1; then
+        say "creating Btrfs subvolume /swap (kept out of snapshots, copy-on-write off)"
+        run btrfs subvolume create /swap >/dev/null || die "cannot create /swap subvolume"
+        run chattr +C /swap ;
+      fi ;;
+    esac
+    [ -z "$size" ] && size=$(swap_mib_for_ram)
+    if [ -f "$sf" ]; then cur=$(( $(stat -c %s "$sf") / 1048576 )); fi
+    if [ -f "$sf" ] && [ "${cur:-0}" -ge "$((size * 95 / 100))" ] && swaplabel "$sf" >/dev/null 2>&1; then
+      say "swap file $sf already exists (${cur} MiB)"
+    else
+      free_mib=$(df -Pm "$(dirname "$sf")" 2>/dev/null | awk 'NR==2 {print $4}')
+      [ -z "$free_mib" ] || [ -n "${CP_DRY:-}" ] || [ "$free_mib" -gt "$((size + size / 10 + 512))" ] \
+        || die "not enough free space for a ${size} MiB swap file (free: ${free_mib} MiB). Free some space or use --size."
+      if [ -f "$sf" ]; then say "replacing undersized swap file"; grep -q "^$sf " "$PROC/swaps" && run swapoff "$sf"; run rm -f "$sf"; fi
+      say "creating ${size} MiB swap file $sf"
+      mkdir -p "$(dirname "$sf")"
+      case "$fs" in
+        btrfs) run btrfs filesystem mkswapfile --size "${size}m" "$sf" >/dev/null || die "btrfs mkswapfile failed" ;;
+        *) run dd if=/dev/zero of="$sf" bs=1M count="$size" status=none 2>/dev/null || run dd if=/dev/zero of="$sf" bs=1M count="$size" || die "cannot write $sf"
+           run chmod 600 "$sf"; run mkswap "$sf" >/dev/null || die "mkswap failed" ;;
+      esac
+    fi
+    # fstab (idempotent)
+    if ! grep -qs "^$sf[[:space:]]" "$ETC/fstab"; then
+      say "adding $sf to /etc/fstab"
+      [ -n "${CP_DRY:-}" ] || printf '%s none swap defaults,pri=0 0 0\n' "$sf" >>"$ETC/fstab"
+    fi
+    if [ -n "$swapon_now" ] && ! grep -q "^$sf " "$PROC/swaps"; then run swapon -p 0 "$sf" || warn "swapon failed"; fi
+    off=$(swapfile_offset "$sf"); res=$(resume_spec_for "$sf")
+    [ -n "${CP_DRY:-}" ] && [ -z "$off" ] && off="<offset>"
+    [ -n "$off" ] || die "could not determine resume_offset of $sf (is the file fragmented or compressed?)"
+  fi
+
+  # 2. kernel parameters
+  params="resume=$res${off:+ resume_offset=$off}"
+  if grep -q "\[s2idle\]" "$SYS/power/mem_sleep" 2>/dev/null; then params="$params rtc_cmos.use_acpi_alarm=1"; fi
+  say "kernel parameters: $params"
+  bootloader_set_params "$params"
+  if [ -z "${CP_DRY:-}" ]; then
+    mkdir -p "$ETC/carpatic"
+    printf '# written by carpatic-power hibernate-setup\nRESUME=%s\nRESUME_OFFSET=%s\nSWAPFILE=%s\n' "$res" "$off" "${sf}" >"$ETC/carpatic/resume.conf"
+  fi
+
+  # 3. initramfs: Alpine's init already understands resume=/resume_offset=; only rebuild if it does not
+  initramfs_has_resume; ih=$?
+  if [ -n "$rebuild" ] && [ "$ih" = 1 ]; then rebuild_initramfs; elif [ "$ih" = 1 ]; then warn "initramfs lacks resume support; rebuild it"; fi
+
+  apply_config_files
+  say "done. Reboot once so the new kernel parameters take effect, then run: carpatic-power doctor"
+}
+cmd_hibernate_remove() {
+  need_root
+  del=; [ "${1:-}" = --delete ] && del=1
+  bootloader_set_params ""
+  sf=$(swapfile_path)
+  if [ -f "$ETC/fstab" ] && grep -q "^$sf[[:space:]]" "$ETC/fstab"; then
+    [ -n "${CP_DRY:-}" ] || sed -i "\|^$sf[[:space:]]|d" "$ETC/fstab"
+  fi
+  [ -n "$del" ] && { run swapoff "$sf" 2>/dev/null; run rm -f "$sf"; }
+  rm -f "$ETC/carpatic/resume.conf" 2>/dev/null
+  say "hibernate parameters removed${del:+ and swap file deleted}"
+}
+
+# kernel boot sanity: resume_offset in the boot config must match the swap file (it changes if the file is recreated)
+resume_selfcheck() {
+  [ -r "$ETC/carpatic/resume.conf" ] || return 0
+  . "$ETC/carpatic/resume.conf"
+  [ -n "$SWAPFILE" ] && [ -f "$SWAPFILE" ] || return 0
+  now=$(swapfile_offset "$SWAPFILE")
+  [ -n "$now" ] && [ "$now" != "$RESUME_OFFSET" ] || return 0
+  warn "swap file moved (resume_offset $RESUME_OFFSET -> $now): fixing boot config"
+  bootloader_set_params "resume=$RESUME resume_offset=$now"
+  sed -i "s/^RESUME_OFFSET=.*/RESUME_OFFSET=$now/" "$ETC/carpatic/resume.conf"
+}
+
+# ---------------------------------------------------------------- doctor / readiness
+D_FAIL=0; D_WARN=0
+ok()   { printf '  [ ok ] %s\n' "$1"; }
+wn()   { printf '  [warn] %s\n' "$1"; [ -n "$2" ] && printf '         -> %s\n' "$2"; D_WARN=$((D_WARN + 1)); }
+bad()  { printf '  [FAIL] %s\n' "$1"; [ -n "$2" ] && printf '         -> %s\n' "$2"; D_FAIL=$((D_FAIL + 1)); }
+cmd_doctor() {
+  D_FAIL=0; D_WARN=0
+  cmdline=$(cat "$PROC/cmdline" 2>/dev/null)
+  say "Carpatic power doctor: can this machine hibernate?"; say
+  say "Kernel and firmware"
+  if has_disk_state; then ok "the kernel offers hibernation ('disk' sleep state: $(cat "$SYS/power/state"))"
+  else bad "the kernel does not offer hibernation (/sys/power/state has no 'disk')" "the kernel was built or booted without hibernation support; use the stock Alpine linux-lts kernel and make sure no 'nohibernate' is on the boot line"; fi
+  case " $cmdline " in *" nohibernate "*) bad "'nohibernate' is on the kernel command line" "remove it from your bootloader config" ;; esac
+  lm=$(lockdown_mode)
+  case "$lm" in
+    integrity|confidentiality) bad "kernel lockdown is '$lm', and Linux refuses hibernation under lockdown" "this happens with UEFI Secure Boot on. Turn Secure Boot off in the firmware (Carpatic does not ship signed kernels yet), reboot, and run doctor again" ;;
+    none) ok "kernel lockdown is off, so nothing blocks hibernation" ;;
+    *) ok "no kernel lockdown information (fine: lockdown is not active)" ;;
+  esac
+  if secure_boot_on; then wn "UEFI Secure Boot is on" "if the line above says lockdown is active, hibernation cannot work until you disable Secure Boot"; fi
+  [ -e "$SYS/power/resume" ] || bad "no /sys/power/resume: the kernel cannot resume from disk" ""
+  if [ -r "$SYS/power/mem_sleep" ]; then ok "suspend modes available: $(cat "$SYS/power/mem_sleep")"; fi
+  if [ -r "$SYS/power/disk" ]; then ok "hibernate modes: $(cat "$SYS/power/disk")"; fi
+
+  say; say "Swap space"
+  ram=$(mem_kib); sw=$(swap_total_kib)
+  need=$(( ram - $(mem_avail_kib) ))
+  if [ "$sw" -le 0 ]; then
+    bad "no disk swap is active (only zram, which cannot hold a hibernation image on disk)" "run: doas carpatic-power hibernate-setup"
+  elif [ "$sw" -ge "$ram" ]; then ok "swap $((sw / 1024)) MiB covers all RAM ($((ram / 1024)) MiB), so the image always fits"
+  elif [ "$sw" -ge "$((need + need / 10))" ]; then wn "swap is $((sw / 1024)) MiB, smaller than RAM ($((ram / 1024)) MiB)" "it fits what you use right now ($((need / 1024)) MiB) but hibernate can fail later when memory is fuller. hibernate-setup --size $((ram / 1024)) makes it safe"
+  else bad "swap ($((sw / 1024)) MiB) is smaller than the memory in use ($((need / 1024)) MiB): the image would not fit" "run: doas carpatic-power hibernate-setup"; fi
+
+  say; say "Where the system resumes from"
+  rp=$(param_of "$cmdline" resume); ro=$(param_of "$cmdline" resume_offset)
+  sf=$(swapfile_path)
+  if [ -z "$rp" ]; then
+    bad "the running system was not told where to resume from (no resume= on the kernel line)" "run: doas carpatic-power hibernate-setup, then reboot"
+  else
+    ok "boot line has resume=$rp${ro:+ resume_offset=$ro}"
+    if [ -f "$sf" ] && grep -q "^$sf " "$PROC/swaps"; then
+      now=$(swapfile_offset "$sf")
+      if [ -z "$ro" ]; then bad "resume= is set but resume_offset= is missing, and the swap is a file" "swap files need an offset; run hibernate-setup"
+      elif [ -n "$now" ] && [ "$now" != "$ro" ]; then bad "resume_offset=$ro does not match where the swap file really is ($now)" "the file was recreated; run: doas carpatic-power hibernate-setup (or reboot, the boot service fixes it)"
+      else ok "resume_offset matches the swap file's real location"; fi
+      case "$(root_fs)" in btrfs)
+        if have lsattr && ! lsattr -d "$(dirname "$sf")" 2>/dev/null | awk '{print $1}' | grep -q C; then wn "copy-on-write is not disabled on $(dirname "$sf")" "recreate it with hibernate-setup so Btrfs does not break the swap file"; fi ;;
+      esac
+    elif [ -z "$ro" ]; then
+      ok "swap is a partition, no offset needed"
+    else bad "resume_offset is set but $sf is not active swap" "swapon -a, or rerun hibernate-setup"; fi
+    # does resume= point at the right device?
+    rdev=$(real_dev "$rp"); want=$(real_dev "$(resume_spec_for "$sf")")
+    if [ -f "$sf" ] && [ -n "$rdev" ] && [ -n "$want" ] && [ "$rdev" != "$want" ]; then
+      bad "resume=$rp points to $rdev but the swap file lives on $want" "rerun hibernate-setup"; fi
+  fi
+  if [ -n "$rp" ] && [ -f "$ETC/carpatic/resume.conf" ]; then :; fi
+  bl=$(bootloader_cmdline)
+  if [ -n "$bl" ]; then
+    if [ "$(param_of "$bl" resume)" = "$rp" ] && [ "$(param_of "$bl" resume_offset)" = "$ro" ]; then ok "the boot loader config ($(detect_bootloader)) matches the running boot line"
+    elif [ -n "$(param_of "$bl" resume)" ]; then wn "the boot loader config has newer resume settings than this boot" "reboot once"
+    else bad "the boot loader config has no resume= (so the next boot will not resume either)" "rerun hibernate-setup"; fi
+  fi
+
+  say; say "Early boot (initramfs)"
+  initramfs_has_resume; ih=$?
+  case $ih in 0) ok "the initramfs knows how to resume" ;; 1) bad "the initramfs cannot resume" "rebuild it: doas mkinitfs, or hibernate-setup" ;; *) wn "could not inspect the initramfs" "" ;; esac
+  case " $cmdline " in *" cryptroot="*) ok "encrypted root (LUKS): the initramfs unlocks the disk first, then resumes (the passphrase is asked on resume, as on boot)" ;; esac
+
+  say; say "Services"
+  if elogind_up; then ok "elogind is running (lid, power key and 'loginctl hibernate' work)"
+  else wn "elogind is not running" "rc-service elogind start; rc-update add elogind default"; fi
+  if [ -f "$ETC/elogind/logind.conf.d/10-carpatic.conf" ]; then ok "lid and power-key policy installed"; else wn "no Carpatic lid/power policy yet" "run: doas carpatic-power apply-config"; fi
+  grep -Rqs '^AllowHibernation=no' "$ETC/elogind/" 2>/dev/null && bad "AllowHibernation=no in /etc/elogind" "remove that line"
+
+  say
+  if [ "$D_FAIL" = 0 ]; then
+    say "Result: hibernate should work.$( [ "$D_WARN" -gt 0 ] && echo " ($D_WARN warning(s) above)")"
+    say "Not testable in software: whether your graphics, Wi-Fi and USB devices come back cleanly; see power/HARDWARE-TEST-PLAN.md."
+    return 0
+  fi
+  say "Result: hibernate will NOT work yet ($D_FAIL problem(s) above). Fix them in order, usually: doas carpatic-power hibernate-setup && reboot."
+  return 1
+}
+cmd_ready() { ( cmd_doctor ) >/dev/null 2>&1; }
+
+# ---------------------------------------------------------------- elogind policy
+apply_config_files() {
+  d=$ETC/elogind
+  mkdir -p "$d/logind.conf.d" "$d/sleep.conf.d" "$d/system-sleep" 2>/dev/null || return 0
+  if has_battery; then lid=suspend; pk=suspend; else lid=ignore; pk=poweroff; fi
+  [ -n "${CP_DRY:-}" ] && { say "[dry-run] write $d/logind.conf.d/10-carpatic.conf (lid=$lid power key=$pk)"; return; }
+  cat >"$d/logind.conf.d/10-carpatic.conf" <<EOF
+# Carpatic OS: written by 'carpatic-power apply-config'. Edit freely; it is not overwritten if you add your own file after it.
+[Login]
+HandleLidSwitch=$lid
+HandleLidSwitchExternalPower=$lid
+HandleLidSwitchDocked=ignore
+HandlePowerKey=$pk
+HandleSuspendKey=suspend
+HandleHibernateKey=hibernate
+InhibitDelayMaxSec=10
+IdleAction=ignore
+EOF
+  cat >"$d/sleep.conf.d/10-carpatic.conf" <<EOF
+# Carpatic OS sleep policy. 'platform shutdown': try ACPI S4, fall back to a plain power-off after the image is written.
+[Sleep]
+AllowSuspend=yes
+AllowHibernation=yes
+AllowHybridSleep=yes
+# elogind's own suspend-then-hibernate suspends but never hibernates afterwards (tested, elogind 255.24);
+# carpatic-power implements it (RTC alarm + sleep hook), so keep the native one off.
+AllowSuspendThenHibernate=no
+SuspendState=mem standby freeze
+HibernateState=disk
+HibernateMode=platform shutdown
+EOF
+  hk=$(dirname "$0")/../libexec/carpatic-power-hook
+  [ -x "$hk" ] || hk=/usr/libexec/carpatic-power-hook
+  printf '#!/bin/sh\nexec /usr/bin/carpatic-power hook "$@"\n' >"$d/system-sleep/50-carpatic"; chmod 755 "$d/system-sleep/50-carpatic"
+}
+cmd_apply_config() { need_root; apply_config_files; say "elogind policy written ($(has_battery && echo laptop || echo desktop) mode). Restart elogind or reboot to apply."; }
+
+# ---------------------------------------------------------------- sleep
+elogind_up() { pgrep -f 'libexec/elogind/elogind' >/dev/null 2>&1 || pgrep -x elogind >/dev/null 2>&1; }
+direct_sleep() { # no elogind: write the kernel state ourselves
+  case "$1" in suspend) s=mem ;; hibernate) s=disk ;; *) die "cannot do '$1' without elogind" ;; esac
+  wr "$SYS/power/state" "$s"
+}
+cmd_sleep() {
+  k=${1:-}
+  case "$k" in
+    suspend|hibernate) ;;
+    hybrid|hybrid-sleep) k=hybrid-sleep ;;
+    suspend-then-hibernate|sth) k=suspend-then-hibernate ;;
+    *) die "usage: carpatic-power sleep suspend|hibernate|hybrid|suspend-then-hibernate [minutes]" ;;
+  esac
+  if [ "$k" = hibernate ] || [ "$k" = hybrid-sleep ] || [ "$k" = suspend-then-hibernate ]; then
+    cmd_ready || { warn "hibernate is not set up on this machine (run: carpatic-power doctor)"; if have notify-send; then notify-send -a "Carpatic power" "Hibernate not available" "Run carpatic-power doctor" 2>/dev/null; fi; exit 1; }
+  fi
+  if [ "$k" = suspend-then-hibernate ]; then
+    mins=${2:-$STH_DELAY_MIN}
+    secs=${CP_STH_SECONDS:-$((mins * 60))}
+    mkdir -p "$RUN"; printf '%s %s\n' "$(date +%s)" "$secs" >"$RUN/sth"
+    if have rtcwake; then rtcwake -m no -s "$secs" >/dev/null 2>&1 || warn "could not arm the RTC alarm; the machine will stay suspended"
+    else warn "rtcwake missing (apk add util-linux-misc); the machine will stay suspended"; fi
+    k=suspend
+  fi
+  if elogind_up && have loginctl; then loginctl "$k"; else direct_sleep "$k"; fi
+}
+cmd_lock() {
+  if [ "$(id -u)" = 0 ]; then
+    # root: lock every local X display (used by the sleep hook)
+    for s in /tmp/.X11-unix/X*; do
+      [ -S "$s" ] || continue
+      n=${s##*/X}
+      u=$(ps -eo user,args 2>/dev/null | awk '/[X]org/ && $0 ~ /:'"$n"'( |$)/ {print $1; exit}')
+      [ -n "$u" ] && [ "$u" != root ] || u=$(awk -F: '$3>=1000 && $3<60000 {print $1; exit}' "$ETC/passwd")
+      [ -n "$u" ] || continue
+      su -s /bin/sh "$u" -c "DISPLAY=:$n setsid $LOCK_CMD >/dev/null 2>&1 &" 2>/dev/null
+    done
+    return 0
+  fi
+  have "$LOCK_CMD" || die "$LOCK_CMD not installed (apk add slock)"
+  exec "$LOCK_CMD"
+}
+cmd_hook() { # elogind system-sleep: hook pre|post suspend|hibernate|hybrid-sleep|suspend-then-hibernate
+  phase=$1; kind=$2
+  mkdir -p "$RUN"
+  case "$phase" in
+    pre)
+      date +%s >"$RUN/sleep-start"
+      [ "$LOCK_ON_SLEEP" = yes ] && { cmd_lock; sleep 0.3; }
+      case "$kind" in hibernate|hybrid-sleep) cmd_kbd off ;; esac
+      for m in $SLEEP_UNLOAD_MODULES; do rmmod "$m" 2>/dev/null; done   # drivers that do not survive sleep
+      ;;
+    post)
+      # woken by our own suspend-then-hibernate timer? then hibernate for real
+      if [ -r "$RUN/sth" ]; then
+        read -r t0 dl <"$RUN/sth"; now=$(date +%s)
+        rm -f "$RUN/sth"
+        margin=60; [ "$dl" -lt 120 ] && margin=$((dl / 2))
+        if [ "$((now - t0))" -ge "$((dl - margin))" ]; then
+          (sleep 2; loginctl hibernate) >/dev/null 2>&1 &
+          return 0
+        fi
+      fi
+      for m in $SLEEP_UNLOAD_MODULES; do modprobe "$m" 2>/dev/null; done
+      cmd_kbd on
+      "$0" auto --async
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------- brightness
+bl_dir() { for d in "$SYS"/class/backlight/*; do [ -d "$d" ] && { echo "$d"; return; }; done; }
+cmd_brightness() {
+  d=$(bl_dir); [ -n "$d" ] || die "no screen backlight found (external monitor or desktop?)"
+  max=$(rd "$d/max_brightness"); cur=$(rd "$d/brightness")
+  pct() { echo $(( ($1 * 100 + max / 2) / max )); }
+  setpct() { v=$(( $1 * max / 100 )); [ "$v" -lt 1 ] && v=1; [ "$v" -gt "$max" ] && v=$max
+    if have brightnessctl && [ -z "${CP_SYS:-}" ]; then brightnessctl -q -d "${d##*/}" set "$v"; else wr "$d/brightness" "$v" || die "cannot write brightness (need root or the 'video' group + brightnessctl)"; fi; }
+  case "${1:-get}" in
+    get) pct "$cur" ;;
+    up)   setpct $(( $(pct "$cur") + ${2:-5} )) ;;
+    down) setpct $(( $(pct "$cur") - ${2:-5} )) ;;
+    set)  setpct "${2:?percent}" ;;
+    *) die "usage: brightness up|down|set N|get" ;;
+  esac
+}
+kbd_dir() { for d in "$SYS"/class/leds/*kbd_backlight*; do [ -d "$d" ] && { echo "$d"; return; }; done; }
+cmd_kbd() {
+  d=$(kbd_dir); [ -n "$d" ] || return 0
+  max=$(rd "$d/max_brightness"); cur=$(rd "$d/brightness")
+  case "${1:-}" in
+    off) [ "$cur" != 0 ] && { mkdir -p "$RUN"; printf '%s' "$cur" >"$RUN/kbd"; }; wr "$d/brightness" 0 ;;
+    on)  [ -r "$RUN/kbd" ] && { wr "$d/brightness" "$(cat "$RUN/kbd")"; rm -f "$RUN/kbd"; } ;;
+    up)  v=$((cur + 1)); [ "$v" -gt "$max" ] && v=$max; wr "$d/brightness" "$v" ;;
+    down) v=$((cur - 1)); [ "$v" -lt 0 ] && v=0; wr "$d/brightness" "$v" ;;
+    *) die "usage: kbd-backlight up|down|off|on" ;;
+  esac
+}
+cmd_battery_limit() {
+  found=
+  for b in $(battery_dirs); do
+    f=$b/charge_control_end_threshold
+    [ -e "$f" ] || continue
+    found=1
+    case "${1:-}" in
+      "") say "${b##*/}: charge stops at $(rd "$f")%" ;;
+      reset) need_root; wr "$f" 100; say "${b##*/}: limit removed" ;;
+      *[!0-9]*) die "usage: battery-limit [N|reset]" ;;
+      *) need_root; [ "$1" -ge 40 ] && [ "$1" -le 100 ] || die "choose 40..100"; wr "$f" "$1"; say "${b##*/}: charge stops at $1%" ;;
+    esac
+  done
+  [ -n "$found" ] || { say "this laptop's firmware does not expose a charge limit to Linux (many HP, Dell and Lenovo models only offer it in the BIOS setup: look for 'Battery Care' / 'Adaptive Battery Optimizer' / 'Custom charge stop')"; return 1; }
+  if [ -n "${1:-}" ] && [ -z "${CP_DRY:-}" ]; then   # remember it: reapplied at every boot
+    mkdir -p "$ETC/carpatic"; [ -f "$CONF" ] || : >"$CONF"; sed -i '/^BATTERY_LIMIT=/d' "$CONF"
+    [ "$1" = reset ] || echo "BATTERY_LIMIT=$1" >>"$CONF"
+  fi
+}
+
+# ---------------------------------------------------------------- notifications and monitor
+notify_all() { # urgency title body
+  for r in /run/user/*; do
+    [ -S "$r/bus" ] || continue
+    uid=${r##*/}; u=$(awk -F: -v i="$uid" '$3==i {print $1}' "$ETC/passwd")
+    [ -n "$u" ] && have notify-send && su -s /bin/sh "$u" -c "DBUS_SESSION_BUS_ADDRESS=unix:path=$r/bus notify-send -u $1 -a 'Carpatic power' '$2' '$3'" >/dev/null 2>&1
+  done
+  have wall && [ "$1" = critical ] && echo "$2: $3" | wall 2>/dev/null
+  logger -t carpatic-power "$2: $3" 2>/dev/null
+}
+monitor_tick() { # one evaluation; state in $RUN/mon (low|crit|"")
+  has_battery || return 0
+  p=$(battery_pct); [ -n "$p" ] || return 0
+  mon=$(cat "$RUN/mon" 2>/dev/null)
+  if on_ac; then rm -f "$RUN/mon"; return 0; fi
+  if [ "$p" -le "$CRIT_PCT" ] && [ "$mon" != crit ]; then
+    echo crit >"$RUN/mon"
+    notify_all critical "Battery critical ($p%)" "Saving your session: $CRIT_ACTION"
+    sleep "${CP_CRIT_DELAY:-8}"; on_ac && return 0
+    case "$CRIT_ACTION" in
+      hibernate) if cmd_ready; then cmd_sleep hibernate; else cmd_sleep suspend; fi ;;
+      suspend) cmd_sleep suspend ;;
+      *) if elogind_up; then loginctl poweroff; else poweroff; fi ;;
+    esac
+  elif [ "$p" -le "$LOW_PCT" ] && [ -z "$mon" ]; then
+    echo low >"$RUN/mon"
+    notify_all normal "Battery low ($p%)" "Plug in the charger. Power saver is on."
+    apply_profile saver
+  fi
+}
+cmd_monitor() {
+  mkdir -p "$RUN"
+  [ -n "${CP_ONCE:-}" ] && { monitor_tick; return; }
+  while :; do monitor_tick; sleep "$POLL_SEC"; done
+}
+cmd_boot() { # called once from the OpenRC service
+  mkdir -p "$STATE" "$RUN"
+  resume_selfcheck
+  [ -n "$BATTERY_LIMIT" ] && cmd_battery_limit "$BATTERY_LIMIT" >/dev/null 2>&1
+  cmd_auto >/dev/null
+}
+
+# ---------------------------------------------------------------- menu
+menu_entries() {
+  printf 'Lock\nSuspend\n'
+  cmd_ready && printf 'Hibernate\n'
+  printf 'Log out\nRestart\nShutdown\n'
+}
+menu_do() {
+  case "$1" in
+    Lock) cmd_lock ;;
+    Suspend) cmd_sleep suspend ;;
+    Hibernate) cmd_sleep hibernate ;;
+    "Log out") if [ -n "${XDG_SESSION_ID:-}" ] && have loginctl; then loginctl terminate-session "$XDG_SESSION_ID"; else pkill -x carpatic-wm; fi ;;
+    Restart) loginctl reboot ;;
+    Shutdown) loginctl poweroff ;;
+    *) die "unknown menu entry '$1'" ;;
+  esac
+}
+cmd_menu() {
+  case "${1:-}" in
+    --print) menu_entries; return ;;
+    --choose) menu_do "$2"; return ;;
+  esac
+  if have rofi && [ -n "${DISPLAY:-}" ]; then c=$(menu_entries | rofi -dmenu -i -p "Power")
+  elif have dmenu && [ -n "${DISPLAY:-}" ]; then c=$(menu_entries | dmenu -i -p "Power")
+  else
+    menu_entries | nl -w1 -s') '; printf 'choose: '; read -r n; c=$(menu_entries | sed -n "${n}p")
+  fi
+  [ -n "$c" ] || return 0
+  case "$c" in Restart|Shutdown|"Log out")
+    if have dmenu && [ -n "${DISPLAY:-}" ]; then a=$(printf 'No\nYes\n' | dmenu -i -p "$c?"); [ "$a" = Yes ] || return 0; fi ;;
+  esac
+  menu_do "$c"
+}
+
+# ---------------------------------------------------------------- status
+cmd_status() {
+  say "Carpatic power $VERSION"
+  if has_battery; then
+    p=$(battery_pct); st=$(battery_status)
+    say "battery   : ${p:-?}% ${st:-} ($(on_ac && echo 'AC connected' || echo 'on battery'))"
+    for b in $(battery_dirs); do
+      e=$(rd "$b/energy_now"); w=$(rd "$b/power_now"); f=$(rd "$b/energy_full"); fd=$(rd "$b/energy_full_design")
+      [ -n "$fd" ] && [ -n "$f" ] && [ "$fd" -gt 0 ] && say "health    : $((f * 100 / fd))% of design capacity"
+      if [ -n "$w" ] && [ "$w" -gt 0 ] && [ "$st" = Discharging ]; then m=$((e * 60 / w)); say "remaining : about $((m / 60))h$((m % 60))m at $((w / 1000000)).$(( (w / 100000) % 10 )) W"; fi
+    done
+  else say "battery   : none (desktop)"; fi
+  say "profile   : $(cmd_profile)"
+  g=$(rd "$CPUF/cpu0/cpufreq/scaling_governor"); e=$(rd "$CPUF/cpu0/cpufreq/energy_performance_preference")
+  say "cpu       : governor ${g:-n/a}${e:+, preference $e}$( [ -e "$PLAT" ] && echo ", platform $(rd "$PLAT")")"
+  say "sleep     : suspend [$(cat "$SYS/power/mem_sleep" 2>/dev/null)]  hibernate [$(has_disk_state && echo yes || echo no)]"
+  say "swap      : $(( $(swap_total_kib) / 1024 )) MiB on disk, RAM $(( $(mem_kib) / 1024 )) MiB, zram $(awk 'NR>1 && /zram/ {s+=$3} END {print s/1024+0}' "$PROC/swaps") MiB"
+  if cmd_ready; then say "hibernate : ready"; else say "hibernate : NOT ready (run: carpatic-power doctor)"; fi
+  d=$(bl_dir); [ -n "$d" ] && say "backlight : $(cmd_brightness get)%"
+}
+
+CMD=${1:-status}; [ $# -gt 0 ] && shift
+case "$CMD" in
+  status) cmd_status ;;
+  doctor) cmd_doctor ;;
+  profile) cmd_profile "$@" ;;
+  auto) cmd_auto "$@" ;;
+  sleep) cmd_sleep "$@" ;;
+  suspend|hibernate|hybrid) cmd_sleep "$CMD" "$@" ;;
+  lock) cmd_lock ;;
+  menu) cmd_menu "$@" ;;
+  hibernate-setup) cmd_hibernate_setup "$@" ;;
+  hibernate-remove) cmd_hibernate_remove "$@" ;;
+  hibernate-ready) cmd_ready ;;
+  apply-config) cmd_apply_config ;;
+  brightness) cmd_brightness "$@" ;;
+  kbd-backlight) cmd_kbd "$@" ;;
+  battery-limit) cmd_battery_limit "$@" ;;
+  monitor) cmd_monitor ;;
+  boot) cmd_boot ;;
+  hook) cmd_hook "$@" ;;
+  version|--version) say "$VERSION" ;;
+  -h|--help|help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) die "unknown command '$CMD' (try: carpatic-power help)" ;;
+esac

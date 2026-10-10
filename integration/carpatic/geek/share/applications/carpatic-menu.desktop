@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Carpatic Menu
+GenericName=System menu
+Comment=Install, style, update and manage your computer from the keyboard
+Exec=carpatic-menu
+Icon=carpatic
+Keywords=menu;system;install;theme;style;update;trigger;screenshot;power;settings;carpatic;omarchy;
+Categories=System;Settings;
+Terminal=false

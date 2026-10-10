@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""carpatic-tour: one screen, "Welcome to the keyboard-driven desktop". Not a tutorial, never pops up by itself.
+
+  carpatic-tour             show the card (a small window)
+  carpatic-tour --text      print it in the terminal
+  carpatic-tour --guide     read the guide for power users in the terminal
+The shortcuts on the card are read from your profile, so they are always the ones that work on your desktop.
+"""
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+here = os.path.dirname(os.path.realpath(__file__))
+for d in (os.path.join(here, "..", "lib"), "/usr/local/lib/carpatic-geek"):
+    sys.path.insert(0, d)
+os.environ["PATH"] = here + ":" + os.environ.get("PATH", "")
+import carpatic_keys as K  # noqa: E402
+
+CFG = os.environ.get("CARPATIC_CONFIG", os.path.expanduser("~/.config/carpatic"))
+
+# (what it does, how to recognise the binding in the profile)
+INTENTS = [
+    ("Menu for everything: install, style, update, power", lambda b: "carpatic-menu" in " ".join(b.exec)),
+    ("Open any app", lambda b: b.exec[:1] == ["carpatic-launch"] and len(b.exec) == 1),
+    ("Open a terminal", lambda b: b.exec[:1] in (["carpatic-term"], ["$terminal"], ["st"])),
+    ("Every shortcut, searchable", lambda b: any(x in " ".join(b.exec) for x in ("carpatic-cheatsheet", "carpatic-keys", "carpatic keys"))),
+    ("Close the window", lambda b: b.func == "killclient"),
+    ("Next wallpaper", lambda b: "wallpaper" in " ".join(b.exec)),
+    ("Pick a theme", lambda b: "style.theme" in " ".join(b.exec)),
+    ("Screenshot", lambda b: b.key == "Print" and not b.mods),
+    ("Lock the screen", lambda b: "carpatic-lock" in " ".join(b.exec)),
+]
+
+
+def rows(profile=None):
+    profile, binds = K.load(profile)
+    sup = K.SUPER_NAME.get(profile, "Super")
+    out = []
+    for text, test in INTENTS:
+        cands = [b for b in binds if b.source == "hotkeys" and test(b)]
+        if cands:
+            b = sorted(cands, key=lambda x: (len(x.mods), len(" + ".join(x.chord(sup)))))[0]
+            out.append((b.chord(sup), text))
+    tag = [b for b in binds if b.func == "view" and "-" in b.key]
+    if tag:
+        out.insert(4, (tag[0].chord(sup), "Go to workspace 1 to 9 (add Shift to send the window there)"))
+    return profile, out
+
+
+def text_card(profile, rs):
+    lines = ["Welcome to the keyboard-driven desktop", "", f"Your style: {K.PROFILE_LABEL.get(profile, profile)}. Everything is reachable without a mouse.", ""]
+    w = max(len(" + ".join(k)) for k, _ in rs)
+    for k, t in rs:
+        lines.append(f"  {' + '.join(k):<{w}}   {t}")
+    lines += ["", "Want to change a key? Edit ~/.config/dwm-titus/hotkeys.toml or add your own with a profile.", "Read more: carpatic tour --guide"]
+    return "\n".join(lines)
+
+
+def gtk_card(profile, rs):
+    import gi
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("Gdk", "3.0")
+    from gi.repository import Gdk, Gtk
+    css = b"""
+    .tour-title { font-size: 24px; font-weight: 600; }
+    .tour-sub { opacity: 0.7; }
+    .keycap { font-family: "JetBrains Mono", monospace; font-size: 12px; font-weight: 600; padding: 2px 8px; margin-right: 4px;
+              border-radius: 4px; border: 1px solid alpha(currentColor, 0.28); border-bottom-width: 2px; background: alpha(currentColor, 0.07); }
+    .tour-row-text { font-size: 14px; }
+    """
+    prov = Gtk.CssProvider()
+    prov.load_from_data(css)
+    Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), prov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    win = Gtk.Window(title="Carpatic Welcome")
+    win.set_default_size(620, -1)
+    win.set_position(Gtk.WindowPosition.CENTER)
+    win.set_resizable(False)
+    win.set_icon_name("carpatic")
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+    box.set_margin_top(24); box.set_margin_bottom(24); box.set_margin_start(32); box.set_margin_end(32)
+    t = Gtk.Label(label="Welcome to the keyboard-driven desktop", xalign=0); t.get_style_context().add_class("tour-title")
+    s = Gtk.Label(label=f"Your style: {K.PROFILE_LABEL.get(profile, profile)}. Everything is one shortcut away.", xalign=0)
+    s.get_style_context().add_class("tour-sub")
+    box.pack_start(t, False, False, 0); box.pack_start(s, False, False, 4)
+    grid = Gtk.Grid(column_spacing=16, row_spacing=10); grid.set_margin_top(24); grid.set_margin_bottom(24)
+    for i, (keys, text) in enumerate(rs):
+        kb = Gtk.Box(spacing=0)
+        for k in keys:
+            l = Gtk.Label(label=k); l.get_style_context().add_class("keycap"); kb.pack_start(l, False, False, 0)
+        grid.attach(kb, 0, i, 1, 1)
+        tx = Gtk.Label(label=text, xalign=0); tx.get_style_context().add_class("tour-row-text"); tx.set_line_wrap(True)
+        grid.attach(tx, 1, i, 1, 1)
+    box.pack_start(grid, False, False, 0)
+    bar = Gtk.Box(spacing=8)
+    more = Gtk.Button(label="Show all shortcuts"); more.connect("clicked", lambda *_: (subprocess.Popen(["carpatic-cheatsheet", "show"], start_new_session=True), win.close()))
+    ok = Gtk.Button(label="Got it"); ok.get_style_context().add_class("suggested-action"); ok.connect("clicked", lambda *_: win.close())
+    bar.pack_end(ok, False, False, 0); bar.pack_end(more, False, False, 0)
+    box.pack_start(bar, False, False, 0)
+    win.add(box)
+    win.connect("destroy", Gtk.main_quit)
+    win.connect("key-press-event", lambda w, e: w.close() if e.keyval in (Gdk.KEY_Escape, Gdk.KEY_Return) else None)
+    win.show_all()
+    ok.grab_focus()
+    Gtk.main()
+
+
+def main(argv):
+    if argv and argv[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0
+    if argv and argv[0] == "--guide":
+        for p in (os.path.join(here, "..", "..", "docs", "USER-GUIDE-geek.md"), "/usr/local/share/carpatic/geek/USER-GUIDE-geek.md"):
+            if os.path.exists(p):
+                pager = shutil.which("less") or "cat"
+                os.execvp(pager, [pager, p])
+        print("carpatic tour: the guide is not installed on this computer.", file=sys.stderr)
+        return 3
+    profile, rs = rows(os.environ.get("CARPATIC_TOUR_PROFILE"))
+    if "--text" in argv or not os.environ.get("DISPLAY"):
+        print(text_card(profile, rs))
+        return 0
+    try:
+        gtk_card(profile, rs)
+    except (ImportError, ValueError):
+        print(text_card(profile, rs))
+    try:
+        os.makedirs(CFG, exist_ok=True)
+        open(os.path.join(CFG, "tour-seen"), "w").write("1\n")
+    except OSError:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Theme picker
+GenericName=Themes and looks
+Comment=Switch themes, wallpapers, accents, borders, icons and fonts with the arrow keys
+Exec=carpatic-theme-picker
+Icon=preferences-desktop-theme
+Categories=Settings;DesktopSettings;
+Keywords=theme;wallpaper;accent;colour;icons;fonts;dark;light;look;
+Terminal=false

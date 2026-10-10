@@ -1,0 +1,12 @@
+#!/bin/sh
+# Native Xterm frontend to the shared Carpatic font and OSC palette.
+CFG=${CARPATIC_CONFIG:-$HOME/.config/carpatic}
+OSC=${CARPATIC_STATE:-$HOME/.local/state/carpatic}/current/osc
+[ -r "$CFG/env.sh" ] && . "$CFG/env.sh"
+FONT=$(cat "$CFG/term-font" 2>/dev/null); [ -n "$FONT" ] || FONT="JetBrains Mono:size=10"
+FACE=${FONT%%:size=*}; SIZE=${FONT#*:size=}; SIZE=${SIZE%%:*}
+[ "${1:-}" = -e ] && shift
+if [ $# -gt 0 ]; then
+    exec xterm -fa "$FACE" -fs "$SIZE" -e sh -c 'cat "$0" 2>/dev/null; exec "$@"' "$OSC" "$@"
+fi
+exec xterm -fa "$FACE" -fs "$SIZE" -e sh -c 'cat "$0" 2>/dev/null; exec "${SHELL:-/bin/sh}"' "$OSC"

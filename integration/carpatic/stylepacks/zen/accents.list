@@ -1,0 +1,10 @@
+# Zen accents: name|accent hex (also written to ACCENT)|GTK theme base|icon theme base. Facts taken from the colour tokens of the
+# Zorin desktop themes (theme_selected_bg_color, light variants); only the colour values are used.
+blue|#0a82c8|ZorinBlue|ZorinBlue
+green|#16906a|ZorinGreen|ZorinGreen
+grey|#606264|ZorinGrey|ZorinGrey
+orange|#d9602b|ZorinOrange|ZorinOrange
+purple|#8a55c8|ZorinPurple|ZorinPurple
+red|#d83a3a|ZorinRed|ZorinRed
+yellow|#b88a00|ZorinYellow|ZorinYellow
+brown|#92583c|ZorinBrown|ZorinBrown

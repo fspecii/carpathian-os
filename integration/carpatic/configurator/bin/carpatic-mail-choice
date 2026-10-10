@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""carpatic-mail-choice get | list | set CHOICE [--provider gmail|outlook|icloud] [--no-install] | gui
+CHOICE: webmail | thunderbird | claws | alpine | none. Installs only the chosen client (store apk path, asks for the password when needed),
+sets it as the mailto: default and remembers it (MAIL_CLIENT in settings.conf). `gui` opens the small chooser window used by Settings > Default Apps."""
+import getpass, os, sys
+sys.path.insert(0, "/usr/local/lib/carpatic"); sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import carpatic_mail as cm
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__); return 0
+    cmd = argv[0]
+    if cmd == "get":
+        c, p = cm.current(); print(c or "unset", p if c == "webmail" else "", sep=" " if c == "webmail" else ""); return 0
+    if cmd == "list":
+        for cid, title, desc, *_ in cm.CHOICES: print("%-12s %-12s %s" % (cid, title, desc))
+        return 0
+    if cmd == "set":
+        if len(argv) < 2 or argv[1] not in [c[0] for c in cm.CHOICES]:
+            print("Choose one of: " + ", ".join(c[0] for c in cm.CHOICES), file=sys.stderr); return 2
+        cid = argv[1]; prov = "gmail"; inst = True
+        if "--provider" in argv: prov = argv[argv.index("--provider") + 1]
+        if "--no-install" in argv: inst = False
+        pw = None
+        if inst and cm.choice(cid)[3] and not cm.is_installed(cid) and os.geteuid() != 0 and sys.stdin.isatty():
+            import subprocess
+            if subprocess.run(["doas", "-n", "true"], capture_output=True).returncode != 0:
+                pw = getpass.getpass("Password (needed once to add %s): " % cm.choice(cid)[1])
+        try:
+            print(cm.apply(cid, prov, lambda l: print("  " + l[:100], flush=True) if sys.stdout.isatty() else None, pw, install=inst))
+        except RuntimeError as e:
+            print("Could not set the mail app: %s" % e, file=sys.stderr); return 1
+        return 0
+    if cmd == "gui":
+        import gi
+        gi.require_version("Gtk", "3.0")
+        from gi.repository import Gtk
+        import carpatic_ui as ui
+        w = Gtk.Window(title="Mail app"); w.set_default_size(560, -1); w.set_position(Gtk.WindowPosition.CENTER)
+        st = ui.settings(); theme = st.get("THEME", "carpatic")
+        css = Gtk.CssProvider(); css.load_from_data(ui.card_css(theme, st.get("ACCENT", "")).encode()); ui.install_css(css)
+        v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12); v.set_border_width(24); w.add(v)
+        h = Gtk.Label(label="Which mail app do you want?", xalign=0); h.get_style_context().add_class("h1"); v.pack_start(h, False, False, 0)
+        sub = Gtk.Label(label="Only the one you pick is installed. You can change it again at any time.", xalign=0, wrap=True); sub.get_style_context().add_class("sub"); v.pack_start(sub, False, False, 0)
+        cur, prov = cm.current()
+        box, get = cm.build_widget(cur or "webmail", prov); v.pack_start(box, False, False, 0)
+        row = Gtk.Box(spacing=10); v.pack_start(row, False, False, 6)
+        ok = Gtk.Button(label="Use this"); ok.get_style_context().add_class("suggested-action")
+        cancel = Gtk.Button(label="Cancel"); cancel.connect("clicked", lambda *_: Gtk.main_quit())
+        def go(*_):
+            cid, p = get(); ok.set_sensitive(False)
+            cm.run_apply_with_progress(w, cid, p, lambda okk: Gtk.main_quit() if okk else ok.set_sensitive(True))
+        ok.connect("clicked", go); row.pack_end(ok, False, False, 0); row.pack_end(cancel, False, False, 0)
+        w.connect("destroy", Gtk.main_quit); w.show_all(); Gtk.main(); return 0
+    print(__doc__, file=sys.stderr); return 2
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

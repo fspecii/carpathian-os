@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+"""carpatic-taskpreview [--ensure] : hover previews for the icon-only taskbars of the style packs (Zen, Kylin).
+
+tint2 has no window previews, so this small helper adds them: when the pointer rests on a running app in the bottom panel a card appears above it with the
+window's title, its icon and a thumbnail; click the card to raise that window, the cross closes it. Original code (MIT); the behaviour (200-272 px cards,
+preview on hover, middle click closes) follows the Zorin Taskbar defaults and the UKUI panel spec, nothing is copied.
+
+How it works / honest limits:
+* The tasks of the tint2 panel have fixed slots (icon-only, 48 px), so the hovered slot is computed from the panel geometry in the rendered tint2rc.
+* There is no compositor, so a window that is covered cannot be captured live: the thumbnail is the last picture taken while the window had the focus
+  (refreshed every 3 s), or the large app icon when there is none yet.
+* `--ensure` starts the daemon once (the taskbar templates call it from an execp item every few seconds, so it also comes back after a crash)."""
+import os, re, signal, subprocess, sys, time
+
+sys.path.insert(0, "/usr/local/lib/carpatic"); sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+from carpatic_stylekit import *  # noqa: E402,F401,F403
+
+RTD = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+PIDFILE = os.path.join(RTD, "carpatic-taskpreview.pid")
+
+def alive():
+    try:
+        pid = int(open(PIDFILE).read().strip()); os.kill(pid, 0)
+        return "carpatic-taskpreview" in open(f"/proc/{pid}/cmdline").read()
+    except (OSError, ValueError):
+        return False
+
+def out(*cmd, timeout=2):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout
+    except Exception:
+        return ""
+
+def tint2_geometry(rc_path):
+    """slots of the icon-only taskbar: returns dict(start_x, slot_w, panel_h) from a rendered tint2rc (pure, unit-tested)"""
+    kv = {}
+    for line in open(rc_path):
+        m = re.match(r"\s*([a-z0-9_]+)\s*=\s*(.*?)\s*$", line)
+        if m and not line.lstrip().startswith("#"):
+            kv.setdefault(m.group(1), []).append(m.group(2))
+    num = lambda k, d=0, i=0: int((kv.get(k, [str(d)])[0].split() + ["0"] * 4)[i].rstrip("%") or 0)
+    panel_pad_l = num("panel_padding", 0, 0)
+    lp = (kv.get("launcher_padding", ["0 0 0"])[0].split() + ["0"] * 3)[:3]
+    napps = len(kv.get("launcher_item_app", []))
+    isz = num("launcher_icon_size", 32)
+    launcher_w = (2 * int(lp[0]) + napps * isz + max(0, napps - 1) * int(lp[2])) if napps else 0
+    tp = (kv.get("taskbar_padding", ["0 0 0"])[0].split() + ["0"] * 3)[:3]
+    slot_w = num("task_maximum_size", 48, 0)
+    panel_h = int((kv.get("panel_size", ["100% 48"])[0].split() + ["48"])[1])
+    return {"start_x": panel_pad_l + launcher_w + int(tp[0]), "slot_w": slot_w, "panel_h": panel_h, "spacing": int(tp[2])}
+
+def slot_at(x, geo, ntasks):
+    """index of the task under pointer x (relative to the screen's left edge) or None"""
+    if ntasks <= 0 or x < geo["start_x"]:
+        return None
+    pitch = geo["slot_w"] + geo["spacing"]
+    i = (x - geo["start_x"]) // pitch
+    return int(i) if i < ntasks and (x - geo["start_x"]) % pitch < geo["slot_w"] else None
+
+def client_windows():
+    """windows tint2 would show as tasks: _NET_CLIENT_LIST order, normal/dialog windows, not skip-taskbar, on the current desktop when the WM says so"""
+    ids = re.findall(r"0x[0-9a-f]+", out("xprop", "-root", "_NET_CLIENT_LIST"))
+    cur = re.search(r"=\s*(\d+)", out("xprop", "-root", "_NET_CURRENT_DESKTOP"))
+    res = []
+    for w in ids:
+        p = out("xprop", "-id", w, "_NET_WM_DESKTOP", "_NET_WM_STATE", "_NET_WM_WINDOW_TYPE", "_NET_WM_NAME", "WM_CLASS")
+        if "_NET_WM_STATE_SKIP_TASKBAR" in p:
+            continue
+        t = re.search(r"_NET_WM_WINDOW_TYPE\(ATOM\) = (.*)", p)
+        if t and not re.search(r"NORMAL|DIALOG", t.group(1)):
+            continue
+        d = re.search(r"_NET_WM_DESKTOP\(CARDINAL\) = (\d+)", p)
+        if cur and d and d.group(1) != cur.group(1) and int(d.group(1)) != 0xFFFFFFFF:
+            continue
+        name = re.search(r'_NET_WM_NAME\(UTF8_STRING\) = "(.*)"', p)
+        cls = re.search(r'WM_CLASS\(STRING\) = "[^"]*", "([^"]*)"', p)
+        res.append({"id": w, "title": name.group(1) if name else (cls.group(1) if cls else w), "class": cls.group(1) if cls else ""})
+    return res
+
+def main():
+    if "--slot-center" in sys.argv:  # x of the centre of task slot N (default 0) in the current taskbar: for tests and screenshots
+        prof = read_kv(os.path.join(CFG, "profile.env")); tpl = (prof.get("BAR_TEMPLATES") or "").split()
+        g = tint2_geometry(os.path.join(STATE, "current", "tint2", tpl[0] + ".tint2rc"))
+        n = int(sys.argv[sys.argv.index("--slot-center") + 1]) if len(sys.argv) > sys.argv.index("--slot-center") + 1 else 0
+        print(g["start_x"] + n * (g["slot_w"] + g["spacing"]) + g["slot_w"] // 2); return 0
+    if "--ensure" in sys.argv:
+        if not alive():
+            subprocess.Popen([sys.executable, os.path.abspath(__file__)], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return 0
+    if alive():
+        return 0
+    open(PIDFILE, "w").write(str(os.getpid()))
+    import gi
+    gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0"); gi.require_version("GdkPixbuf", "2.0")
+    from gi.repository import Gtk, Gdk, GLib, GdkPixbuf, Pango
+    disp = Gdk.Display.get_default(); seat = disp.get_default_seat(); pointer = seat.get_pointer()
+    cache_dir = os.path.join(RTD, "carpatic-taskpreview"); os.makedirs(cache_dir, exist_ok=True)
+    st = {"geo": None, "wins": [], "wins_t": 0, "card": None, "card_idx": None, "dwell_idx": None, "dwell_t": 0, "last_cap": 0, "css": None}
+
+    def load_geo():
+        prof = read_kv(os.path.join(CFG, "profile.env"))
+        try:  # leave when the user switched to a style without these taskbars
+            if not any(l.startswith("STYLEPACK=") for l in open(os.path.join(SHARE, "profiles", prof.get("PROFILE", "") + ".conf"))):
+                Gtk.main_quit(); return None
+        except OSError:
+            pass
+        tpl = (prof.get("BAR_TEMPLATES") or "").split()
+        if not tpl: return None
+        rc = os.path.join(STATE, "current", "tint2", tpl[0] + ".tint2rc")
+        try: return tint2_geometry(rc)
+        except OSError: return None
+
+    def apply_css():
+        P = palette(theme_colors())
+        css = f"""window.tp {{ background: {P['surface']}; border: 1px solid {P['line']}; border-radius: 12px; color: {P['fg']}; }}
+        .tp .t {{ font-weight: bold; }} .tp .x {{ background: transparent; border: 0; box-shadow: none; padding: 2px 6px; border-radius: 6px; color: {P['muted']}; }}
+        .tp .x:hover {{ background: #e7202b; color: #ffffff; }} .tp .thumb {{ background: {P['base']}; border-radius: 8px; }}"""
+        prov = Gtk.CssProvider(); prov.load_from_data(css.encode())
+        Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), prov, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
+
+    def close_card():
+        if st["card"] is not None:
+            st["card"].destroy(); st["card"] = None; st["card_idx"] = None
+
+    def icon_name(cls):
+        th = Gtk.IconTheme.get_default()
+        for n in ((cls or "").lower(), (cls or "").lower().split("-")[0], "utilities-terminal" if (cls or "").startswith("st") else ""):
+            if n and th.has_icon(n): return n
+        return "application-x-executable"
+
+    def thumb_path(wid): return os.path.join(cache_dir, wid + ".png")
+
+    def capture_active():
+        # a picture of the focused window, kept for later hovers (covered windows cannot be captured without a compositor)
+        wid = out("xdotool", "getactivewindow").strip()
+        if not wid.isdigit(): return
+        hexid = "0x%x" % int(wid)
+        subprocess.run(["maim", "-u", "-i", wid, thumb_path(hexid)], capture_output=True, timeout=4)
+
+    def show_card(i, w, geo, geom):
+        close_card()
+        win = Gtk.Window(type=Gtk.WindowType.POPUP); win.get_style_context().add_class("tp")
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6); box.set_border_width(10)
+        ev = Gtk.EventBox(); ev.add(box); win.add(ev)
+        head = Gtk.Box(spacing=8)
+        ic = Gtk.Image.new_from_icon_name(icon_name(w["class"]), Gtk.IconSize.LARGE_TOOLBAR); ic.set_pixel_size(20)
+        head.pack_start(ic, False, False, 0)
+        t = Gtk.Label(label=w["title"], xalign=0); t.get_style_context().add_class("t"); t.set_ellipsize(Pango.EllipsizeMode.END); t.set_max_width_chars(26); head.pack_start(t, True, True, 0)
+        x = Gtk.Button(label="✕"); x.get_style_context().add_class("x"); x.set_can_focus(False)
+        x.connect("clicked", lambda *_: (subprocess.Popen(["xdotool", "windowquit", w["id"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL), close_card()))
+        head.pack_end(x, False, False, 0); box.pack_start(head, False, False, 0)
+        thumb = Gtk.Box(); thumb.get_style_context().add_class("thumb"); thumb.set_size_request(240, 150)
+        try:
+            pb = GdkPixbuf.Pixbuf.new_from_file(thumb_path(w["id"]))
+            sc = min(240 / pb.get_width(), 150 / pb.get_height()); pb = pb.scale_simple(max(1, int(pb.get_width() * sc)), max(1, int(pb.get_height() * sc)), GdkPixbuf.InterpType.BILINEAR)
+            img = Gtk.Image.new_from_pixbuf(pb)
+        except Exception:
+            img = Gtk.Image.new_from_icon_name(icon_name(w["class"]), Gtk.IconSize.DIALOG); img.set_pixel_size(64)
+        thumb.pack_start(img, True, True, 0); box.pack_start(thumb, False, False, 0)
+        ev.connect("button-press-event", lambda *_: (subprocess.Popen(["xdotool", "windowactivate", w["id"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL), close_card()))
+        win.show_all()
+        try:  # rounded corners without a compositor
+            import cairo
+            cw0, ch0 = win.get_allocated_width(), win.get_allocated_height(); r = 12
+            sf = cairo.ImageSurface(cairo.FORMAT_A1, cw0, ch0); c = cairo.Context(sf)
+            c.new_sub_path(); c.arc(cw0 - r, r, r, -1.5708, 0); c.arc(cw0 - r, ch0 - r, r, 0, 1.5708); c.arc(r, ch0 - r, r, 1.5708, 3.1416); c.arc(r, r, r, 3.1416, 4.7124); c.close_path(); c.fill()
+            win.shape_combine_region(Gdk.cairo_region_create_from_surface(sf))
+        except Exception:
+            pass
+        cw = win.get_allocated_width() or 272
+        cx = geom.x + geo["start_x"] + i * (geo["slot_w"] + geo["spacing"]) + geo["slot_w"] // 2 - cw // 2
+        cx = max(geom.x + 8, min(cx, geom.x + geom.width - cw - 8))
+        win.move(cx, geom.y + geom.height - geo["panel_h"] - 8 - win.get_allocated_height())
+        st["card"] = win; st["card_idx"] = i
+
+    def tick():
+        _, px, py = pointer.get_position()
+        mon = disp.get_monitor_at_point(px, py); geom = mon.get_geometry()
+        if st["geo"] is None or time.time() - st.get("geo_t", 0) > 10:
+            st["geo"] = load_geo(); st["geo_t"] = time.time()
+        geo = st["geo"]
+        if geo is None: return True
+        in_panel = py >= geom.y + geom.height - geo["panel_h"]
+        card = st["card"]
+        if card is not None:  # keep while over the panel slot or over the card itself
+            ca = card.get_allocation(); cx, cy = card.get_position()
+            over_card = cx <= px <= cx + ca.width and cy <= py <= cy + ca.height + 12
+            if not over_card and not (in_panel and slot_at(px - geom.x, geo, len(st["wins"])) == st["card_idx"]):
+                close_card()
+        if not in_panel:
+            st["dwell_idx"] = None
+            if time.time() - st["last_cap"] > 3:
+                st["last_cap"] = time.time()
+                GLib.idle_add(lambda: (capture_active(), False)[1])
+            return True
+        if time.time() - st["wins_t"] > 1.0:
+            st["wins"] = client_windows(); st["wins_t"] = time.time()
+        i = slot_at(px - geom.x, geo, len(st["wins"]))
+        if i is None:
+            st["dwell_idx"] = None; return True
+        if i == st["card_idx"]: return True
+        if i != st["dwell_idx"]:
+            st["dwell_idx"] = i; st["dwell_t"] = time.time(); return True
+        if time.time() - st["dwell_t"] >= 0.35:
+            show_card(i, st["wins"][i], geo, geom)
+        return True
+
+    apply_css()
+    GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, lambda: (Gtk.main_quit(), False)[1])
+    GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGHUP, lambda: (apply_css(), True)[1])
+    GLib.timeout_add(100, tick)
+    try:
+        Gtk.main()
+    finally:
+        try: os.unlink(PIDFILE)
+        except OSError: pass
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

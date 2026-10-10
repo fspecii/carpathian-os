@@ -1,0 +1,10 @@
+hibernate parameters removed
+
+Swap space
+  [ ok ] swap 1971 MiB covers all RAM (1971 MiB), so the image always fits
+
+Where the system resumes from
+  [ ok ] boot line has resume=/dev/mapper/carpatic_root resume_offset=664832
+  [ ok ] resume_offset matches the swap file's real location
+  [FAIL] the boot loader config has no resume= (so the next boot will not resume either)
+         -> rerun hibernate-setup

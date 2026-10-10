@@ -1,0 +1,37 @@
+# Aqua Metal (light): Aqua with brushed-metal title bars (Mac OS X 10.2/Jaguar "brushed metal").
+# Same CC0 palette as "aqua" — upstream pairs the two with one colour theme and a native
+# brushed-metal switch (upstream/desktop/DesktopKit DesktopThemePresets.swift "aqua-metal",
+# brushedMetal: true, @ 01246414fe9517d883b9489ba3e9e9f3780f479e). The metal title bars are a
+# native dwm/carpatic-wm follow-up (see docs/LINPAD-THEME-PORT.md); this theme carries the data side.
+# Wallpapers in this folder are original Carpatic artwork (procedural, CC0; aqua swooshes + brushed metal).
+mode = "light"
+
+accent = "#3875d7"
+selection = "#b5d5ff"
+muted = "#8e8e8e"
+
+background = "#ececec"
+dark_background = "#ffffff"
+darker_background = "#f5f5f5"
+lighter_background = "#f6f6f6"
+
+foreground = "#000000"
+dark_foreground = "#7a7a7a"
+light_foreground = "#222222"
+bright_foreground = "#000000"
+
+red = "#c91b00"
+yellow = "#8f7a00"
+orange = "#d06a00"
+green = "#00a600"
+cyan = "#00a6b2"
+blue = "#0225c7"
+magenta = "#b200b2"
+brown = "#6b4a1f"
+
+bright_red = "#e64a32"
+bright_yellow = "#a89300"
+bright_green = "#2fb82f"
+bright_cyan = "#00b5c2"
+bright_blue = "#3875d7"
+bright_magenta = "#c838c8"

@@ -1,0 +1,3 @@
+#!/bin/sh
+# carpatic-showdesktop : same as Super+D (dwm views the empty tag; press again to return). Used by the show-desktop strip of the style-pack taskbars.
+exec xdotool key super+d

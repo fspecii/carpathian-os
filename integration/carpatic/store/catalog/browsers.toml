@@ -1,0 +1,72 @@
+# Carpatic store catalog: Browsers
+# Each [[app]]: id (unique), name, description, source (apk|flatpak|ai|compat), pkg (apk package or Flathub app id),
+# icon (icon-theme name), newcomer (good for newcomers), optional: size_mb, note, detail (long text), exec (launch cmd), term (run in a terminal), launch="none" (daemon, no Open button)
+[category]
+id = "browsers"
+name = "Browsers"
+icon = "web-browser"
+order = 1
+blurb = "Surf the web"
+
+[[app]]
+id = "firefox"
+name = "Firefox"
+pkg = "firefox"
+source = "apk"
+icon = "firefox"
+newcomer = true
+size_mb = 90
+description = "Fast, private browser from Mozilla."
+
+[[app]]
+id = "chromium"
+name = "Chromium"
+pkg = "chromium"
+source = "apk"
+icon = "chromium"
+newcomer = false
+size_mb = 110
+description = "Open-source base of Chrome."
+
+[[app]]
+id = "brave"
+name = "Brave"
+pkg = "com.brave.Browser"
+source = "flatpak"
+icon = "brave-browser"
+newcomer = false
+size_mb = 221
+description = "Chromium browser with built-in ad blocking."
+
+[[app]]
+id = "epiphany"
+name = "GNOME Web"
+pkg = "epiphany"
+source = "apk"
+icon = "web-browser"
+newcomer = false
+size_mb = 25
+description = "Simple, lightweight GNOME browser."
+
+[[app]]
+id = "thunderbird"
+tagline = "Full email, calendar and contacts, with Google and Microsoft sign-in"
+name = "Thunderbird"
+pkg = "thunderbird"
+source = "apk"
+icon = "thunderbird"
+newcomer = true
+size_mb = 290
+description = "Full email, calendar and contacts with a graphical window and Google/Microsoft sign-in. Large download (about 105 MB)."
+
+[[app]]
+id = "chrome"
+name = "Google Chrome"
+pkg = "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
+remove_as = "google-chrome-stable"
+source = "compat"
+icon = "google-chrome"
+newcomer = false
+size_mb = 120
+description = "Google's browser. Runs in the compatibility box because it is built for glibc."
+note = "Installed from Google's own .deb inside the Ubuntu compatibility box (prepared automatically, about 100 MB the first time). The box is not a sandbox: programs in it can read your files."

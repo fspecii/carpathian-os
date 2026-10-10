@@ -1,0 +1,109 @@
+#!/bin/sh
+# carpatic-stylepack list | status | apply <zen|kylin> [light|dark] [--packs] | mode <light|dark|toggle> | accent <name|default> | fetch <pack-id> | licence
+# Manage the style packs (stylepacks/): a pack = profile + two themes (light, dark) + taskbar template + launcher skin, registered in the configurator's
+# profile/theme registry by stylepacks/install.sh. The big GPL / CC-BY-SA artwork (Zorin GTK + icons, UKUI GTK + icons + cursors) is a separate, optional
+# data package: `fetch` is what `carpatic-pack install <id>` runs for kind "stylepack" (pinned URL + sha256, no root, ~/.local/share).
+CL=$(command -v carpatic-lib 2>/dev/null) || CL=$(dirname "$0")/carpatic-lib; . "$CL"
+SP=${CARPATIC_STYLEPACKS:-/usr/local/share/carpatic/stylepacks}
+LIST=$CARPATIC_SHARE/packs.d/stylepacks.list; [ -f "$LIST" ] || LIST=$SP/packs.list
+WORK=${TMPDIR:-/tmp}/carpatic-stylepack.$$
+packs_of() { sed -n "s/^PACKS=\"\(.*\)\"/\1/p" "$CARPATIC_SHARE/profiles/$1.conf" | head -1; }
+is_pack() { [ "$(profile_get "$1" STYLEPACK 2>/dev/null)" = "$1" ] && [ -f "$CARPATIC_SHARE/profiles/$1.conf" ]; }
+cmd=${1:-list}; [ $# -gt 0 ] && shift
+
+theme_for() { # pack mode -> theme name
+  case $1 in zen) echo "zen-$2";; kylin) echo "kylin-$2";; esac; }
+cur_mode() { theme_mode "$(get_setting THEME carpatic)"; }
+
+case $cmd in
+  list)
+    for p in $(list_profiles); do
+      [ "$(profile_get "$p" STYLEPACK)" = "$p" ] || continue
+      cur=""; [ "$(get_setting PROFILE "")" = "$p" ] && cur="in use"
+      printf '%-8s %-14s %s\n' "$p" "$(profile_get "$p" LABEL)" "$cur"
+    done ;;
+  status)
+    p=${1:-$(get_setting PROFILE tiling)}; is_pack "$p" || die "'$p' is not a style pack (try: carpatic-stylepack list)"
+    echo "style:   $(profile_get "$p" LABEL) (profile $p, theme $(get_setting THEME carpatic), $(cur_mode))"
+    for id in $(packs_of "$p"); do printf 'pack:    %-10s %s\n' "$id" "$(carpatic-pack status "$id" 2>/dev/null || echo unknown)"; done ;;
+  apply)
+    p=${1:?usage: carpatic-stylepack apply <zen|kylin> [light|dark] [--packs]}; shift
+    is_pack "$p" || die "unknown style pack '$p' (try: carpatic-stylepack list)"
+    mode=""; packs=0
+    for a in "$@"; do case $a in light|dark) mode=$a;; --packs) packs=1;; *) die "unknown option $a";; esac; done
+    [ -n "$mode" ] || { [ "$(cur_mode)" = dark ] && mode=dark || mode=light; }
+    if [ "$packs" = 1 ]; then
+      for id in $(packs_of "$p"); do
+        [ "$(carpatic-pack status "$id" 2>/dev/null)" = installed ] || carpatic-pack install "$id" || die "could not fetch $id (offline? the style still works with the built-in look)"
+      done
+    fi
+    [ "$(get_setting PROFILE "")" = "$p" ] || for k in WINDOW_BUTTONS BUTTONS_SIDE BUTTONS_SHOWN TITLE_ALIGN; do set_setting $k ""; done
+    set_setting PROFILE "$p"; set_setting THEME "$(theme_for "$p" "$mode")"; set_setting ACCENT ""; set_setting GTK_THEME ""; set_setting ICON_THEME ""
+    carpatic-apply --restart ;;
+  mode)
+    m=${1:?usage: carpatic-stylepack mode light|dark|toggle}
+    p=$(get_setting PROFILE tiling); is_pack "$p" || die "the current style is not a style pack"
+    [ "$m" = toggle ] && { [ "$(cur_mode)" = dark ] && m=light || m=dark; }
+    case $m in light|dark) ;; *) die "mode must be light, dark or toggle";; esac
+    [ -z "$(get_setting GTK_THEME "")" ] || set_setting GTK_THEME ""     # a native accent variant follows the mode
+    a=$(get_setting STYLE_ACCENT ""); [ -n "$a" ] && [ "$p" = zen ] && exec "$0" accent "$a" "$m"
+    exec carpatic-theme set "$(theme_for "$p" "$m")" ;;
+  accent)
+    [ "$(get_setting PROFILE "")" = zen ] || die "accent colours are part of Zen only (carpatic-stylepack apply zen first)"
+    n=${1:?usage: carpatic-stylepack accent <blue|green|grey|orange|purple|red|yellow|brown|default>}; m=${2:-$(cur_mode)}
+    if [ "$n" = default ]; then set_setting ACCENT ""; set_setting GTK_THEME ""; set_setting ICON_THEME ""; set_setting STYLE_ACCENT ""; exec carpatic-apply; fi
+    row=$(grep "^$n|" "$SP/zen/accents.list" 2>/dev/null | head -1); [ -n "$row" ] || row=$(grep "^$n|" "$(dirname "$0")/../zen/accents.list" 2>/dev/null | head -1)
+    [ -n "$row" ] || die "unknown accent '$n' (blue green grey orange purple red yellow brown)"
+    hex=$(echo "$row" | cut -d'|' -f2); gtk=$(echo "$row" | cut -d'|' -f3); ic=$(echo "$row" | cut -d'|' -f4)
+    M=Light; [ "$m" = dark ] && M=Dark
+    set_setting STYLE_ACCENT "$n"; set_setting ACCENT "$hex"
+    for d in "$HOME/.local/share/themes" /usr/share/themes; do [ -d "$d/$gtk-$M" ] && { set_setting GTK_THEME "$gtk-$M"; break; }; done
+    for d in "$HOME/.local/share/icons" /usr/share/icons; do [ -d "$d/$ic-$M" ] && { set_setting ICON_THEME "$ic-$M"; break; }; done
+    exec carpatic-apply ;;
+  fetch)
+    id=${1:?pack id}; e=$(grep "^$id|" "$LIST" | head -1); [ -n "$e" ] || die "unknown style pack package '$id'"
+    f() { printf '%s\n' "$e" | cut -d'|' -f"$1"; }
+    url=$(f 5); sha=$(f 7); dirs=$(f 8); lic=$(f 10); ref=$(f 6)
+    mkdir -p "$WORK/x"; trap 'rm -rf "$WORK"' EXIT
+    echo "progress: downloading $id"
+    curl -fsSL --retry 3 -m 900 -o "$WORK/pkg" "$url" || die "download failed: $url"
+    echo "$sha  $WORK/pkg" | sha256sum -c - >/dev/null 2>&1 || die "checksum mismatch for $id (expected $sha): nothing was installed"
+    note() { # dir kind : written next to every installed theme (licence + provenance + what was changed)
+      printf 'Package: %s\nSource: %s\nPinned: %s\nLicence: %s\nInstalled by Carpatic OS (carpatic-stylepack). %s\n' "$id" "$url" "$ref" "$lic" "${2:-Unmodified.}" > "$1/CARPATIC-SOURCE.txt"; }
+    case $id in
+      zorin-gtk)
+        tar -xzf "$WORK/pkg" -C "$WORK/x" || die "cannot unpack $id"; src=$(ls -d "$WORK"/x/*/ | head -1)
+        mkdir -p "$HOME/.local/share/themes"
+        for t in $dirs; do [ -d "$src$t" ] || continue; rm -rf "$HOME/.local/share/themes/$t"; mkdir -p "$HOME/.local/share/themes/$t"
+          for s in gtk-2.0 gtk-3.0 gtk-4.0 index.theme; do cp -r "$src$t/$s" "$HOME/.local/share/themes/$t/"; done
+          cp "$src/LICENSE" "$HOME/.local/share/themes/$t/COPYING" 2>/dev/null; note "$HOME/.local/share/themes/$t" "Only the GTK parts are installed (gnome-shell and xfwm4 parts removed)."; done ;;
+      zorin-icons|zorin-icons-more)
+        tar -xzf "$WORK/pkg" -C "$WORK/x" || die "cannot unpack $id"; src=$(ls -d "$WORK"/x/*/ | head -1)
+        mkdir -p "$HOME/.local/share/icons"
+        for t in $dirs; do [ -d "$src$t" ] || continue; rm -rf "$HOME/.local/share/icons/$t"; cp -r "$src$t" "$HOME/.local/share/icons/$t"
+          d=$HOME/.local/share/icons/$t
+          # trademark: the Zorin logo icons and the Zorin Connect app icon are not kept (the pack stays usable, the start menu uses our own glyph)
+          find "$d" \( -name 'start-here*' -o -name 'distributor-logo*' -o -name 'zorin-connect*' -o -name 'zorin-*logo*' \) -delete 2>/dev/null
+          cp "$src/LICENSE" "$d/COPYING" 2>/dev/null; note "$d" "Modified: logo icons (start-here*, distributor-logo*, zorin-connect*) removed."
+          gtk-update-icon-cache -qf "$d" 2>/dev/null; done ;;
+      ukui-gtk)
+        (cd "$WORK/x" && ar x ../pkg && tar -xJf data.tar.xz) || die "cannot unpack $id (xz missing?)"
+        mkdir -p "$HOME/.local/share/themes"
+        for t in $dirs; do rm -rf "$HOME/.local/share/themes/$t"; cp -r "$WORK/x/usr/share/themes/$t" "$HOME/.local/share/themes/$t"
+          cp "$WORK/x/usr/share/doc/ukui-gtk-theme/copyright" "$HOME/.local/share/themes/$t/COPYING"; note "$HOME/.local/share/themes/$t"; done ;;
+      ukui-icons)
+        (cd "$WORK/x" && ar x ../pkg && tar -xJf data.tar.xz) || die "cannot unpack $id (xz missing?)"
+        mkdir -p "$HOME/.local/share/icons"
+        for t in $dirs; do rm -rf "$HOME/.local/share/icons/$t"; cp -r "$WORK/x/usr/share/icons/$t" "$HOME/.local/share/icons/$t"; d=$HOME/.local/share/icons/$t
+          # smaller (no @2x / 256 px copies) and without the Kylin start-menu logo (trademark)
+          find "$d" -maxdepth 1 \( -name '*@2x' -o -name '256x256' -o -name '8x8' \) -exec rm -rf {} + 2>/dev/null
+          find "$d" \( -name 'kylin-startmenu*' -o -name 'ukui-startmenu*' \) -delete 2>/dev/null
+          cp "$WORK/x/usr/share/doc/ukui-icons-theme/copyright" "$d/COPYING"
+          note "$d" "Modified: @2x, 256x256 and 8x8 icon directories and the start-menu logo removed."; gtk-update-icon-cache -qf "$d" 2>/dev/null; done ;;
+      *) die "no installer for '$id'" ;;
+    esac
+    echo "progress: installed $id" ;;
+  licence|license)
+    sed -n '/^## 3/,/^## 4/p' "$SP/RESEARCH.md" 2>/dev/null | sed '$d' || echo "see stylepacks/RESEARCH.md" ;;
+  *) die "usage: carpatic-stylepack list|status|apply <zen|kylin> [light|dark] [--packs]|mode light|dark|toggle|accent <name>|fetch <id>|licence" ;;
+esac

@@ -1,0 +1,20 @@
+unbind SUPER d
+unbind SUPER l
+unbind SUPER e
+unbind SUPER a
+unbind SUPER i
+{ mod="ALT",        key="Tab",    desc="Switch window",        func="spawn", exec=["carpatic-switch"] },
+{ mod="SUPER",      key="Tab",    desc="Task view",            func="spawn", exec=["carpatic-switch"] },
+{ mod="ALT",        key="F4",     desc="Close window",         func="killclient" },
+{ mod="SUPER",      key="e",      desc="Files",                func="spawn", exec=["thunar"] },
+{ mod="SUPER",      key="d",      desc="Show desktop (press again to return)", func="view", ui=256 },
+{ mod="SUPER",      key="l",      desc="Lock screen",          func="spawn", exec=["carpatic-lock"] },
+{ mod="SUPER",      key="a",      desc="Quick settings and notifications", func="spawn", exec=["carpatic-sidebar"] },
+{ mod="SUPER",      key="s",      desc="Search",               func="spawn", exec=["carpatic-launch"] },
+{ mod="SUPER",      key="i",      desc="Settings",             func="spawn", exec=["carpatic-settings"] },
+{ mod="SUPER",      key="Left",   desc="Snap left",            func="spawn", exec=["carpatic-snap", "left"] },
+{ mod="SUPER",      key="Right",  desc="Snap right",           func="spawn", exec=["carpatic-snap", "right"] },
+{ mod="SUPER",      key="Up",     desc="Maximize",             func="spawn", exec=["carpatic-snap", "max"] },
+{ mod="SUPER",      key="Down",   desc="Restore size",         func="spawn", exec=["carpatic-snap", "restore"] },
+{ mod="CTRL ALT",   key="t",      desc="Terminal",             func="spawn", exec=["carpatic-term"] },
+{ mod="CTRL SHIFT", key="Escape", desc="Task manager",         func="spawn", exec=["xfce4-taskmanager"] },

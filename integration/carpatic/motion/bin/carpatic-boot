@@ -1,0 +1,66 @@
+#!/bin/sh
+# carpatic-boot: two small switches for the boot screen. Needs root (the Settings page asks for your password).
+#   carpatic-boot menu hide|show|status     hide the boot menu (starts at once; hold a key while the computer starts to show it) or bring it back.
+#                                           It refuses to hide the menu when another operating system (for example Windows) is on this computer.
+#   carpatic-boot motion reduced|full|status  the boot animation without movement (adds/removes carpatic.reduced-motion on the kernel line)
+# Options: --root DIR (work on DIR/boot instead of /boot; used by the tests). Edits every copy of limine.conf, keeps limine.conf.carpatic-bak once.
+set -u
+ROOT=; [ "${1:-}" = --root ] && { ROOT=$2; shift 2; }
+say() { printf '%s\n' "$*"; }
+die() { printf 'carpatic-boot: %s\n' "$*" >&2; exit 1; }
+CONFS=
+for f in "$ROOT/boot/limine/limine.conf" "$ROOT/boot/limine.conf" "$ROOT/boot/EFI/BOOT/limine.conf"; do [ -f "$f" ] && CONFS="$CONFS $f"; done
+[ -n "$CONFS" ] || die "I cannot find the boot menu settings (limine.conf) under $ROOT/boot. Is this a Carpatic install with Limine?"
+[ -z "$ROOT" ] && [ "$(id -u)" != 0 ] && die "this needs administrator rights. Use Carpatic Settings, or run it with sudo."
+MAIN=$(for f in $CONFS; do echo "$f"; break; done)
+
+# other operating systems: extra entries in limine.conf, a Windows boot manager on any EFI partition, or an NTFS/BitLocker partition
+other_os() {
+  extra=$(grep -E '^/' "$MAIN" | grep -vE '^/Carpatic OS( \(recovery shell\))?$' | grep -viE 'firmware' | head -1)
+  [ -n "$extra" ] && { say "the boot menu already lists $extra"; return 0; }
+  [ -z "$ROOT" ] || return 1
+  for d in /sys/class/block/*/partition; do
+    [ -e "$d" ] || continue; n=$(basename "$(dirname "$d")")
+    case $(blkid -s TYPE -o value "/dev/$n" 2>/dev/null) in ntfs|BitLocker) say "/dev/$n looks like a Windows partition"; return 0 ;; esac
+    [ "$(blkid -s PART_ENTRY_TYPE -o value "/dev/$n" 2>/dev/null)" = e3c9e316-0b5c-4db8-817d-f92df00215ae ] && { say "/dev/$n is a Windows reserved partition"; return 0; }
+  done
+  command -v efibootmgr >/dev/null 2>&1 && efibootmgr 2>/dev/null | grep -qi 'Windows Boot Manager' && { say "the firmware lists Windows Boot Manager"; return 0; }
+  return 1
+}
+timeout_now() { sed -n 's/^timeout: *//p' "$MAIN" | head -1; }
+set_timeout() { # value
+  for f in $CONFS; do
+    [ -e "$f.carpatic-bak" ] || cp -p "$f" "$f.carpatic-bak"
+    if grep -q '^timeout:' "$f"; then sed "s/^timeout:.*/timeout: $1/" "$f" > "$f.tmp.$$"
+    else { echo "timeout: $1"; cat "$f"; } > "$f.tmp.$$"; fi
+    mv "$f.tmp.$$" "$f"
+  done
+}
+set_flag() { # add|remove  (on every kernel_cmdline: line)
+  for f in $CONFS; do
+    [ -e "$f.carpatic-bak" ] || cp -p "$f" "$f.carpatic-bak"
+    if [ "$1" = add ]; then sed "/kernel_cmdline:/{/carpatic.reduced-motion/!s/\$/ carpatic.reduced-motion/}" "$f" > "$f.tmp.$$"
+    else sed '/kernel_cmdline:/s/ carpatic\.reduced-motion//g' "$f" > "$f.tmp.$$"; fi
+    mv "$f.tmp.$$" "$f"
+  done
+}
+case ${1:-} in
+  menu)
+    case ${2:-status} in
+      hide) why=$(other_os) && die "I will not hide the boot menu: $why. You would not be able to pick the other system."
+            set_timeout 0; say "The boot menu is hidden. To see it, hold a key (for example Shift) while the computer starts." ;;
+      show) set_timeout 3; say "The boot menu shows for 3 seconds at every start." ;;
+      status) t=$(timeout_now); if [ "$t" = 0 ]; then say "hidden (hold a key at start to show it)"; else say "shown for ${t:-?} seconds"; fi
+              if why=$(other_os); then say "another operating system is present ($why): the menu stays"; fi ;;
+      *) die "usage: carpatic-boot menu hide|show|status" ;;
+    esac ;;
+  motion)
+    case ${2:-status} in
+      reduced) set_flag add; say "The boot animation will not move after the next start." ;;
+      full) set_flag remove; say "The boot animation moves again after the next start." ;;
+      status) if grep -q 'carpatic.reduced-motion' "$MAIN"; then say reduced; else say full; fi ;;
+      *) die "usage: carpatic-boot motion reduced|full|status" ;;
+    esac ;;
+  -h|--help|help|"") sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) die "unknown command '$1' (try: menu, motion)" ;;
+esac

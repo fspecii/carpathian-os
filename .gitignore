@@ -1,0 +1,8 @@
+/target/
+/artifacts/*
+!/artifacts/.gitkeep
+/vm/
+/iso/out/
+*.log
+__pycache__/
+*.pyc

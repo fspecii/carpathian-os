@@ -1,0 +1,7 @@
+#!/bin/sh
+# Alt+Tab: jump to the previously focused window (focus history kept by carpatic-focuslog).
+H=${XDG_RUNTIME_DIR:-/tmp}/carpatic-focus.$(id -u)
+cur=$(xdotool getactivewindow 2>/dev/null)
+prev=$(grep -v "^$cur\$" "$H" 2>/dev/null | tail -1)
+[ -n "$prev" ] || prev=$(xdotool search --onlyvisible --class . 2>/dev/null | grep -v "^$cur\$" | tail -1)
+[ -n "$prev" ] && xdotool windowactivate "$prev"

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Start
+Comment=Open the start menu
+Exec=carpatic-launch
+Icon=/usr/local/share/carpatic/stylepacks/kylin/start.svg
+NoDisplay=true

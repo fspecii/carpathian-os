@@ -1,0 +1,79 @@
+# Carpatic store catalog: Office
+# Each [[app]]: id (unique), name, description, source (apk|flatpak|ai|compat), pkg (apk package or Flathub app id),
+# icon (icon-theme name), newcomer (good for newcomers), optional: size_mb, note, detail (long text), exec (launch cmd), term (run in a terminal), launch="none" (daemon, no Open button)
+[category]
+id = "office"
+name = "Office"
+icon = "applications-office"
+order = 7
+blurb = "Documents and productivity"
+
+[[app]]
+id = "libreoffice"
+name = "LibreOffice"
+pkg = "libreoffice"
+source = "apk"
+icon = "libreoffice"
+newcomer = true
+size_mb = 330
+description = "Full office suite: Writer, Calc, Impress."
+
+[[app]]
+id = "abiword"
+name = "AbiWord"
+pkg = "abiword"
+source = "apk"
+icon = "abiword"
+newcomer = false
+size_mb = 10
+description = "Light word processor."
+
+[[app]]
+id = "gnumeric"
+name = "Gnumeric"
+pkg = "gnumeric"
+source = "apk"
+icon = "gnumeric"
+newcomer = false
+size_mb = 10
+description = "Light spreadsheet."
+
+[[app]]
+id = "evince"
+name = "Document Viewer"
+pkg = "evince"
+source = "apk"
+icon = "evince"
+newcomer = true
+size_mb = 10
+description = "Read PDF and e-books."
+
+[[app]]
+id = "zathura"
+name = "Zathura"
+pkg = "zathura"
+source = "apk"
+icon = "zathura"
+newcomer = false
+size_mb = 3
+description = "Keyboard-driven PDF viewer."
+
+[[app]]
+id = "foliate"
+name = "Foliate"
+pkg = "foliate"
+source = "apk"
+icon = "foliate"
+newcomer = false
+size_mb = 5
+description = "E-book reader."
+
+[[app]]
+id = "obsidian"
+name = "Obsidian"
+pkg = "md.obsidian.Obsidian"
+source = "flatpak"
+icon = "obsidian"
+newcomer = false
+size_mb = 235
+description = "Notes in linked Markdown files."

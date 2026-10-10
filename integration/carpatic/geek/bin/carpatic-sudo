@@ -1,0 +1,20 @@
+#!/bin/sh
+# carpatic-sudo COMMAND [ARGS]: run a Carpatic tool with administrator rights. `carpatic` uses it for the few commands that need it
+# (updates, snapshots, power profiles), so you type `carpatic update apply` and are asked for your password.
+# As root: runs it. In a terminal: doas, then sudo. From the launcher or menu (no terminal): a graphical password prompt (pkexec).
+set -u
+err() { printf 'carpatic: %s\n' "$*" >&2; }
+[ $# -gt 0 ] || { err "carpatic-sudo needs a command"; exit 2; }
+cmd=$1; shift
+full=$(command -v "$cmd") || { err "I cannot find '$cmd'."; exit 3; }
+[ "$(id -u)" = 0 ] && exec "$full" "$@"
+if doas -n true 2>/dev/null; then exec doas "$full" "$@"; fi          # passwordless rule on this machine
+if sudo -n true 2>/dev/null; then exec sudo "$full" "$@"; fi
+if [ -t 0 ] && [ -t 2 ]; then
+  if command -v doas >/dev/null 2>&1; then exec doas "$full" "$@"; fi
+  if command -v sudo >/dev/null 2>&1; then exec sudo "$full" "$@"; fi
+elif [ -n "${DISPLAY:-}" ] && command -v pkexec >/dev/null 2>&1; then
+  exec pkexec "$full" "$@"
+fi
+err "this needs administrator rights and I cannot ask for your password here. Open a terminal and run: doas $cmd $*"
+exit 1

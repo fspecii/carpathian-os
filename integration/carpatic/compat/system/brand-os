@@ -1,0 +1,33 @@
+#!/bin/sh
+# Carpatic identity files. Alpine's package ships os-release, /etc/issue and /etc/motd that say "Alpine Linux" and, in the motd, tell people
+# to run setup-alpine (which would wreck a Carpatic install). Settings > About, `carpatic`, fastfetch and every bug report read these files,
+# so they must name Carpatic. ID_LIKE=alpine keeps tools that look for the base distro working.
+#   brand-os            write the files under / (run by compat/install.sh and again by the apk commit hook after every transaction)
+#   CARPATIC_ROOT=dir   write under dir instead (tests)
+R=${CARPATIC_ROOT:-}
+VER=${CARPATIC_VERSION:-0.1}; CHAN=${CARPATIC_CHANNEL:-alpha}
+base=$(cat "$R/etc/alpine-release" 2>/dev/null | head -n1); base=${base:-unknown}
+mkdir -p "$R/etc" "$R/usr/lib"
+if ! grep -qx 'ID=carpatic' "$R/etc/os-release" 2>/dev/null; then
+  t=$R/etc/os-release.carpatic.$$
+  cat >"$t" <<OS
+NAME="Carpatic OS"
+PRETTY_NAME="Carpatic OS $VER ($CHAN)"
+ID=carpatic
+ID_LIKE=alpine
+VERSION_ID=$VER
+VERSION="$VER ($CHAN)"
+ALPINE_VERSION_ID=$base
+OS
+  chmod 644 "$t"; mv -f "$t" "$R/etc/os-release"      # replaces Alpine's symlink to /usr/lib/os-release; apk upgrades cannot undo it silently (the hook re-checks)
+fi
+printf 'Welcome to Carpatic OS %s\nKernel \\r on \\m (\\l)\n\n' "$VER" >"$R/etc/issue"
+cat >"$R/etc/motd" <<'MOTD'
+Welcome to Carpatic OS.
+
+  Settings              Super+F2
+  Keyboard shortcuts    Super+K
+  Update the system     carpatic-update
+
+MOTD
+exit 0

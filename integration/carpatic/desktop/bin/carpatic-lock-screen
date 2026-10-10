@@ -1,0 +1,38 @@
+#!/bin/sh
+# Carpatic lock screen. Derived from design/login/carpatic-lock (design agent): blurred wallpaper, clock, one ring.
+# Differences: single instance, dunst resumed after unlock, falls back to slock if i3lock-color is missing.
+pgrep -x i3lock >/dev/null 2>&1 && exit 0
+pgrep -x slock >/dev/null 2>&1 && exit 0
+command -v i3lock >/dev/null 2>&1 || exec slock
+BG=0b0e13
+if [ "${LIGHT:-0}" = 1 ]; then FG=172029; ACC=16806a; INS=ffffff; DNG=c8323f; else FG=e7ecf3; ACC=5cc8a8; INS=11151c; DNG=f0707a; fi
+WP=${WP:-$(cat "$HOME/.config/carpatic/wallpaper" 2>/dev/null)}
+[ -f "$WP" ] || WP=/usr/local/share/carpatic/wallpaper.png
+command -v dunstctl >/dev/null && dunstctl set-paused true
+# panels (tint2, carpatic-panel) re-raise themselves above the lock window: keep them underneath while locked
+panels="$(xdotool search --class tint2 2>/dev/null) $(xdotool search --class carpatic-panel 2>/dev/null)"   # tint2 bars and the carpatic-panel bar/dock (it stayed crisp on top of the lock screen)
+unlock() { for w in $panels; do xdotool windowraise "$w" 2>/dev/null; done; command -v dunstctl >/dev/null && dunstctl set-paused false; }
+trap unlock EXIT
+# default: blur what is on screen (wallpaper + windows), like macOS; LOCK_STYLE=wallpaper uses the sharp wallpaper instead
+# display scale (carpatic-scale): the ring and the type are px
+SC=$(carpatic-scale effective 2>/dev/null); case $SC in ''|*[!0-9]*) SC=100;; esac
+sc() { echo $(( $1 * SC / 100 )); }
+img="--blur 14"
+[ "${LOCK_STYLE:-blur}" = wallpaper ] && [ -f "$WP" ] && img="--image=$WP --fill"
+# shellcheck disable=SC2086
+i3lock --nofork --ignore-empty-password --pass-media-keys \
+  $img --color=${BG}ff \
+  --clock --indicator --radius $(sc 120) --ring-width $(sc 6) \
+  --inside-color=${INS}99 --ring-color=ffffff22 \
+  --insidever-color=${INS}99 --ringver-color=${ACC}ff \
+  --insidewrong-color=${INS}99 --ringwrong-color=${DNG}ff \
+  --line-uses-ring --keyhl-color=${ACC}ff --bshl-color=${DNG}ff --separator-color=00000000 \
+  --time-str="%H:%M" --time-size=$(sc 56) --time-font="Inter SemiBold" --time-color=${FG}ff \
+  --date-str="%A, %d %B" --date-size=$(sc 16) --date-font="Inter" --date-color=${FG}cc \
+  --verif-text="" --wrong-text="Try again" --noinput-text="" --lock-text="" --lockfailed-text="" \
+  --greeter-text="" --verif-size=1 --wrong-size=$(sc 20) --wrong-font="Inter SemiBold" --wrong-color=${DNG}ff \
+  --time-pos="ix:iy+$(sc 6)" --date-pos="tx:ty+$(sc 34)" &
+lp=$!
+( sleep 0.7; while kill -0 "$lp" 2>/dev/null; do for w in $panels; do xdotool windowlower "$w" 2>/dev/null; done; sleep 2; done ) &
+wait "$lp"
+exit $?

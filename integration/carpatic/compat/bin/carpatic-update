@@ -1,0 +1,131 @@
+#!/bin/sh
+# carpatic-update: safe system updates for Carpatic OS (apk) with a "restart to finish updating" notice.
+#
+#   carpatic-update check        count available updates (needs network)
+#   carpatic-update list         show them
+#   carpatic-update apply        take a snapshot (btrfs, if carpatic-rollback is there), upgrade, flag a restart when needed
+#   carpatic-update firmware [check|apply]   firmware updates (BIOS/UEFI, SSD, docks) through fwupd and LVFS
+#   carpatic-update status       one-line summary: updates waiting, restart needed
+#   carpatic-update notify       desktop notification for what status says (used by the session)
+#   carpatic-update watch        loop used by the session: check every 6 hours, notify once per new state
+#   carpatic-update --mark       (apk hook) decide whether a restart is needed; writes /run/reboot-required
+#   carpatic-update --baseline   (boot) remember the versions of the packages that need a restart when they change
+#
+# Alpine has no "reboot-required" file, so we create one: Debian/Ubuntu tools and users look for it in the same place.
+# License: MIT. POSIX sh.
+set -u
+PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin"; export PATH
+BASE=/run/carpatic/boot-versions
+FLAG=/run/reboot-required
+# packages whose update only takes effect after a restart
+KEY="mkinitfs intel-ucode amd-ucode musl openrc eudev elogind linux-pam limine busybox"
+RUNKERNEL=${CARPATIC_RUNNING_KERNEL:-$(uname -r)}
+say() { printf '%s\n' "$*"; }
+die() { printf 'carpatic-update: %s\n' "$*" >&2; exit 1; }
+need_root() { [ "$(id -u)" = 0 ] || die "this needs administrator rights. Use: doas carpatic-update $1"; }
+
+kernel_pkgs() { apk info -e linux-lts linux-virt linux-edge linux-rpi 2>/dev/null; }
+installed_ver() { apk info -e "$1" >/dev/null 2>&1 && apk list -I "$1" 2>/dev/null | sed -n "s/^$1-\([0-9][^ ]*\) .*/\1/p" | head -1; }
+
+do_baseline() {
+  need_root --baseline; mkdir -p /run/carpatic
+  : > "$BASE"
+  for p in $KEY $(kernel_pkgs); do v=$(installed_ver "$p"); [ -n "$v" ] && echo "$p $v" >> "$BASE"; done
+  rm -f "$FLAG" /run/carpatic/notified
+}
+
+do_mark() {
+  need_root --mark
+  [ -f "$BASE" ] || do_baseline
+  reasons=""
+  # newest installed kernel (module directory) versus the running one
+  newest=$(ls -1 /lib/modules 2>/dev/null | sort -V | tail -1)
+  [ -n "$newest" ] && [ "$newest" != "$RUNKERNEL" ] && reasons="${reasons}kernel $RUNKERNEL -> $newest
+"
+  while read -r p v; do
+    now=$(installed_ver "$p")
+    [ -n "$now" ] && [ "$now" != "$v" ] && case "$p" in linux-*|busybox|musl|openrc|eudev|elogind|linux-pam|mkinitfs|*-ucode|limine) reasons="${reasons}$p $v -> $now
+";; esac
+  done < "$BASE"
+  if [ -n "$reasons" ]; then printf 'Restart needed to finish updating:\n%s' "$reasons" > "$FLAG"; else rm -f "$FLAG"; fi
+  return 0
+}
+
+count_updates() {
+  available=$(apk list -u 2>/dev/null) || return 1
+  printf '%s\n' "$available" | awk 'NF {n++} END {print n+0}'
+}
+
+run_logged() {
+  lines=$1; shift
+  update_log=$(mktemp "${TMPDIR:-/tmp}/carpatic-update-XXXXXX") || die "could not create the update log."
+  trap 'rm -f "$update_log"' EXIT
+  trap 'exit 130' INT TERM
+  "$@" >"$update_log" 2>&1
+  command_status=$?
+  tail -n "$lines" "$update_log"
+  rm -f "$update_log"
+  return "$command_status"
+}
+
+do_check() {
+  need_root check
+  apk update >/dev/null 2>&1 || die "could not reach the update servers. Check your internet connection."
+  n=$(count_updates) || die "could not list available updates."
+  if [ "$n" = 0 ]; then say "Your system is up to date."; else say "$n update(s) available."; fi
+  mkdir -p /run/carpatic; echo "$n" > /run/carpatic/updates-available
+}
+
+do_list() { available=$(apk list -u 2>/dev/null) || die "could not list available updates."; printf '%s\n' "$available" | sed 's/ x86_64 {.*//; s/ \[upgradable from: / (from /; s/\]$/)/'; }
+
+do_apply() {
+  need_root apply
+  apk update >/dev/null 2>&1 || die "could not reach the update servers. Check your internet connection."
+  n=$(count_updates) || die "could not list available updates."; [ "$n" = 0 ] && { say "Your system is up to date."; return 0; }
+  say "Installing $n update(s)..."
+  if command -v carpatic-rollback >/dev/null 2>&1; then carpatic-rollback snapshot "before update $(date +%Y-%m-%d)" >/dev/null 2>&1 && { say "Safety snapshot taken."; carpatic-rollback prune 8 >/dev/null 2>&1; }; fi
+  run_logged 3 apk upgrade --no-progress || die "the update did not finish. Review the errors before trying again; 'doas apk fix' can repair incomplete packages."
+  do_mark
+  echo 0 > /run/carpatic/updates-available 2>/dev/null
+  if [ -f "$FLAG" ]; then say "Done. Please restart to finish updating:"; sed 1d "$FLAG" | sed 's/^/  /'; else say "Done. No restart needed."; fi
+}
+
+do_firmware() { # BIOS/UEFI, SSD, dock and peripheral firmware from the Linux Vendor Firmware Service (fwupd)
+  command -v fwupdmgr >/dev/null 2>&1 || die "firmware updates need the fwupd package (doas apk add fwupd)."
+  case "${1:-check}" in
+    check) need_root "firmware check"; fwupdmgr refresh --force >/dev/null 2>&1 || say "Could not reach the firmware service; showing what is already known."
+           u=$(fwupdmgr get-updates --no-unreported-check 2>&1)
+           if echo "$u" | grep -qi "no updates\|no updatable\|No hardware detected"; then say "No firmware updates available."; else say "$u"; fi;;
+    apply) need_root "firmware apply"; run_logged 8 fwupdmgr update -y || die "the firmware tool did not complete successfully. Review its output before trying again."; say "If it asks, restart to finish. Keep the charger plugged in.";;
+    *) die "firmware: check or apply";;
+  esac
+}
+
+do_status() {
+  u=""; [ -f /run/carpatic/updates-available ] && u=$(cat /run/carpatic/updates-available)
+  r="no"; [ -f "$FLAG" ] && r="yes"
+  say "updates: ${u:-unknown}, restart needed: $r"
+}
+
+notify() { command -v notify-send >/dev/null 2>&1 && notify-send -a "Carpatic updates" -i system-software-update "$1" "$2" 2>/dev/null; return 0; }
+
+do_notify() {
+  d=${XDG_RUNTIME_DIR:-/tmp}/carpatic-update-notified; cur=$(do_status)
+  [ -f "$d" ] && [ "$(cat "$d")" = "$cur" ] && return 0
+  echo "$cur" > "$d"
+  if [ -f "$FLAG" ]; then notify "Restart to finish updating" "$(sed 1d "$FLAG" | head -3 | tr '\n' ' ')"
+  else u=0; [ -f /run/carpatic/updates-available ] && u=$(cat /run/carpatic/updates-available); [ "$u" -gt 0 ] 2>/dev/null && notify "Updates available" "$u package update(s). Open a terminal and run: doas carpatic-update apply"; fi
+  return 0
+}
+
+do_watch() { # session loop: the check itself needs root, so only read what the root side left behind
+  while :; do do_notify; sleep 1800; done
+}
+
+case "${1:-status}" in
+  firmware) shift; do_firmware "${1:-check}";;
+  check) do_check;; list) do_list;; apply|upgrade) do_apply;; status) do_status;; notify) do_notify;; watch) do_watch;;
+  --mark) do_mark;; --baseline) do_baseline;;
+  -h|--help|help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//';;
+  *) die "unknown command '$1' (try: carpatic-update help)";;
+esac

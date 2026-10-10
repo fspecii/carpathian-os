@@ -1,0 +1,91 @@
+#!/bin/sh
+# carpatic-pack list [category] | status <id> | install <id>... | remove <id>...
+# Theme / icon / cursor / font packs (share/packs.list). Downloads are pinned and sha256-verified and go to ~/.local/share (no root);
+# apk packs need root: run as root (Settings uses pkexec, or doas/sudo with its own password dialog); a launcher never gets a terminal. Nothing is fetched at ISO-build time.
+# CARPATIC_PROGRESS=1 prints curl's percentage and 'progress: TEXT' lines on stderr for the Settings progress sheet.
+. "$(dirname "$0")/carpatic-lib" 2>/dev/null || . carpatic-lib
+LIST=$CARPATIC_SHARE/packs.list; [ -f "$LIST" ] || LIST=$CARPATIC_SHARE/share/packs.list
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/carpatic-pack.XXXXXX") || exit 1; trap 'rm -rf "$WORK"' EXIT   # private, unpredictable (this may run as root through pkexec)
+entries() { cat "$LIST" "$CARPATIC_SHARE"/packs.d/*.list 2>/dev/null | grep -v '^#' | grep -v '^$'; }   # packs.d/*.list: add-on catalogues (style packs)
+entry() { # id -> catalogue line (exit 1 when unknown). ids are plain words: no regex, path or injection tricks
+  case $1 in ''|*[!A-Za-z0-9._+-]*) return 1;; esac
+  _e=$(entries | grep -F -- "$1|" | grep -- "^$1|" | head -1); [ -n "$_e" ] && printf '%s\n' "$_e"; }
+fld() { printf '%s\n' "$1" | cut -d'|' -f"$2"; }
+dir_of() { # kind of theme dir: icons|themes|fonts
+  case $1 in icons|cursors) echo icons;; gtk) echo themes;; fonts) echo fonts;; esac; }
+theme_present() { # category name
+  d=$(dir_of "$1"); for base in /usr/share/$d "$HOME/.local/share/$d" "$HOME/.icons"; do [ -e "$base/$2" ] && return 0; done; return 1; }
+is_installed() { # entry
+  cat=$(fld "$1" 2); kind=$(fld "$1" 4)
+  if [ "$cat" = fonts ]; then fc-list : family 2>/dev/null | tr ',' '\n' | grep -qxF "$(fld "$1" 8)"; return; fi
+  for t in $(fld "$1" 8); do theme_present "$cat" "$t" || return 1; done; return 0; }
+owner_user() { case $(fld "$1" 4) in apk) return 1;; *) return 0;; esac; }
+verify() { echo "$2  $1" | sha256sum -c - >/dev/null 2>&1 || { rm -f "$1"; echo "carpatic: checksum mismatch for $(basename "$1") (expected $2)" >&2; return 1; }; }
+fetch() { # url sha256 -> file
+  f=$WORK/$(basename "$1"); mkdir -p "$WORK"; [ -n "${CARPATIC_PROGRESS:-}" ] && echo "progress: Downloading $(basename "$1")" >&2
+  curl -fL $( [ -n "${CARPATIC_PROGRESS:-}" ] && echo "-#" || echo "-sS" ) --retry 3 -m 600 -o "$f" "$1" || { echo "carpatic: download failed: $1" >&2; return 1; }; verify "$f" "$2" || return 1; echo "$f"; }
+getf() { f=$(fetch "$1" "$2") && [ -f "$f" ] || exit 1; printf '%s' "$f"; }
+cmd=${1:-list}; [ $# -gt 0 ] && shift
+case $cmd in
+  list)
+    entries | while IFS= read -r e; do
+      [ -n "${1:-}" ] && [ "$(fld "$e" 2)" != "$1" ] && continue
+      i=0; is_installed "$e" && i=1
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(fld "$e" 1)" "$(fld "$e" 2)" "$(fld "$e" 3)" "$i" "$(fld "$e" 9)" "$(fld "$e" 10)" "$(fld "$e" 4)" "$(fld "$e" 11)"
+    done ;;
+  style) # install the packs a style prefers: carpatic-pack style macos|windows|ubuntu
+    st=${1:?style}; ids=$(sed -n "s/^PACKS=\"\(.*\)\"/\1/p" "$CARPATIC_SHARE/profiles/$st.conf" | head -1)
+    [ -n "$ids" ] || { say "nothing to install for $st"; exit 0; }
+    for id in $ids; do e=$(entry "$id") || continue; is_installed "$e" || "$0" install "$id" || exit 1; done ;;
+  status) e=$(entry "${1:?id}") || die "unknown pack"; is_installed "$e" && echo installed || echo missing ;;
+  install)
+    for id in "$@"; do
+      e=$(entry "$id"); [ -n "$e" ] || die "unknown pack '$id'"
+      echo "progress: installing $id"
+      src=$(fld "$e" 5); ref=$(fld "$e" 6); sha=$(fld "$e" 7)
+      case $(fld "$e" 4) in
+        apk)
+          # system packages need root. Never open a terminal for it: as root install, in a terminal use doas, otherwise say what to do
+          # (Settings runs this command through pkexec or doas/sudo with its own progress sheet and password dialog)
+          if [ "$(id -u)" = 0 ]; then apk add --no-cache $src || die "apk failed"
+          elif [ -t 0 ]; then doas apk add --no-cache $src || die "apk failed"
+          else die "$id needs administrator rights (this tool needs your administrator password). Install it from Settings, or run: doas apk add $src"; fi ;;
+        stylepack) carpatic-stylepack fetch "$id" || die "could not install $id" ;;
+        github-icons)
+          t=$(getf "https://codeload.github.com/$src/tar.gz/$ref" "$sha") || die "download/verify failed for $id"; mkdir -p "$WORK/x" "$HOME/.local/share/icons"
+          tar -xzf "$t" -C "$WORK/x"; d=$(ls -d "$WORK"/x/*/ | head -1)
+          case $id in
+            kora) cp -r "$d/kora" "$d/kora-pgrey" "$HOME/.local/share/icons/" ;;
+            candy) mkdir -p "$HOME/.local/share/icons/candy-icons"; for x in apps devices mimetypes places preferences status index.theme; do cp -r "$d/$x" "$HOME/.local/share/icons/candy-icons/" 2>/dev/null; done ;;
+            tela-circle) (cd "$d" && bash ./install.sh -d "$HOME/.local/share/icons" -c standard >"$WORK/log" 2>&1) || die "install script failed: $(tail -1 "$WORK/log")" ;;
+            fluent-icons) (cd "$d" && bash ./install.sh -d "$HOME/.local/share/icons" standard >"$WORK/log" 2>&1) || die "install script failed: $(tail -1 "$WORK/log")" ;;
+            qogir) (cd "$d" && bash ./install.sh -d "$HOME/.local/share/icons" -t default >"$WORK/log" 2>&1) || die "install script failed: $(tail -1 "$WORK/log")" ;;
+            colloid) (cd "$d" && bash ./install.sh -d "$HOME/.local/share/icons" -s default >"$WORK/log" 2>&1) || die "install script failed: $(tail -1 "$WORK/log")" ;;
+          esac
+          for t2 in $(fld "$e" 8); do [ -d "$HOME/.local/share/icons/$t2" ] && gtk-update-icon-cache -qf "$HOME/.local/share/icons/$t2" 2>/dev/null; done ;;
+        file-font)
+          fam=$(fld "$e" 8); mkdir -p "$HOME/.local/share/fonts/$fam"; n=0
+          for u in $src; do n=$((n+1)); h=$(echo "$sha" | cut -d' ' -f$n); f=$(getf "$u" "$h") || die "download/verify failed for $id"
+            case $u in *.zip) mkdir -p "$WORK/z"; unzip -oq "$f" -d "$WORK/z" && cp "$WORK"/z/selawk*.ttf "$HOME/.local/share/fonts/$fam/" 2>/dev/null || cp "$WORK"/z/*/*.ttf "$HOME/.local/share/fonts/$fam/";;
+                       *) b=$(basename "$u" | sed 's/%5B/[/;s/%5D/]/'); cp "$f" "$HOME/.local/share/fonts/$fam/$b";; esac; done
+          command -v fc-cache >/dev/null && fc-cache -f "$HOME/.local/share/fonts" >/dev/null 2>&1 ;;
+        tar-gtk)
+          mkdir -p "$HOME/.local/share/themes"; set -- $src; n=0
+          for u in $src; do n=$((n+1)); h=$(echo "$sha" | cut -d' ' -f$n); f=$(getf "$u" "$h") || die "download/verify failed for $id"; tar -xJf "$f" -C "$HOME/.local/share/themes"; done ;;
+        deb-gtk|deb-icons)
+          f=$(getf "$src" "$sha") || die "download/verify failed for $id"; mkdir -p "$WORK/d"; (cd "$WORK/d" && ar x "$f" && tar --zstd -xf data.tar.zst) || die "cannot unpack deb (zstd missing?)"
+          if [ "$(fld "$e" 4)" = deb-gtk ]; then mkdir -p "$HOME/.local/share/themes"; for t2 in $(fld "$e" 8); do cp -r "$WORK/d/usr/share/themes/$t2" "$HOME/.local/share/themes/"; done
+          else mkdir -p "$HOME/.local/share/icons"; for t2 in $(fld "$e" 8); do cp -r "$WORK/d/usr/share/icons/$t2" "$HOME/.local/share/icons/"; gtk-update-icon-cache -qf "$HOME/.local/share/icons/$t2" 2>/dev/null; done; fi ;;
+      esac
+      rm -rf "$WORK"; is_installed "$e" || die "$id did not install (the download worked but no theme appeared)"; echo "progress: installed $id"
+    done ;;
+  remove)
+    for id in "$@"; do
+      e=$(entry "$id"); [ -n "$e" ] || die "unknown pack '$id'"
+      owner_user "$e" || die "$id is a system package (remove with apk)"
+      d=$(dir_of "$(fld "$e" 2)")
+      if [ "$(fld "$e" 4)" = file-font ]; then rm -rf "$HOME/.local/share/fonts/$(fld "$e" 8)"; fc-cache -f >/dev/null 2>&1; fi
+      for t in $(fld "$e" 8); do [ "$d" = fonts ] || rm -rf "$HOME/.local/share/$d/$t"; done; echo "progress: removed $id"
+    done ;;
+  *) die "usage: carpatic-pack list|status|install|remove" ;;
+esac

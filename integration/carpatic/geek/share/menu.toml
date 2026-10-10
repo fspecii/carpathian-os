@@ -1,0 +1,454 @@
+# The Carpatic menu (Super+Alt+Space). Plain data: add or change entries without touching code.
+#
+# Every table is an entry. A table with sub-tables is a sub-menu, a table with `action` runs a command, a table with `provider`
+# fills itself at run time. Fields:
+#   label     text in the list                  icon     icon-theme name (Papirus)        hint   small grey text
+#   action    shell command (runs detached)     term     true = run it in a small floating terminal and wait for Enter
+#   confirm   true = ask "Are you sure?" first  when     show only if true: laptop, bluetooth, wifi, snapshots, hibernate, tiling,
+#                                                        has:COMMAND, not:RULE, sh:COMMAND (exit status 0)
+#   provider  themes, wallpapers, accents, profiles, fonts, icons, power-profiles, snapshots, webapps, webapp-presets,
+#             webapp-remove, tui-apps, tui-presets, tui-remove, dev-envs, dev-remove, apps-installed, ai-tools, layouts, themes-remove
+#   action    starting with @ is a built-in: @search-install asks for words, lists matching packages and installs your pick
+# Your own entries: put the same format in ~/.config/carpatic/menu.d/*.toml. Reusing an id (for example [style.theme])
+# changes only the fields you write; `hidden = true` removes an entry. Run `carpatic menu --check` to test your additions.
+
+[apps]
+label = "Apps"
+icon = "applications-all"
+hint = "Launch anything"
+  [apps.launcher]
+  label = "All apps"
+  icon = "view-app-grid-symbolic"
+  action = "carpatic-launch drun"
+  [apps.windows]
+  label = "Open windows"
+  icon = "preferences-system-windows"
+  action = "carpatic-launch window"
+  [apps.webapps]
+  label = "Web apps"
+  icon = "internet-web-browser"
+  provider = "webapps"
+  [apps.tui]
+  label = "Terminal apps"
+  icon = "utilities-terminal"
+  provider = "tui-apps"
+  [apps.terminal]
+  label = "Terminal"
+  icon = "utilities-terminal"
+  action = "carpatic-term"
+  [apps.browser]
+  label = "Browser"
+  icon = "internet-web-browser"
+  action = "firefox"
+  when = "has:firefox"
+  [apps.files]
+  label = "Files"
+  icon = "system-file-manager"
+  action = "thunar"
+  when = "has:thunar"
+
+[learn]
+label = "Learn"
+icon = "help-browser"
+hint = "Keys, guides, tour"
+  [learn.keybindings]
+  label = "Keyboard shortcuts"
+  icon = "input-keyboard"
+  hint = "Searchable, from your profile"
+  action = "carpatic keys show"
+  [learn.tour]
+  label = "Welcome to the keyboard-driven desktop"
+  icon = "starred"
+  action = "carpatic tour"
+  [learn.commands]
+  label = "Commands (carpatic --help)"
+  icon = "utilities-terminal"
+  action = "carpatic --help | ${PAGER:-less}"
+  term = true
+  [learn.guide]
+  label = "Guide for power users"
+  icon = "text-x-generic"
+  action = "carpatic tour --guide"
+  term = true
+  [learn.manual]
+  label = "Manual page"
+  icon = "help-browser"
+  action = "man carpatic"
+  term = true
+  when = "has:man"
+  [learn.cheatsheet]
+  label = "Printable cheat sheet"
+  icon = "document-print"
+  hint = "Opens in your browser"
+  action = "carpatic keys html --open"
+
+[trigger]
+label = "Trigger"
+icon = "camera-photo"
+hint = "Capture, pick, share"
+  [trigger.screenshot]
+  label = "Screenshot"
+  icon = "applets-screenshooter"
+    [trigger.screenshot.region]
+    label = "Region"
+    icon = "transform-crop"
+    action = "carpatic trigger screenshot region"
+    [trigger.screenshot.annotate]
+    label = "Region, then draw on it"
+    icon = "draw-brush"
+    action = "carpatic trigger screenshot annotate"
+    [trigger.screenshot.window]
+    label = "Active window"
+    icon = "window"
+    action = "carpatic trigger screenshot window"
+    [trigger.screenshot.full]
+    label = "Whole screen"
+    icon = "video-display"
+    action = "carpatic trigger screenshot full"
+  [trigger.record]
+  label = "Screen recording"
+  icon = "camera-video"
+    [trigger.record.region]
+    label = "Record a region"
+    icon = "transform-crop"
+    action = "carpatic trigger record start region"
+    [trigger.record.full]
+    label = "Record the whole screen"
+    icon = "video-display"
+    action = "carpatic trigger record start full"
+    [trigger.record.audio]
+    label = "Record the whole screen with sound"
+    icon = "audio-input-microphone"
+    action = "carpatic trigger record start full --audio"
+    [trigger.record.stop]
+    label = "Stop recording"
+    icon = "process-stop"
+    action = "carpatic trigger record stop"
+    when = "sh:carpatic trigger record status >/dev/null"
+  [trigger.color]
+  label = "Colour picker"
+  icon = "color-picker"
+  hint = "Click a pixel, hex goes to the clipboard"
+  action = "carpatic trigger colorpicker"
+  [trigger.clipboard]
+  label = "Clipboard history"
+  icon = "klipper"
+  action = "carpatic trigger clipboard"
+  [trigger.share]
+  label = "Share"
+  icon = "emblem-shared"
+  hint = "Clipboard or a file; link on your clipboard (this network only)"
+    [trigger.share.clipboard]
+    label = "Clipboard"
+    icon = "klipper"
+    action = "carpatic trigger share clipboard"
+    [trigger.share.file]
+    label = "A file"
+    icon = "document-send"
+    action = "carpatic trigger share file"
+  [trigger.toggle]
+  label = "Toggle"
+  icon = "preferences-other"
+    [trigger.toggle.nightlight]
+    label = "Night light"
+    icon = "redshift"
+    action = "carpatic trigger nightlight toggle"
+    when = "sh:carpatic trigger nightlight available"
+    [trigger.toggle.idle]
+    label = "Lock when idle"
+    icon = "system-lock-screen"
+    action = "carpatic trigger idle toggle"
+    when = "has:carpatic-idle"
+    [trigger.toggle.bar]
+    label = "Hide or show the bar"
+    icon = "view-fullscreen"
+    action = "xdotool key super+g"
+    when = "tiling"
+
+[style]
+label = "Style"
+icon = "preferences-desktop-theme"
+hint = "Theme, wallpaper, fonts, icons, accent"
+  [style.picker]
+  label = "Theme picker"
+  icon = "preferences-desktop-theme"
+  hint = "Arrows change everything, live"
+  action = "carpatic-theme-picker"
+  when = "has:carpatic-theme-picker"
+  [style.theme]
+  label = "Theme"
+  icon = "preferences-desktop-theme"
+  provider = "themes"
+  [style.wallpaper]
+  label = "Wallpaper"
+  icon = "preferences-desktop-wallpaper"
+  provider = "wallpapers"
+  [style.accent]
+  label = "Accent colour"
+  icon = "preferences-desktop-color"
+  provider = "accents"
+  [style.fonts]
+  label = "Fonts"
+  icon = "preferences-desktop-font"
+  provider = "fonts"
+  [style.icons]
+  label = "Icons"
+  icon = "preferences-desktop-icons"
+  provider = "icons"
+  [style.profile]
+  label = "Desktop style"
+  icon = "preferences-desktop"
+  hint = "Windows, macOS, Ubuntu, tiling"
+  provider = "profiles"
+  [style.share]
+  label = "Share this theme"
+  icon = "emblem-shared"
+  hint = "Packs palette and wallpaper in one file"
+  action = "carpatic theme share $(carpatic theme current)"
+  term = true
+  [style.settings]
+  label = "All appearance settings"
+  icon = "preferences-system"
+  action = "carpatic-settings"
+  when = "has:carpatic-settings"
+
+[setup]
+label = "Setup"
+icon = "preferences-system"
+hint = "Audio, network, power, displays, input"
+  [setup.audio]
+  label = "Audio"
+  icon = "audio-volume-high"
+  action = "pavucontrol || carpatic-term -e alsamixer"
+  [setup.wifi]
+  label = "Wi-Fi and network"
+  icon = "network-wireless"
+  action = "nm-connection-editor"
+  when = "has:nm-connection-editor"
+  [setup.wifi_tui]
+  label = "Wi-Fi and network (terminal)"
+  icon = "network-wireless"
+  action = "nmtui"
+  term = true
+  when = "has:nmtui"
+  [setup.bluetooth]
+  label = "Bluetooth"
+  icon = "bluetooth"
+  action = "blueman-manager"
+  when = "bluetooth"
+  [setup.power]
+  label = "Power profile"
+  icon = "battery"
+  provider = "power-profiles"
+  when = "laptop"
+  [setup.battery]
+  label = "Battery and sleep"
+  icon = "battery-good"
+  action = "carpatic power doctor"
+  term = true
+  when = "laptop"
+  [setup.displays]
+  label = "Displays"
+  icon = "video-display"
+  action = "arandr"
+  when = "has:arandr"
+  [setup.displays_cli]
+  label = "Displays (list)"
+  icon = "video-display"
+  action = "xrandr --listmonitors"
+  term = true
+  when = "not:has:arandr"
+  [setup.input]
+  label = "Keyboard layout"
+  icon = "input-keyboard"
+  provider = "layouts"
+  [setup.drivers]
+  label = "Drivers and firmware"
+  icon = "cpu"
+  action = "carpatic drivers detect"
+  term = true
+  when = "has:carpatic-drivers"
+  [setup.settings]
+  label = "All settings"
+  icon = "preferences-system"
+  action = "carpatic-settings"
+  when = "has:carpatic-settings"
+
+[install]
+label = "Install"
+icon = "system-software-install"
+hint = "Apps, AI tools, dev environments, editors, games"
+  [install.store]
+  label = "Store"
+  icon = "system-software-install"
+  action = "carpatic-store-gui"
+  when = "has:carpatic-store-gui"
+  [install.dev]
+  label = "Dev environments"
+  icon = "applications-development"
+  hint = "One command each"
+  provider = "dev-envs"
+  [install.editors]
+  label = "Editors"
+  icon = "accessories-text-editor"
+    [install.editors.nvim]
+    label = "Neovim, ready to use"
+    action = "carpatic install dev neovim"
+    term = true
+    icon = "nvim"
+    [install.editors.helix]
+    label = "Helix"
+    action = "carpatic install dev helix"
+    term = true
+    icon = "helix"
+    [install.editors.zed]
+    label = "Zed"
+    action = "carpatic install dev zed"
+    term = true
+    icon = "zed"
+    [install.editors.codium]
+    label = "VSCodium"
+    action = "carpatic install dev vscodium"
+    term = true
+    icon = "vscodium"
+    [install.editors.vscode]
+    label = "Visual Studio Code"
+    action = "carpatic install dev vscode"
+    term = true
+    icon = "vscode"
+  [install.ai]
+  label = "AI tools"
+  icon = "applications-science"
+  provider = "ai-tools"
+  when = "has:carpatic-ai"
+  [install.webapp]
+  label = "Web app"
+  icon = "internet-web-browser"
+  hint = "A site in its own window"
+  provider = "webapp-presets"
+  [install.tui]
+  label = "Terminal app"
+  icon = "utilities-terminal"
+  provider = "tui-presets"
+  [install.gaming]
+  label = "Gaming"
+  icon = "applications-games"
+  hint = "Steam, Lutris, Heroic, GameMode"
+  action = "carpatic store install gaming"
+  term = true
+  when = "has:carpatic-store"
+  [install.package]
+  label = "Any package (search)"
+  icon = "edit-find"
+  action = "@search-install"
+  when = "has:carpatic-store"
+
+[remove]
+label = "Remove"
+icon = "edit-delete"
+hint = "Apps, web apps, dev environments"
+  [remove.app]
+  label = "App"
+  icon = "application-x-executable"
+  provider = "apps-installed"
+  when = "has:carpatic-store"
+  [remove.webapp]
+  label = "Web app"
+  icon = "internet-web-browser"
+  provider = "webapp-remove"
+  [remove.tui]
+  label = "Terminal app"
+  icon = "utilities-terminal"
+  provider = "tui-remove"
+  [remove.dev]
+  label = "Dev environment"
+  icon = "applications-development"
+  provider = "dev-remove"
+  [remove.theme]
+  label = "Imported theme"
+  icon = "preferences-desktop-theme"
+  provider = "themes-remove"
+
+[update]
+label = "Update"
+icon = "system-software-update"
+hint = "System, apps, rollback"
+  [update.system]
+  label = "Update the system"
+  icon = "system-software-update"
+  hint = "Takes a snapshot first when it can"
+  action = "carpatic update apply"
+  term = true
+  when = "has:carpatic-update"
+  [update.apps]
+  label = "Update apps"
+  icon = "view-refresh"
+  action = "carpatic store update"
+  term = true
+  when = "has:carpatic-store"
+  [update.status]
+  label = "Is anything waiting?"
+  icon = "dialog-information"
+  action = "carpatic update check"
+  term = true
+  when = "has:carpatic-update"
+  [update.snapshot]
+  label = "Take a snapshot now"
+  icon = "camera-photo"
+  action = "carpatic snapshot create menu"
+  term = true
+  when = "snapshots"
+  [update.rollback]
+  label = "Go back to a snapshot"
+  icon = "edit-undo"
+  provider = "snapshots"
+  when = "snapshots"
+  [update.hooks]
+  label = "After-update hook"
+  icon = "text-x-script"
+  hint = "Runs after every update"
+  action = "carpatic hook edit post-update"
+  term = true
+
+[system]
+label = "System"
+icon = "system-shutdown"
+hint = "Lock, sleep, restart, shut down"
+  [system.lock]
+  label = "Lock"
+  icon = "system-lock-screen"
+  action = "carpatic-lock"
+  [system.sleep]
+  label = "Sleep"
+  icon = "system-suspend"
+  action = "carpatic-powermenu --choose Sleep"
+  [system.hibernate]
+  label = "Hibernate"
+  icon = "system-suspend-hibernate"
+  action = "carpatic-powermenu --choose Hibernate"
+  when = "hibernate"
+  [system.logout]
+  label = "Log out"
+  icon = "system-log-out"
+  action = "carpatic-powermenu --choose 'Log out'"
+  confirm = true
+  [system.restart]
+  label = "Restart"
+  icon = "system-reboot"
+  action = "carpatic-powermenu --choose Restart"
+  confirm = true
+  [system.shutdown]
+  label = "Shut down"
+  icon = "system-shutdown"
+  action = "carpatic-powermenu --choose 'Shut down'"
+  confirm = true
+  [system.monitor]
+  label = "Task manager"
+  icon = "utilities-system-monitor"
+  action = "btop || top"
+  term = true
+  [system.info]
+  label = "About this computer"
+  icon = "computer"
+  action = "carpatic system info"
+  term = true

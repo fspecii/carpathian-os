@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""carpatic-themepack: share themes and bring in Omarchy themes.
+
+  export THEME [--out FILE] [--font FAMILY ...] [--sign KEYFILE]   pack a theme (palette, wallpapers, checksums) into one file
+  import FOLDER|FILE|LINK [--name N] [--force] [--fonts] [--sha256 H] [--verify SIGNERS --identity ID] [--unverified] [--dry-run]
+  convert FOLDER                      check an Omarchy or Carpatic theme folder and print a conversion report (installs nothing)
+  share THEME [--serve]               export and show what to send to a friend; --serve offers the file on your network for 15 minutes
+  remove NAME                         remove a theme you imported
+  list [--imported]                   themes (system and imported)
+  next                                switch to the next theme
+  wallpaper next | set FILE | list    wallpapers of the current theme and your pictures
+Used through: carpatic theme export | import | convert | share | remove | next | wallpaper
+"""
+import os
+import signal
+import socket
+import sys
+
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+here = os.path.dirname(os.path.realpath(__file__))
+for d in (os.path.join(here, "..", "lib"), "/usr/local/lib/carpatic-geek"):
+    sys.path.insert(0, d)
+os.environ["PATH"] = here + ":" + os.environ.get("PATH", "")
+import carpatic_themepack as T  # noqa: E402
+
+
+def err(msg, code=1):
+    print(f"carpatic theme: {msg}", file=sys.stderr)
+    return code
+
+
+def parse(args, flags=(), values=(), multi=()):
+    o = {k: False for k in flags}
+    o.update({k: None for k in values})
+    o.update({k: [] for k in multi})
+    rest = []
+    it = iter(args)
+    for a in it:
+        k = a.lstrip("-") if a.startswith("--") else None
+        if k in flags:
+            o[k] = True
+        elif k in values:
+            v = next(it, None)
+            if v is None:
+                raise SystemExit(err(f"{a} needs a value", 2))
+            o[k] = v
+        elif k in multi:
+            v = next(it, None)
+            if v is None:
+                raise SystemExit(err(f"{a} needs a value", 2))
+            o[k].append(v)
+        elif a.startswith("--"):
+            raise SystemExit(err(f"I do not know the option {a}. See: carpatic-themepack --help", 2))
+        else:
+            rest.append(a)
+    return o, rest
+
+
+def lan_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("10.255.255.255", 1))
+        return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return 0
+    cmd, rest = argv[0], argv[1:]
+    try:
+        if cmd == "export":
+            o, r = parse(rest, values=("out", "sign"), multi=("font",))
+            if len(r) != 1:
+                return err("which theme? For example: carpatic theme export tokyo-night", 2)
+            T.do_export(r[0], o["out"], o["font"], o["sign"])
+        elif cmd == "import":
+            o, r = parse(rest, flags=("force", "fonts", "unverified", "dry-run", "no-wallpapers"), values=("name", "sha256", "verify", "identity", "sig"))
+            if len(r) != 1:
+                return err("what should I import? Give a theme folder, a .carpatic-theme.tar.gz file or a link.", 2)
+            return T.do_import(r[0], o["name"], o["force"], o["dry-run"], o["fonts"], o["unverified"], o["sha256"], not o["no-wallpapers"],
+                               o["verify"], o["sig"], o["identity"])
+        elif cmd == "convert":
+            o, r = parse(rest, flags=("no-wallpapers",))
+            if len(r) != 1:
+                return err("which folder? For example: carpatic theme convert ~/omarchy/themes/nord", 2)
+            return T.do_import(r[0], name=None, dry=True, wallpapers=not o["no-wallpapers"])
+        elif cmd == "share":
+            o, r = parse(rest, flags=("serve",), values=("out",))
+            if len(r) != 1:
+                return err("which theme? For example: carpatic theme share nord", 2)
+            dst, digest = T.do_export(r[0], o["out"] or os.path.expanduser("~/Documents") if os.path.isdir(os.path.expanduser("~/Documents")) else None, [], None,
+                                      out=lambda *_: None)
+            print(f"Your theme pack: {dst}")
+            print(f"Checksum (sha256): {digest}")
+            print("\nTo use it, a friend runs:")
+            print(f"  carpatic theme import {os.path.basename(dst)} --sha256 {digest}")
+            if o["serve"]:
+                import http.server
+                import socketserver
+                import threading
+                served = os.path.basename(dst)
+
+                class OneFile(http.server.SimpleHTTPRequestHandler):
+                    """Serves exactly the exported pack, never a directory listing or any other file next to it."""
+                    def do_GET(self):
+                        if self.path.split("?")[0] != "/" + served:
+                            self.send_error(404)
+                            return
+                        super().do_GET()
+                    def translate_path(self, path):
+                        return dst
+                    def log_message(self, *a):
+                        pass
+                port = 53317   # the one port the default firewall leaves open for sharing
+                socketserver.TCPServer.allow_reuse_address = True
+                try:
+                    srv = socketserver.TCPServer(("0.0.0.0", port), OneFile)
+                except OSError:
+                    port = 8765
+                    srv = socketserver.TCPServer(("0.0.0.0", port), OneFile)
+                url = f"http://{lan_ip()}:{port}/{os.path.basename(dst)}"
+                print(f"\nOffering it on your network for 15 minutes (anyone on this network can download it):\n  carpatic theme import {url} --sha256 {digest}")
+                print("Press Ctrl+C to stop.")
+                threading.Timer(900, srv.shutdown).start()
+                try:
+                    srv.serve_forever()
+                except KeyboardInterrupt:
+                    pass
+        elif cmd == "remove":
+            if len(rest) != 1:
+                return err("which theme? You can only remove themes you imported: carpatic-themepack list --imported", 2)
+            T.do_remove(rest[0])
+        elif cmd == "list":
+            names = T.user_theme_names() if "--imported" in rest else T.theme_list()
+            for n in names:
+                print(n)
+        elif cmd == "next":
+            T.theme_next()
+        elif cmd == "wallpaper":
+            sub = rest[0] if rest else "next"
+            if sub == "next":
+                T.wallpaper_next()
+            elif sub == "set":
+                if len(rest) != 2 or not os.path.isfile(rest[1]):
+                    return err("give me a picture file: carpatic theme wallpaper set ~/Pictures/mountain.jpg", 2)
+                T.apply_wallpaper(os.path.abspath(rest[1]))
+                print("Wallpaper changed.")
+            elif sub == "list":
+                for p, label, group in T.wallpaper_list():
+                    print(f"{p}|{label}|{group}")
+            else:
+                return err("wallpaper next, set FILE or list", 2)
+        else:
+            return err(f"I do not know '{cmd}'. Try: export, import, convert, share, remove, list, next, wallpaper.", 2)
+    except T.Problem as e:
+        return err(str(e))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

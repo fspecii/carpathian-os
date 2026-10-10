@@ -1,0 +1,27 @@
+#!/bin/sh
+# carpatic-lockscreen: when the screen locks and turns off. Used by Carpatic Settings > Lock Screen.
+#   carpatic-lockscreen status            "lock-after <minutes|never>", "screen-off-after <minutes|never>", "lock-on-sleep yes|no"
+#   carpatic-lockscreen lock-after <minutes|never>
+#   carpatic-lockscreen screen-off-after <minutes|never>
+#   carpatic-lockscreen apply             restart the idle timer with the saved values (carpatic-idle reads ~/.config/carpatic/lock.env)
+# Saved in ~/.config/carpatic/lock.env (LOCK_MIN, OFF_MIN). License: MIT. POSIX sh.
+set -u
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}/carpatic"; ENV="$CFG/lock.env"
+mkdir -p "$CFG"; [ -f "$ENV" ] || : > "$ENV"
+die() { printf 'carpatic-lockscreen: %s\n' "$*" >&2; exit 1; }
+get() { v=$(sed -n "s/^$1=//p" "$ENV" | tail -1 | tr -d '"'); echo "${v:-$2}"; }
+put() { grep -v "^$1=" "$ENV" > "$ENV.new" 2>/dev/null; printf '%s="%s"\n' "$1" "$2" >> "$ENV.new"; mv "$ENV.new" "$ENV"; }
+valid() { case "$1" in never) ;; ''|*[!0-9]*) die "say a number of minutes, or never";; esac; }
+apply() { command -v carpatic-idle >/dev/null 2>&1 || return 0; [ -n "${DISPLAY:-}" ] || return 0
+  carpatic-idle stop >/dev/null 2>&1; m=$(get LOCK_MIN 10); o=$(get OFF_MIN 5)
+  if [ "$m" = never ]; then xset s off; xset dpms 0 0 $( [ "$o" = never ] && echo 0 || echo "$o" ) 2>/dev/null; return 0; fi
+  CARPATIC_IDLE_MIN=$m CARPATIC_OFF_MIN=$o carpatic-idle start >/dev/null 2>&1 & }
+CMD=${1:-status}; [ $# -gt 0 ] && shift
+case "$CMD" in
+  status) printf 'lock-after %s\nscreen-off-after %s\nlock-on-sleep %s\n' "$(get LOCK_MIN 10)" "$(get OFF_MIN 5)" "$(sed -n 's/^LOCK_ON_SLEEP=//p' /etc/carpatic/power.conf 2>/dev/null | tr -d '"' | tail -1 | sed 's/^$/yes/')";;
+  lock-after) valid "${1:-}"; put LOCK_MIN "$1"; apply;;
+  screen-off-after) valid "${1:-}"; put OFF_MIN "$1"; apply;;
+  apply) apply;;
+  *) die "unknown command '$CMD' (status, lock-after, screen-off-after, apply)";;
+esac
+exit 0

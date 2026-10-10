@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""Carpatic App Store (GTK3). Usage: carpatic-store-gui [--firstrun] [--page NAME]   (CARPATIC_THEME=light for the light palette)
+The implementation lives in lib/carpatic_storeui.py so tests can import it."""
+import os
+import sys
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(HERE, "..", "lib"))
+sys.path.insert(0, "/usr/local/lib/carpatic-store")
+import carpatic_storeui  # noqa: E402
+
+if __name__ == "__main__":
+    carpatic_storeui.main()

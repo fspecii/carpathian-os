@@ -1,0 +1,32 @@
+unbind SUPER f
+unbind SUPER t
+unbind SUPER l
+unbind SUPER m
+unbind SUPER i
+unbind SUPER d
+unbind SUPER h
+unbind SUPER j
+unbind SUPER k
+unbind SUPER x
+unbind SUPER p
+unbind SUPER Tab
+unbind SUPER space
+{ mod="SUPER",      key="space", desc="Spotlight launcher",   func="spawn", exec=["carpatic-launch"] },
+{ mod="ALT",        key="Tab",   desc="Switch app",           func="spawn", exec=["carpatic-switch"] },
+{ mod="SUPER",      key="Tab",   desc="Switch app (Cmd+Tab)", func="spawn", exec=["carpatic-switch"] },
+{ mod="SUPER",      key="q",     desc="Quit window",          func="killclient" },
+{ mod="SUPER",      key="w",     desc="Close window",         func="killclient" },
+{ mod="SUPER CTRL", key="f",     desc="Fullscreen",           func="fullscreen" },
+{ mod="SUPER CTRL", key="Left",  desc="Snap left",            func="spawn", exec=["carpatic-snap", "left"] },
+{ mod="SUPER CTRL", key="Right", desc="Snap right",           func="spawn", exec=["carpatic-snap", "right"] },
+{ mod="SUPER CTRL", key="Up",    desc="Maximize",             func="spawn", exec=["carpatic-snap", "max"] },
+{ mod="SUPER CTRL", key="Down",  desc="Restore size",         func="spawn", exec=["carpatic-snap", "restore"] },
+{ mod="SUPER CTRL", key="q",     desc="Lock screen",          func="spawn", exec=["carpatic-lock"] },
+{ mod="SUPER SHIFT", key="3",    desc="Screenshot (full)",    func="spawn", exec=["carpatic-screenshot", "full"] },
+{ mod="SUPER SHIFT", key="4",    desc="Screenshot (region)",  func="spawn", exec=["carpatic-screenshot"] },
+{ mod="SUPER",      key="e",     desc="Finder (file manager)", func="spawn", exec=["thunar"] },
+{ mod="SUPER CTRL", key="c", desc="Control Centre", func="spawn", exec=["carpatic-flyout", "quick"] },
+{ mod="", key="F4", desc="Launchpad", func="spawn", exec=["carpatic-launch", "grid"] },
+{ mod="SUPER SHIFT", key="space", desc="Launchpad", func="spawn", exec=["carpatic-launch", "grid"] },
+{ mod="CTRL ALT",   key="Up",    desc="Mission Control (workspace and window overview)", func="spawn", exec=["carpatic-overview"] },
+{ mod="SUPER CTRL", key="t",     desc="Auto-tiling on or off (this space)", func="togglelayout" },

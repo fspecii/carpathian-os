@@ -1,0 +1,76 @@
+# Curated Ollama models. size_mb = sum of layer sizes from registry.ollama.ai (verified 2026-10-08).
+# ram_gb is a rule of thumb (model size x ~1.3 plus context). "good" = sensible default for newcomers.
+[[model]]
+id = "smollm2:135m"
+name = "SmolLM2 135M"
+size_mb = 258
+ram_gb = 1
+kind = "tiny"
+description = "Tiny test model. Proves everything works, answers are poor."
+
+[[model]]
+id = "llama3.2:1b"
+name = "Llama 3.2 1B"
+size_mb = 1260
+ram_gb = 3
+kind = "chat"
+good = true
+description = "Small general chat model. Runs on almost any laptop."
+
+[[model]]
+id = "llama3.2:3b"
+name = "Llama 3.2 3B"
+size_mb = 1926
+ram_gb = 4
+kind = "chat"
+good = true
+description = "Better answers, still fast on a CPU."
+
+[[model]]
+id = "gemma3:4b"
+name = "Gemma 3 4B"
+size_mb = 3184
+ram_gb = 6
+kind = "chat"
+description = "Google's compact model, good all-rounder."
+
+[[model]]
+id = "qwen3:4b"
+name = "Qwen 3 4B"
+size_mb = 2382
+ram_gb = 5
+kind = "chat"
+description = "Strong reasoning for its size."
+
+[[model]]
+id = "qwen2.5-coder:1.5b"
+name = "Qwen2.5 Coder 1.5B"
+size_mb = 940
+ram_gb = 2
+kind = "coder"
+good = true
+description = "Small code assistant for completion and quick questions."
+
+[[model]]
+id = "qwen2.5-coder:7b"
+name = "Qwen2.5 Coder 7B"
+size_mb = 4466
+ram_gb = 8
+kind = "coder"
+description = "Capable local coding model (use with OpenCode, Aider, Goose)."
+
+[[model]]
+id = "deepseek-r1:7b"
+name = "DeepSeek R1 7B"
+size_mb = 4466
+ram_gb = 8
+kind = "reasoning"
+description = "Step-by-step reasoning model."
+
+[[model]]
+id = "nomic-embed-text:latest"
+name = "Nomic Embed Text"
+size_mb = 262
+ram_gb = 1
+kind = "embedding"
+description = "Text embeddings for search and RAG."

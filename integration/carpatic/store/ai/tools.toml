@@ -1,0 +1,123 @@
+# AI tool recipes. kind: github-tarball | native-script | npm | uv | apk-service | apk | container | compat
+# Installs go to ~/.local (no root) except apk packages. 'post' is shown after install. No API keys are ever stored.
+[[tool]]
+id = "claude-code"
+name = "Claude Code"
+kind = "native-script"
+url = "https://claude.ai/install.sh"
+apk = ["bash", "curl", "libgcc", "libstdc++", "ripgrep"]
+bin = "claude"
+version_cmd = "claude --version"
+size_mb = 235
+license = "proprietary (Anthropic terms)"
+env = { USE_BUILTIN_RIPGREP = "0" }
+post = "Run 'claude' and sign in with your Claude account, or export ANTHROPIC_API_KEY in your shell. Carpatic never stores keys."
+
+[[tool]]
+id = "codex"
+name = "OpenAI Codex CLI"
+kind = "github-tarball"
+repo = "openai/codex"
+asset = "codex-x86_64-unknown-linux-musl.tar.gz"
+member = "codex-x86_64-unknown-linux-musl"
+bin = "codex"
+version_cmd = "codex --version"
+size_mb = 292
+license = "Apache-2.0"
+post = "Run 'codex' and sign in with ChatGPT, or export OPENAI_API_KEY in your shell."
+
+[[tool]]
+id = "opencode"
+name = "OpenCode"
+kind = "github-tarball"
+repo = "sst/opencode"
+asset = "opencode-linux-x64-musl.tar.gz"
+member = "opencode"
+bin = "opencode"
+version_cmd = "opencode --version"
+size_mb = 196
+license = "MIT"
+post = "Run 'opencode auth login' to add a provider, or point it at your local Ollama (http://127.0.0.1:11434/v1)."
+
+[[tool]]
+id = "goose"
+name = "Goose"
+kind = "github-tarball"
+repo = "block/goose"
+asset = "goose-x86_64-unknown-linux-musl.tar.gz"
+member = "goose"
+bin = "goose"
+version_cmd = "goose --version"
+size_mb = 149
+license = "Apache-2.0"
+post = "Run 'goose configure' to pick a provider (Ollama works with no key)."
+
+[[tool]]
+id = "gemini-cli"
+name = "Gemini CLI"
+kind = "npm"
+package = "@google/gemini-cli"
+apk = ["nodejs", "npm"]
+bin = "gemini"
+version_cmd = "gemini --version"
+size_mb = 100
+license = "Apache-2.0"
+post = "Run 'gemini' and sign in with Google, or export GEMINI_API_KEY in your shell."
+
+[[tool]]
+id = "aider"
+name = "Aider"
+kind = "uv"
+package = "aider-chat"
+python = "3.12"
+apk = ["uv"]
+bin = "aider"
+version_cmd = "aider --version"
+size_mb = 660
+license = "Apache-2.0"
+post = "Export OPENAI_API_KEY or ANTHROPIC_API_KEY, or use Ollama: OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/qwen2.5-coder:7b"
+
+[[tool]]
+id = "ollama"
+name = "Ollama"
+kind = "apk-service"
+apk = ["ollama"]
+service = "ollama"
+bin = "ollama"
+size_mb = 43
+license = "MIT"
+post = "The Ollama service is running on 127.0.0.1:11434 (CPU). Get a model: carpatic-ai models pull llama3.2:1b"
+
+[[tool]]
+id = "llama-cpp"
+name = "llama.cpp"
+kind = "apk"
+apk = ["llama.cpp", "llama.cpp-vulkan", "llama-server", "vulkan-loader", "vulkan-tools"]
+bin = "llama-server"
+version_cmd = "llama-server --version"
+size_mb = 80
+license = "MIT"
+post = "Serve any GGUF file with: carpatic-ai llama serve ~/models/model.gguf   (GPU through Vulkan when available)"
+
+[[tool]]
+id = "open-webui"
+name = "Open WebUI"
+kind = "container"
+image = "ghcr.io/open-webui/open-webui:main-slim"
+container = "open-webui"
+port = 3000
+apk = ["podman", "crun", "fuse-overlayfs", "slirp4netns", "netavark", "aardvark-dns", "passt", "shadow-uidmap"]
+size_mb = 578
+license = "Open WebUI License (BSD-3 style with branding clause)"
+post = "Start it with: carpatic-ai webui start   then open http://127.0.0.1:3000 and create the first (admin) account. It talks to Ollama on this computer."
+
+[[tool]]
+id = "compat-container"
+name = "Compatibility container"
+kind = "compat"   # delegated to carpatic-compat (compat/), which owns the Ubuntu 24.04 box named carpatic-compat
+image = "docker.io/library/ubuntu:24.04"
+container = "carpatic-compat"
+apk = []
+size_mb = 400
+license = "mixed (Ubuntu)"
+post = "A glibc Ubuntu box for software that cannot run on musl (CUDA, ROCm, LM Studio...). Use: carpatic-ai compat enter"

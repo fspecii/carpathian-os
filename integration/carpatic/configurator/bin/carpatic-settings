@@ -1,0 +1,10 @@
+#!/bin/sh
+# carpatic-settings [page]  (Super+F2): launcher of the system Settings app (settings/ in the repo, /usr/local/lib/carpatic-settings once installed).
+# Deep links: wifi bluetooth network sound notifications appearance accessibility desktop wallpaper displays battery lock keyboard mouse trackpad
+# printers users language datetime privacy updates apps storage about general (old names style colours fonts icons cursors touchpad display startup widgets also work).
+# Falls back to the old Appearance-only window (carpatic-settings-legacy) when the new app is not installed.
+here=$(dirname "$(readlink -f "$0")")
+for d in /usr/local/lib/carpatic-settings /usr/lib/carpatic-settings "$here/../../settings/bin"; do
+  if [ -f "$d/carpatic-settings" ] && { [ -d "$d/cset" ] || [ -d "$d/../lib/cset" ]; }; then exec python3 "$d/carpatic-settings" "$@"; fi
+done
+exec python3 "$here/carpatic-settings-legacy" "$@"

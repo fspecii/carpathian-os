@@ -1,0 +1,14 @@
+[package]
+name = "carpatic-wm"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Native Rust tiling and floating X11 window manager for Alpine"
+license = "MIT"
+
+[dependencies]
+x11rb = { version = "=0.13.2", features = ["xtest", "randr", "shape", "xinerama", "res"] }
+toml = "=0.8.23"
+fontdue = "=0.9.3"
+tiny-skia = "=0.11.4"
+libc = "=0.2.190"

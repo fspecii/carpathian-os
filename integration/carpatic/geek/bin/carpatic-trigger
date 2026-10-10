@@ -1,0 +1,191 @@
+#!/bin/sh
+# carpatic-trigger: capture, pick, share. Idea from Omarchy's Trigger menu (MIT, see NOTICE), rebuilt for X11.
+#
+#   carpatic trigger screenshot [region|full|window|annotate]
+#   carpatic trigger record start [region|full] [--audio] | stop | toggle | status
+#   carpatic trigger colorpicker                 click any pixel: its #rrggbb goes to the clipboard
+#   carpatic trigger clipboard [clear]           history picker (carpatic-clipd keeps it in memory only)
+#   carpatic trigger share clipboard|file [PATH]   one download link on this network, the link goes to your clipboard
+#   carpatic trigger nightlight toggle|on|off|available
+#   carpatic trigger idle toggle|on|off|status   lock the screen when idle
+# Exit codes: 0 done, 1 failed or cancelled, 2 not understood, 3 a needed program or the desktop is missing.
+set -u
+HERE=$(cd "$(dirname "$0")" && pwd); PATH="$HERE:$PATH"
+LIB=$HERE/../lib; [ -f "$LIB/pixel.py" ] || LIB=/usr/local/lib/carpatic-geek
+CUR=${CARPATIC_STATE:-$HOME/.local/state/carpatic}/current
+RT=${XDG_RUNTIME_DIR:-/tmp}
+err() { printf 'carpatic trigger: %s\n' "$*" >&2; }
+need() { command -v "$1" >/dev/null 2>&1 || { err "this needs '$1', which is not installed. Install it with: carpatic install app ${2:-$1}   (or: doas apk add ${2:-$1})"; exit 3; }; }
+desktop() { [ -n "${DISPLAY:-}" ] || { err "this works on the desktop. Start it from the desktop or a terminal inside it."; exit 3; }; }
+note() { command -v notify-send >/dev/null 2>&1 && notify-send -a carpatic-osd -u low -t 4000 ${3:+-i "$3"} "$1" "${2:-}" 2>/dev/null; true; }
+hook() { command -v carpatic-hook >/dev/null 2>&1 && carpatic-hook run "$@" >/dev/null 2>&1; true; }
+rofi_menu() { theme=$CUR/rofi/menu.rasi; [ -f "$theme" ] || theme=
+  rofi -dmenu -i -no-custom -format i -p "$1" ${2:+-mesg "$2"} ${theme:+-theme "$theme"} -theme-str 'configuration { show-icons: false; }'; }
+drop() { [ -n "${1:-}" ] && rm -f -- "${1:?}"; }
+
+shot_dir=${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots
+rec_dir=${XDG_VIDEOS_DIR:-$HOME/Videos}/Recordings
+pidf=$RT/carpatic-record.pid; recf=$RT/carpatic-record.file
+
+do_screenshot() {
+  mode=${1:-region}
+  case $mode in
+    region|full|window)
+      desktop; need carpatic-screenshot
+      f=$(carpatic-screenshot "$mode" | tail -1)
+      [ -n "$f" ] && [ -f "$f" ] && { hook screenshot "$f"; echo "$f"; exit 0; }
+      exit 1 ;;
+    annotate)
+      desktop; need maim; mkdir -p "$shot_dir"
+      tmp=$(mktemp "$RT/carpatic-shot.XXXXXX")
+      maim -u -s -b 2 -f png "$tmp" || { drop "$tmp"; exit 1; }
+      out=$shot_dir/Screenshot-$(date +%Y%m%d-%H%M%S).png
+      if command -v satty >/dev/null 2>&1; then
+        satty --filename "$tmp" --output-filename "$out" --early-exit --copy-command 'xclip -selection clipboard -t image/png' --actions-on-escape exit >/dev/null 2>&1
+      elif command -v flameshot >/dev/null 2>&1; then
+        cp "$tmp" "$out"; flameshot gui >/dev/null 2>&1
+      else
+        drop "$tmp"; err "drawing on a screenshot needs an annotation tool. Install one: carpatic install app satty"; exit 3
+      fi
+      drop "$tmp"
+      [ -s "$out" ] || exit 1
+      note "Screenshot saved" "Pictures/Screenshots" "$out"; hook screenshot "$out"; echo "$out" ;;
+    *) err "screenshot modes: region, full, window, annotate"; exit 2 ;;
+  esac
+}
+
+recording() { [ -f "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; }
+record_stop() {
+  recording || { err "nothing is being recorded."; exit 1; }
+  # ffmpeg finishes the file when it gets Ctrl+C (SIGINT); if it does not react in 3 seconds ask again politely (SIGTERM), then give up
+  pid=$(cat "$pidf"); kill -INT "$pid" 2>/dev/null
+  i=0; while kill -0 "$pid" 2>/dev/null && [ $i -lt 15 ]; do sleep 0.2; i=$((i+1)); done
+  kill -0 "$pid" 2>/dev/null && { kill -TERM "$pid" 2>/dev/null; i=0; while kill -0 "$pid" 2>/dev/null && [ $i -lt 35 ]; do sleep 0.2; i=$((i+1)); done; }
+  kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null
+  f=$(cat "$recf" 2>/dev/null); drop "$pidf"; drop "$recf"
+  if [ -s "$f" ]; then note "Recording saved" "$(basename "$f") in Videos/Recordings"; hook recording-stop "$f"; echo "$f"; exit 0; fi
+  err "the recording is empty. Check that ffmpeg can use x11grab and libx264."; exit 1
+}
+record_start() {
+  desktop; need ffmpeg; recording && { err "already recording. Stop it first: carpatic trigger record stop"; exit 1; }
+  area=full; audio=0
+  for a in "$@"; do case $a in region) area=region ;; full) area=full ;; --audio) audio=1 ;; *) err "record start [region|full] [--audio]"; exit 2 ;; esac; done
+  mkdir -p "$rec_dir"; f=$rec_dir/Recording-$(date +%Y%m%d-%H%M%S).mp4
+  geom=$(xdotool getdisplaygeometry | tr ' ' x); off=0,0
+  if [ "$area" = region ]; then
+    need slop
+    sel=$(slop -f '%x %y %w %h') || exit 1
+    set -- $sel; off=$1,$2; w=$(( $3 / 2 * 2 )); h=$(( $4 / 2 * 2 )); geom=${w}x${h}
+    [ "$w" -ge 16 ] && [ "$h" -ge 16 ] || { err "that area is too small to record."; exit 1; }
+  else
+    w=${geom%x*}; h=${geom#*x}; geom=$(( w / 2 * 2 ))x$(( h / 2 * 2 ))
+  fi
+  aud=; [ $audio = 1 ] && aud="-f pulse -i default"
+  # shellcheck disable=SC2086
+  setsid ffmpeg -y -loglevel error -f x11grab -framerate 30 -video_size "$geom" -i "${DISPLAY}+${off}" $aud \
+    -c:v libx264 -preset ultrafast -crf 23 -pix_fmt yuv420p ${aud:+-c:a aac} "$f" >"$RT/carpatic-record.log" 2>&1 &
+  echo $! > "$pidf"; echo "$f" > "$recf"
+  sleep 1
+  recording || { err "ffmpeg did not start: $(tail -2 "$RT/carpatic-record.log" | tr '\n' ' ')"; drop "$pidf"; drop "$recf"; exit 1; }
+  note "Recording" "Stop: Super+Alt+Space, Trigger, Screen recording, Stop"; echo "recording to $f"
+}
+do_record() {
+  case ${1:-toggle} in
+    status) if recording; then echo "recording to $(cat "$recf" 2>/dev/null)"; exit 0; fi; echo "not recording"; exit 1 ;;
+    toggle) if recording; then record_stop; else record_start; fi ;;
+    stop) record_stop ;;
+    start) shift; record_start "$@" ;;
+    *) err "record start|stop|toggle|status"; exit 2 ;;
+  esac
+}
+
+do_colorpicker() {
+  desktop; need slop; need maim; need xclip; need python3
+  # slop waits for one click; the pointer stays where you clicked, so read the position afterwards
+  slop -n -f '%i' >/dev/null 2>&1 || exit 1
+  eval "$(xdotool getmouselocation --shell)"
+  set -- "$X" "$Y"
+  tmp=$(mktemp "$RT/carpatic-pick.XXXXXX"); maim -u -f png -g "1x1+$1+$2" "$tmp" || { drop "$tmp"; exit 1; }
+  hex=$(python3 "$LIB/pixel.py" hex "$tmp"); drop "$tmp"
+  [ -n "$hex" ] || { err "could not read that pixel."; exit 1; }
+  printf '%s' "$hex" | xclip -selection clipboard >/dev/null 2>&1
+  sw=$RT/carpatic-swatch.png; python3 "$LIB/pixel.py" swatch "$hex" "$sw"
+  note "$hex" "Copied to the clipboard" "$sw"; echo "$hex"
+}
+
+do_clipboard() {
+  desktop; need rofi; need xclip
+  command -v carpatic-clipd >/dev/null 2>&1 || { err "the clipboard history tool is missing."; exit 3; }
+  pgrep -f "carpatic-clipd" >/dev/null 2>&1 || { (carpatic-clipd >/dev/null 2>&1 &); sleep 0.5; }
+  rows=$(carpatic-clipd list)
+  [ -n "$rows" ] || { note "Clipboard history is empty" "Copy something first."; exit 0; }
+  i=$(printf '%s\n' "$rows" | cut -f2- | rofi_menu "Clipboard" "Enter copies it again. Esc closes.") || exit 0
+  [ -n "$i" ] && carpatic-clipd paste $((i + 1))
+  exit 0
+}
+
+do_share() {
+  need python3
+  what=${1:-clipboard}
+  case $what in
+    clipboard)
+      desktop; need xclip; f=$RT/carpatic-clipboard-share.txt
+      xclip -selection clipboard -o > "$f" 2>/dev/null; [ -s "$f" ] || { err "the clipboard is empty."; exit 1; } ;;
+    file)
+      f=${2:-}
+      if [ -z "$f" ]; then
+        desktop; need rofi
+        list=$(find "$HOME/Downloads" "$HOME/Documents" "$HOME/Pictures" "$HOME/Desktop" "$HOME/Videos" -maxdepth 3 -type f -mtime -30 2>/dev/null | head -200)
+        [ -n "$list" ] || { err "I found no recent files. Give one: carpatic trigger share file ~/path/to/file"; exit 1; }
+        i=$(printf '%s\n' "$list" | sed "s|^$HOME/|~/|" | rofi_menu "Share" "Recent files. The other person must be on the same network.") || exit 0
+        f=$(printf '%s\n' "$list" | sed -n "$((i + 1))p")
+      fi ;;
+    *) err "share clipboard | share file [PATH]"; exit 2 ;;
+  esac
+  [ -f "$f" ] || { err "I cannot find $f"; exit 1; }
+  ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -1); [ -n "$ip" ] || ip=127.0.0.1
+  uf=$RT/carpatic-share.url; drop "$uf"
+  python3 "$LIB/serve_once.py" "$f" "$ip" "$uf" &
+  spid=$!
+  n=0; while [ ! -s "$uf" ] && [ $n -lt 25 ]; do sleep 0.2; n=$((n+1)); done
+  url=$(cat "$uf" 2>/dev/null); [ -n "$url" ] || { err "could not start the share."; exit 1; }
+  if [ -n "${DISPLAY:-}" ] && command -v xclip >/dev/null 2>&1; then printf '%s' "$url" | xclip -selection clipboard >/dev/null 2>&1; fi
+  note "Link ready" "$url (works once, on this network, for 15 minutes)"
+  echo "$url"
+  echo "Works once, on this network, for 15 minutes. Press Ctrl+C to stop sooner."
+  wait "$spid" 2>/dev/null
+}
+
+do_idle() {
+  command -v carpatic-idle >/dev/null 2>&1 || { err "the idle lock tool is not installed."; exit 3; }
+  case ${1:-toggle} in
+    status) pgrep -x xautolock >/dev/null 2>&1 && echo "Lock when idle: on" || echo "Lock when idle: off" ;;
+    on) carpatic-idle start >/dev/null 2>&1 & note "Lock when idle is on" ;;
+    off) carpatic-idle stop; note "Lock when idle is off" ;;
+    toggle) if pgrep -x xautolock >/dev/null 2>&1; then do_idle off; else do_idle on; fi ;;
+    *) err "idle on|off|toggle|status"; exit 2 ;;
+  esac
+}
+
+nl_available() { command -v redshift >/dev/null 2>&1; }
+do_nightlight() {
+  case ${1:-toggle} in
+    available) nl_available; exit $? ;;
+    on) nl_available || { err "night light needs redshift. Install it: doas apk add redshift"; exit 3; }; redshift -P -O 4000 >/dev/null 2>&1; : > "$RT/carpatic-nightlight"; note "Night light on" ;;
+    off) nl_available && redshift -x >/dev/null 2>&1; drop "$RT/carpatic-nightlight"; note "Night light off" ;;
+    toggle) if [ -f "$RT/carpatic-nightlight" ]; then do_nightlight off; else do_nightlight on; fi ;;
+    *) err "nightlight on|off|toggle|available"; exit 2 ;;
+  esac
+}
+
+case ${1:-help} in
+  screenshot) shift; do_screenshot "$@" ;;
+  record) shift; do_record "$@" ;;
+  colorpicker|color|colourpicker) do_colorpicker ;;
+  clipboard) shift; case ${1:-} in clear) carpatic-clipd clear; note "Clipboard history cleared" ;; *) do_clipboard ;; esac ;;
+  share) shift; do_share "$@" ;;
+  nightlight) shift; do_nightlight "$@" ;;
+  idle) shift; do_idle "$@" ;;
+  help|-h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) err "I do not know '$1'. Try: screenshot, record, colorpicker, clipboard, share, nightlight, idle."; exit 2 ;;
+esac

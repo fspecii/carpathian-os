@@ -1,0 +1,17 @@
+# Carpatic geek tools: runtime packages (Alpine 3.24). One per line; # comments ok.
+python3
+py3-gobject3
+py3-cairo
+gtk+3.0
+rofi
+xclip
+maim
+slop
+xdotool
+libwebp-tools
+git
+less
+mandoc
+libxfixes
+libx11
+arandr

@@ -1,0 +1,6 @@
+# Switch power profile when the charger is plugged or unplugged, and re-check on battery level changes.
+SUBSYSTEM=="power_supply", ACTION=="change", ATTR{type}=="Mains", RUN+="/usr/bin/carpatic-power auto --async"
+SUBSYSTEM=="power_supply", ACTION=="change", ATTR{type}=="USB", RUN+="/usr/bin/carpatic-power auto --async"
+# Let the 'video' group (and logged-in users via brightnessctl) change screen and keyboard backlight.
+ACTION=="add", SUBSYSTEM=="backlight", RUN+="/bin/chgrp video $sys$devpath/brightness", RUN+="/bin/chmod g+w $sys$devpath/brightness"
+ACTION=="add", SUBSYSTEM=="leds", KERNEL=="*kbd_backlight*", RUN+="/bin/chgrp video $sys$devpath/brightness", RUN+="/bin/chmod g+w $sys$devpath/brightness"

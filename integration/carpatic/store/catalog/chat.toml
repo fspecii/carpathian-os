@@ -1,0 +1,79 @@
+# Carpatic store catalog: Chat
+# Each [[app]]: id (unique), name, description, source (apk|flatpak|ai|compat), pkg (apk package or Flathub app id),
+# icon (icon-theme name), newcomer (good for newcomers), optional: size_mb, note, detail (long text), exec (launch cmd), term (run in a terminal), launch="none" (daemon, no Open button)
+[category]
+id = "chat"
+name = "Chat"
+icon = "internet-chat"
+order = 3
+blurb = "Talk to friends and teams"
+
+[[app]]
+id = "discord"
+name = "Discord"
+pkg = "com.discordapp.Discord"
+source = "flatpak"
+icon = "discord"
+newcomer = true
+size_mb = 243
+description = "Voice, video and text chat for communities and gamers (Flatpak, needs glibc)."
+
+[[app]]
+id = "telegram"
+name = "Telegram"
+pkg = "telegram-desktop"
+source = "apk"
+icon = "telegram"
+newcomer = true
+size_mb = 60
+description = "Fast messenger with groups and channels."
+
+[[app]]
+id = "signal"
+name = "Signal"
+pkg = "org.signal.Signal"
+source = "flatpak"
+icon = "signal-desktop"
+newcomer = false
+size_mb = 155
+description = "Private messenger with end-to-end encryption."
+
+[[app]]
+id = "element"
+name = "Element"
+pkg = "im.riot.Riot"
+source = "flatpak"
+icon = "element"
+newcomer = false
+size_mb = 181
+description = "Matrix chat client."
+
+[[app]]
+id = "slack"
+name = "Slack"
+pkg = "com.slack.Slack"
+source = "flatpak"
+icon = "slack"
+newcomer = false
+size_mb = 6
+description = "Team chat for work."
+
+[[app]]
+id = "zoom"
+name = "Zoom"
+pkg = "us.zoom.Zoom"
+source = "flatpak"
+icon = "zoom"
+newcomer = false
+size_mb = 7
+description = "Video meetings."
+
+[[app]]
+id = "pidgin"
+name = "Pidgin"
+pkg = "pidgin"
+source = "apk"
+icon = "pidgin"
+newcomer = false
+size_mb = 20
+description = "Classic multi-protocol chat client."

@@ -1,0 +1,40 @@
+#!/bin/sh
+# carpatic-security: the few security switches Settings offers (run as root; Settings calls it through pkexec/doas).
+#   carpatic-security remote-login on|off|status   ssh server + the firewall rule for port 22 (both, or neither)
+#   carpatic-security auto-updates on|off|status    install updates by itself once a day (off by default; see docs/SECURITY.md)
+# License: MIT. POSIX sh.
+set -u
+PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin"; export PATH
+NFT=${CARPATIC_NFT:-/etc/nftables.nft}; MARK='# carpatic-ssh'
+AUTO=${CARPATIC_AUTO_FLAG:-/etc/carpatic/auto-updates}
+die() { printf 'carpatic-security: %s\n' "$*" >&2; exit 1; }
+[ "$(id -u)" = 0 ] || [ "${2:-}" = status ] || die "this needs administrator rights. Use: doas carpatic-security $*"
+
+reload_fw() { [ -f "$NFT" ] && nft -c -f "$NFT" 2>/dev/null && rc-service nftables status >/dev/null 2>&1 && nft -f "$NFT" 2>/dev/null; return 0; }
+
+remote_on() {
+  command -v sshd >/dev/null 2>&1 || die "the SSH server (openssh) is not installed."
+  if [ -f "$NFT" ] && ! grep -q "$MARK" "$NFT"; then
+    sed -i "/ct state invalid drop/a\\    tcp dport 22 accept $MARK" "$NFT" || die "could not open port 22 in the firewall"
+  fi
+  reload_fw
+  rc-update add sshd default >/dev/null 2>&1; rc-service sshd start >/dev/null 2>&1 || rc-service sshd restart >/dev/null 2>&1 || die "the SSH server did not start."
+  echo "Remote login is on. Use a strong password or, better, a key."
+}
+remote_off() {
+  rc-service sshd stop >/dev/null 2>&1; rc-update del sshd default >/dev/null 2>&1
+  [ -f "$NFT" ] && sed -i -e "/$MARK/d" -e '/^ *tcp dport \(22\|{ *22 *}\) accept *$/d' "$NFT"
+  reload_fw
+  echo "Remote login is off."
+}
+remote_status() { if rc-update show default 2>/dev/null | grep -q '^ *sshd '; then echo on; else echo off; fi; }
+
+case "${1:-}:${2:-}" in
+  remote-login:on) remote_on;;
+  remote-login:off) remote_off;;
+  remote-login:status) remote_status;;
+  auto-updates:on) mkdir -p /etc/carpatic; : > "$AUTO"; echo "Updates will be installed automatically once a day (a restore point is saved first; restarts are never forced).";;
+  auto-updates:off) rm -f "$AUTO"; echo "Automatic updates are off. You will only be told when updates are ready.";;
+  auto-updates:status) if [ -f "$AUTO" ]; then echo on; else echo off; fi;;
+  *) die "usage: carpatic-security remote-login|auto-updates on|off|status";;
+esac

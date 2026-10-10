@@ -1,0 +1,29 @@
+#!/bin/sh
+# carpatic-theme list|current|set <name> [--accent #rrggbb|default] [--wallpaper FILE|default] [--no-apply]
+# One shared palette (themes/<name>/colors.toml) regenerates terminal, bar, launcher, notifications, dwm colors, GTK, wallpaper.
+. "$(dirname "$0")/carpatic-lib" 2>/dev/null || . carpatic-lib
+cmd=${1:-current}; [ $# -gt 0 ] && shift
+case $cmd in
+  list) for t in $(list_themes); do printf '%-16s %s\n' "$t" "$(theme_mode "$t")"; done ;;
+  current) say "$(get_setting THEME carpatic)" ;;
+  set)
+    name=${1:?usage: carpatic-theme set <name>}; shift
+    [ -f "$(theme_dir "$name")/colors.toml" ] || die "unknown theme '$name' (try: carpatic-theme list)"
+    noapply=0
+    while [ $# -gt 0 ]; do
+      case $1 in
+        --accent) v=$2; [ "$v" = default ] && v=""; case $v in ""|\#[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]) ;; *) die "accent must be #rrggbb";; esac; set_setting ACCENT "$v"; shift 2 ;;
+        --wallpaper) v=$2; [ "$v" = default ] && v=""; set_setting WALLPAPER "$v"; shift 2 ;;
+        --no-apply) noapply=1; shift ;;
+        *) die "unknown option $1" ;;
+      esac
+    done
+    set_setting THEME "$name"
+    [ "$noapply" = 1 ] || exec carpatic-apply --live ;;
+  apply) # re-apply the current theme: carpatic-theme apply [--only CATS] [--skip CATS] (desktop terminal editors browser qt cli)
+    exec carpatic-apply "$@" ;;
+  also) # which app groups follow the theme: carpatic-theme also [terminal editors browser qt cli | none]
+    if [ $# -gt 0 ]; then v="$*"; [ "$v" = none ] && v="-"; set_setting ALSO "$v"; exec carpatic-apply; fi
+    say "$(get_setting ALSO "terminal editors browser qt cli")" ;;
+  *) die "usage: carpatic-theme list|current|apply|also|set <name> [--accent #rrggbb] [--wallpaper file]" ;;
+esac

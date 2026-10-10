@@ -1,0 +1,19 @@
+#!/sbin/openrc-run
+# Carpatic power: boot-time profile, resume_offset self-check, battery watcher (low/critical actions).
+name="carpatic-power"
+description="Carpatic power management"
+supervisor="supervise-daemon"
+command="/usr/bin/carpatic-power"
+command_args="monitor"
+respawn_delay=5
+respawn_max=0
+
+depend() {
+	need localmount
+	use elogind acpid dbus tlp
+	after elogind tlp
+}
+
+start_pre() {
+	/usr/bin/carpatic-power boot
+}

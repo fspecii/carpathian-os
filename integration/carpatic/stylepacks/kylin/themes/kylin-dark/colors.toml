@@ -1,0 +1,32 @@
+# Kylin Dark. Tokens from the UKUI 4 design spec (LinPad themes/kylin/DESIGN-SPEC.md section 1, dark column).
+mode = "dark"
+
+accent = "#3790fa"
+selection = "#2c4a74"
+muted = "#8a8a8a"
+
+background = "#2e2e2e"
+dark_background = "#1e1e1e"
+darker_background = "#181818"
+lighter_background = "#3c3c3c"
+
+foreground = "#e6e6e6"
+dark_foreground = "#a0a0a0"
+light_foreground = "#c8c8c8"
+bright_foreground = "#ffffff"
+
+red = "#f04943"
+green = "#14a621"
+yellow = "#f2b527"
+blue = "#3676f5"
+magenta = "#b070f0"
+cyan = "#06c0c7"
+orange = "#fa7d0f"
+brown = "#c4a074"
+
+bright_red = "#f66f6a"
+bright_green = "#3cc04a"
+bright_yellow = "#f6c85a"
+bright_blue = "#68aafc"
+bright_magenta = "#c690f6"
+bright_cyan = "#4cd4d9"

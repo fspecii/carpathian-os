@@ -1,0 +1,14 @@
+#!/bin/sh
+# carpatic-idle start|stop|lock-now : idle lock + screen blanking for the session.
+# Lock after 10 min idle (20 s warning), screen off 5 min later. Locking before sleep is done by the elogind hook / carpatic-power.
+M=${CARPATIC_IDLE_MIN:-10}
+case ${1:-start} in
+  start)
+    xset s off; xset dpms 0 0 $(( (M + 5) * 60 ))
+    pgrep -x xautolock >/dev/null && exit 0
+    command -v xautolock >/dev/null || exit 0
+    exec xautolock -detectsleep -time "$M" -locker carpatic-lock -notify 20 \
+      -notifier "notify-send -a carpatic-osd -u low -t 8000 -i system-lock-screen 'Locking soon' 'Move the mouse to stay unlocked'" ;;
+  stop) pkill -x xautolock ;;
+  lock-now) xautolock -locknow 2>/dev/null || carpatic-lock ;;
+esac

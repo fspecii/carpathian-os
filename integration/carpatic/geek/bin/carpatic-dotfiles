@@ -1,0 +1,103 @@
+#!/bin/sh
+# carpatic-dotfiles: keep your Carpatic settings in your own git repository. Idea from Omarchy's dotfiles chapter (MIT, see NOTICE).
+#
+#   carpatic-dotfiles init [REPO-ADDRESS]   start a repository in ~/.config/carpatic (settings, hooks, themes, web apps, menu additions)
+#   carpatic-dotfiles status                what changed since the last sync
+#   carpatic-dotfiles sync                  commit what changed and push it (asks nothing, refuses when it finds a secret)
+#   carpatic-dotfiles pull [REPO-ADDRESS]   fetch your settings on a new computer (or update this one) and apply them
+#   carpatic-dotfiles remote [REPO-ADDRESS] show or set where it is pushed
+# Machine-made files (caches, generated configs, the Welcome flag) are never included. Nothing is pushed unless you set a remote.
+set -u
+CFG=${CARPATIC_CONFIG:-$HOME/.config/carpatic}
+err() { printf 'carpatic dotfiles: %s\n' "$*" >&2; }
+command -v git >/dev/null 2>&1 || { err "this needs git. Install it with: carpatic install dev tools   (or: doas apk add git)"; exit 3; }
+G() { git -C "$CFG" "$@"; }
+hook() { command -v carpatic-hook >/dev/null 2>&1 && carpatic-hook run "$@" >/dev/null 2>&1; true; }
+isrepo() { [ -d "$CFG/.git" ]; }
+need_repo() { isrepo || { err "there is no repository yet. Start one with: carpatic dotfiles init [address]"; exit 1; }; }
+ensure_id() { # a commit needs a name and an address; never touch the user's global git config
+  [ -n "$(G config user.name)" ] || G config user.name "$(id -un)@$(hostname 2>/dev/null || echo carpatic)"
+  [ -n "$(G config user.email)" ] || G config user.email "$(id -un)@localhost"
+}
+write_ignore() {
+cat > "$CFG/.gitignore" <<'T'
+# machine-made or machine-specific: rebuilt by carpatic-apply
+appearance.env
+profile.env
+wallpaper
+dwm-deflayout
+dwm-font
+term-font
+welcome-done
+logins
+tour-seen
+*.log
+*.tmp
+.DS_Store
+T
+}
+# secrets: never commit a private key, token or password by accident
+scan() {
+  hits=$(cd "$CFG" && { git ls-files -m -o --exclude-standard 2>/dev/null; git ls-files 2>/dev/null; } | sort -u | while read -r f; do
+    [ -f "$f" ] || continue
+    case $f in *.jpg|*.jpeg|*.png|*.webp|*.ttf|*.otf) continue ;; esac
+    grep -IlE -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' -e 'ghp_[A-Za-z0-9]{30,}' -e 'github_pat_[A-Za-z0-9_]{30,}' -e 'AKIA[0-9A-Z]{16}' \
+      -e 'sk-[A-Za-z0-9]{32,}' -e 'xox[baprs]-[A-Za-z0-9-]{20,}' -e '(password|passwd|secret|api_key|apikey|token)[[:space:]]*[=:][[:space:]]*["'\'']?[^[:space:]"'\'']{8,}' "$f" 2>/dev/null
+  done)
+  if [ -n "$hits" ]; then
+    err "I found what looks like a secret (password, token or private key) in:"
+    printf '  %s\n' $hits >&2
+    err "Nothing was committed. Take the secret out of those files (or add them to $CFG/.gitignore) and run sync again."
+    return 1
+  fi
+  return 0
+}
+case ${1:-help} in
+  init)
+    mkdir -p "$CFG"
+    if isrepo; then err "the repository already exists in $CFG. Use: carpatic dotfiles sync"; exit 1; fi
+    git -C "$CFG" init -q -b main 2>/dev/null || { git -C "$CFG" init -q && git -C "$CFG" symbolic-ref HEAD refs/heads/main; }
+    write_ignore; ensure_id
+    [ -n "${2:-}" ] && G remote add origin "$2"
+    scan || exit 1
+    G add -A && G commit -q -m "Carpatic settings: first commit" && echo "Started a repository in $CFG with your current settings."
+    [ -n "${2:-}" ] && echo "Push it with: carpatic dotfiles sync" || echo "Set where to push with: carpatic dotfiles remote git@github.com:you/dotfiles.git" ;;
+  status)
+    need_repo
+    s=$(G status --short)
+    if [ -z "$s" ]; then echo "Nothing changed since the last sync."; else echo "Changed since the last sync:"; printf '%s\n' "$s" | sed 's/^/  /'; fi
+    r=$(G remote get-url origin 2>/dev/null) && echo "Pushes to: $r" || echo "No remote set. Nothing leaves this computer."
+    ;;
+  sync)
+    need_repo; ensure_id; scan || exit 1
+    G add -A
+    if [ -n "$(G status --porcelain)" ]; then G commit -q -m "Carpatic settings $(date '+%Y-%m-%d %H:%M') on $(hostname 2>/dev/null || echo this computer)" && echo "Saved your changes."; else echo "Nothing changed."; fi
+    if G remote get-url origin >/dev/null 2>&1; then
+      G fetch -q origin 2>/dev/null && G rebase -q origin/main 2>/dev/null
+      if out=$(G push -q -u origin main 2>&1); then echo "Pushed to $(G remote get-url origin)."; hook dotfiles-sync
+      else printf '%s\n' "$out" | sed 's/^/  /' >&2; err "I could not push. Check the address and that you are signed in to the host (SSH key or token). Your commit is safe here."; exit 1; fi
+    else echo "No remote set, so nothing was pushed. Set one with: carpatic dotfiles remote ADDRESS"; fi ;;
+  remote)
+    need_repo
+    if [ -n "${2:-}" ]; then G remote remove origin 2>/dev/null; G remote add origin "$2" && echo "Remote set to $2"; else G remote get-url origin 2>/dev/null || echo "No remote set."; fi ;;
+  pull)
+    addr=${2:-}
+    if ! isrepo; then
+      [ -n "$addr" ] || { err "give the address of your repository: carpatic dotfiles pull git@github.com:you/dotfiles.git"; exit 2; }
+      tmp=$(mktemp -d "${TMPDIR:-/tmp}/carpatic-dots.XXXXXX") || exit 1
+      git clone -q -b main "$addr" "$tmp/r" >/dev/null 2>&1 || git clone -q "$addr" "$tmp/r" 2>&1 | sed 's/^/  /'
+      git -C "$tmp/r" rev-parse -q --verify HEAD >/dev/null 2>&1 || { err "I could not fetch $addr. Check the address and your access."; exit 1; }
+      if [ -n "$(ls -A "$CFG" 2>/dev/null)" ]; then b="$CFG.before-pull-$(date +%Y%m%d-%H%M%S)"; cp -a "$CFG" "$b" && echo "Your current settings were copied to $b first."; fi
+      mkdir -p "$CFG"; cp -a "$tmp/r/." "$CFG/"
+      case $tmp in "${TMPDIR:-/tmp}"/carpatic-dots.*) rm -rf -- "$tmp" ;; esac
+    else
+      [ -n "$(G status --porcelain)" ] && { err "you have changes that are not saved yet. Run 'carpatic dotfiles sync' first, then pull."; exit 1; }
+      [ -n "$addr" ] && { G remote remove origin 2>/dev/null; G remote add origin "$addr"; }
+      G pull -q --rebase origin main 2>&1 | sed 's/^/  /'
+    fi
+    echo "Applying your settings..."
+    command -v carpatic-apply >/dev/null 2>&1 && CARPATIC_NO_RELOAD="${CARPATIC_NO_RELOAD:-}" carpatic-apply --restart >/dev/null 2>&1 || true
+    echo "Done." ;;
+  help|-h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) err "I do not know '$1'. Try: init, status, sync, pull, remote."; exit 2 ;;
+esac

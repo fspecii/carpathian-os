@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""carpatic-overview : workspace overview (cards with the windows of each workspace; click or press 1-9 to go there, drag a window onto another card to move it).
+Calling it again closes it. Only runs inside a Carpatic session."""
+import os, sys
+HERE = os.path.dirname(os.path.abspath(__file__))
+for p in ("/usr/local/lib/carpatic-panel", os.path.join(HERE, "..", "lib")):
+    if os.path.isdir(p): sys.path.insert(0, p)
+from carpatic_panel import guard
+guard.require_session("carpatic-overview")
+from carpatic_panel import overview
+raise SystemExit(overview.main())

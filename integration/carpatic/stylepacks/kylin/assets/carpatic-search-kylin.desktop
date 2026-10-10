@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Search
+Comment=Search apps, files and commands
+Exec=carpatic-launch
+Icon=/usr/local/share/carpatic/stylepacks/kylin/search.svg
+NoDisplay=true

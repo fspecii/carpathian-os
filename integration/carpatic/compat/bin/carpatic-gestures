@@ -1,0 +1,81 @@
+#!/bin/sh
+# carpatic-gestures: multi-finger touchpad gestures for the Carpatic desktop (X11 has no gesture support of its own).
+# Reads libinput's gesture events (`libinput debug-events`, needs the "input" group, which the desktop user has) and runs actions.
+#
+#   carpatic-gestures start | stop | restart | status
+#   carpatic-gestures run [--dry-run] [--stdin]    run in the foreground; --stdin reads libinput debug-events text from standard input
+#
+# Default actions (3 or 4 fingers), natural direction like a Mac or a phone:
+#   swipe left    next workspace          swipe right   previous workspace
+#   swipe up      workspace overview (carpatic-overview)
+# Override or add in ~/.config/carpatic/gestures.conf, one per line:   swipe-left = xdotool key super+Right
+#   keys: swipe-left swipe-right swipe-up swipe-down (any finger count) or swipe3-left, swipe4-up ... (exact finger count)
+#
+# Started by the session when `carpatic-touchpad set gestures on` (default on in the macOS style). License: MIT. POSIX sh + awk.
+set -u
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}/carpatic"; CONF="$CFG/gestures.conf"
+RT="${XDG_RUNTIME_DIR:-/tmp}"; PIDF="$RT/carpatic-gestures.pid"
+THRESH=${CARPATIC_GESTURE_THRESHOLD:-40}      # libinput units (about 1 cm of travel)
+say() { printf '%s\n' "$*"; }
+
+workspace() { # workspace +1|-1 : move to the next/previous workspace, wrapping around
+  cur=$(xprop -root _NET_CURRENT_DESKTOP 2>/dev/null | sed 's/.*= *//'); n=$(xprop -root _NET_NUMBER_OF_DESKTOPS 2>/dev/null | sed 's/.*= *//')
+  case "$cur$n" in ''|*[!0-9]*) return 0;; esac
+  t=$(( (cur + $1 + n) % n + 1 ))
+  xdotool key --clearmodifiers "super+$t"
+}
+
+action_for() { # action_for <fingers> <direction> -> command line
+  f=$1; d=$2
+  c=$(sed -n "s/^swipe$f-$d[[:space:]]*=[[:space:]]*//p" "$CONF" 2>/dev/null | tail -1)
+  [ -n "$c" ] || c=$(sed -n "s/^swipe-$d[[:space:]]*=[[:space:]]*//p" "$CONF" 2>/dev/null | tail -1)
+  if [ -z "$c" ]; then case "$d" in
+    left) c="carpatic-gestures workspace +1";; right) c="carpatic-gestures workspace -1";;
+    up) c="carpatic-overview";; down) c="";; esac; fi
+  printf '%s' "$c"
+}
+
+# turn libinput's event stream into "fingers direction" lines
+classify() {
+  awk -v T="$THRESH" '
+    /GESTURE_SWIPE_BEGIN/  { dx = 0; dy = 0; f = $NF; next }
+    /GESTURE_SWIPE_UPDATE/ { s = $0; sub(/\(.*$/, "", s); gsub(/\//, " ", s); n = split(s, a, " "); dx += a[n-1]; dy += a[n]; next }
+    /GESTURE_SWIPE_END/    { if ($0 ~ /cancelled/) next
+                             ax = dx < 0 ? -dx : dx; ay = dy < 0 ? -dy : dy
+                             if (ax < T && ay < T) next
+                             if (ax >= ay) d = (dx < 0) ? "left" : "right"; else d = (dy < 0) ? "up" : "down"
+                             print f, d; fflush() }'
+}
+
+dispatch() { # dispatch [--dry-run]: read "fingers direction" lines
+  while read -r f d; do
+    case "$f" in 3|4) :;; *) continue;; esac
+    c=$(action_for "$f" "$d"); [ -n "$c" ] || continue
+    if [ "${1:-}" = --dry-run ]; then say "swipe $f $d -> $c"; else sh -c "$c" >/dev/null 2>&1 & fi
+  done
+}
+
+run() {
+  dry=""; src=""
+  for a in "$@"; do case "$a" in --dry-run) dry=--dry-run;; --stdin) src=stdin;; esac; done
+  if [ "$src" = stdin ]; then classify | dispatch $dry; return; fi
+  command -v libinput >/dev/null 2>&1 || { printf 'carpatic-gestures: libinput-tools is not installed\n' >&2; exit 1; }
+  libinput debug-events 2>/dev/null | classify | dispatch $dry
+}
+
+running() { [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; }
+
+case "${1:-status}" in
+  # The daemon is started as a fresh process (exec), not forked from this shell: a forked ash child keeps the caller's pipes as saved descriptors
+  # (fds 10+), which made `ssh host cmd` and test harnesses wait for the daemon forever. Exec drops them (they are close-on-exec).
+  start) running && exit 0; setsid "$0" _run >/dev/null 2>&1 </dev/null & echo $! > "$PIDF";;
+  _run) run;;
+  stop) running && { kill "$(cat "$PIDF")" 2>/dev/null; pkill -P "$(cat "$PIDF")" 2>/dev/null; pkill -f 'libinput[ -]debug-events' 2>/dev/null; }; rm -f "$PIDF";;
+  restart) "$0" stop; "$0" start;;
+  status) if running; then say "gestures: running"; else say "gestures: stopped"; fi;;
+  run) shift; run "$@";;
+  workspace) workspace "${2:-+1}";;
+  -h|--help|help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//';;
+  *) printf 'carpatic-gestures: unknown command (try: carpatic-gestures help)\n' >&2; exit 1;;
+esac
+exit 0

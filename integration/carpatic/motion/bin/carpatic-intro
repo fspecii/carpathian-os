@@ -1,0 +1,95 @@
+#!/bin/sh
+# carpatic-intro: the short reveal when your desktop starts (mountains rise over your wallpaper, then the desktop opens). At most about 2 seconds, any key skips.
+#   carpatic-intro auto [--wait]        what the session start runs (--wait: return once the first frame covers the screen): plays it only when the settings and this computer allow it
+#   carpatic-intro play                 play it now, whatever the settings say (to show a friend; still skipped when the screen cannot draw it)
+#   carpatic-intro set first-login-only|every-login|off     choose when it plays (default: first-login-only)
+#   carpatic-intro status               the setting, and why it would or would not play right now
+#   carpatic-intro video                print the per-theme intro video that matches your wallpaper (if there is one)
+#   carpatic-intro reset                forget "already played" and "this screen was too slow"
+# It is skipped by itself when: it is turned off, reduced motion is on (Settings > Accessibility, or carpatic.reduced-motion on the boot line), battery saver is on
+# or the battery is under 20 %, it already played in this login (or ever, in first-login-only), or an earlier try showed that this screen cannot draw it smoothly
+# (software rendering in a virtual machine): then it stays off until you run `carpatic-intro reset`.
+# Optional per-theme video, like Omarchy's intros: <theme>/intros/<wallpaper name>.mp4 (mp4 m4v mov webm mkv) is played with mpv/ffplay instead, when one of them is installed.
+# Inspired by Omarchy's theme background intros (MIT, see NOTICE); the animation itself is drawn by Carpatic.
+SELF=$(readlink -f "$0")
+LIB=${CARPATIC_LIB:-$(dirname "$SELF")/../lib}
+[ -r "$LIB/motionconf.sh" ] || LIB=/usr/local/share/carpatic/motion
+# shellcheck source=../lib/motionconf.sh
+. "$LIB/motionconf.sh"
+PLAY=${CARPATIC_INTRO_PLAY:-$(dirname "$SELF")/carpatic-intro-play}   # installed: /usr/local/bin; in the repo: motion/src (make)
+[ -x "$PLAY" ] || PLAY=$(dirname "$SELF")/../src/carpatic-intro-play
+[ -x "$PLAY" ] || PLAY=$(command -v carpatic-intro-play)
+DONE=$STATE_DIR/intro.done; SLOW=$STATE_DIR/intro.slow
+say() { printf '%s\n' "$*"; }
+die() { printf 'carpatic-intro: %s\n' "$*" >&2; exit 1; }
+
+mode() { v=$(m_get INTRO first-login-only); case $v in every-login|off|first-login-only) printf '%s' "$v" ;; *) printf first-login-only ;; esac; }
+battery_low() { # on battery and under 20 %
+  m_on_battery || return 1
+  for p in ${CARPATIC_POWER_SUPPLY:-/sys/class/power_supply}/BAT*; do [ -r "$p/capacity" ] && [ "$(cat "$p/capacity")" -lt 20 ] && return 0; done; return 1
+}
+played_this_login() { command -v xprop >/dev/null 2>&1 && xprop -root _CARPATIC_INTRO 2>/dev/null | grep -q '= "played"'; }
+mark_this_login() { command -v xprop >/dev/null 2>&1 && xprop -root -f _CARPATIC_INTRO 8s -set _CARPATIC_INTRO played 2>/dev/null; }
+skip_reason() { # prints why NOT to play, returns 0 when there is a reason; returns 1 when it should play
+  [ -n "${DISPLAY:-}" ] || { say "no screen"; return 0; }
+  m=$(mode)                                   # the cheap, usual reasons first: most logins stop here without starting a single program
+  [ "$m" = off ] && { say "turned off in Settings"; return 0; }
+  [ "$m" = first-login-only ] && [ -e "$DONE" ] && { say "already played at your first login"; return 0; }
+  [ -x "$PLAY" ] || { say "the animation program is missing"; return 0; }
+  m_reduced && { say "reduced motion is on"; return 0; }
+  m_power_saver && { say "battery saver is on"; return 0; }
+  battery_low && { say "battery is low"; return 0; }
+  [ -e "$SLOW" ] && { say "this screen was too slow for it (carpatic-intro reset to try again)"; return 0; }
+  played_this_login && { say "already played in this login"; return 0; }
+  [ "$(mode)" = first-login-only ] && [ -e "$DONE" ] && { say "already played at your first login"; return 0; }
+  return 1
+}
+# per-theme video: <theme dir>/intros/<wallpaper stem>.<ext>
+theme_video() {
+  m_theme_colors >/dev/null 2>&1
+  t=$(m_get THEME carpatic); wp=$(cat "$CFG_DIR/wallpaper" 2>/dev/null); [ -n "$wp" ] || return 1
+  stem=$(basename "$wp"); stem=${stem%.*}
+  for d in "$CFG_DIR/themes/$t" "$CARPATIC_SHARE/themes/$t" "${CARPATIC_THEME_DIR:-/nonexistent}"; do
+    for e in mp4 m4v mov webm mkv; do [ -f "$d/intros/$stem.$e" ] && { echo "$d/intros/$stem.$e"; return 0; }; done
+  done; return 1
+}
+play_now() {
+  mkdir -p "$STATE_DIR"
+  v=$(theme_video)
+  if [ -n "$v" ] && command -v mpv >/dev/null 2>&1; then
+    mpv --fullscreen --no-osc --no-input-default-bindings --really-quiet --keep-open=no --input-conf=/dev/null "$v" >/dev/null 2>&1 &   # (any key: mpv's default input is off; pointer click or q)
+    wait
+  elif [ -n "$v" ] && command -v ffplay >/dev/null 2>&1; then ffplay -fs -autoexit -loglevel quiet "$v" >/dev/null 2>&1
+  else "$PLAY" "$@"; fi
+}
+case ${1:-status} in
+  auto)
+    skip_reason >/dev/null && exit 0
+    mark_this_login; : > "$DONE"
+    if [ "${2:-}" = --wait ]; then
+      # session start: return as soon as the first (dark) frame is up, so the wallpaper and the bar load UNDER the cover, never before it (max 0.5 s)
+      ready=${XDG_RUNTIME_DIR:-/tmp}/carpatic-intro.ready; rm -f "$ready"
+      CARPATIC_INTRO_T0=$(cut -d' ' -f1 /proc/uptime); export CARPATIC_INTRO_T0
+      play_now --ready-file "$ready" &
+      n=0; while [ ! -e "$ready" ] && [ $n -lt 25 ]; do sleep 0.02; n=$((n + 1)); done      # the native player is up in a few ms; 0.5 s at most
+      exit 0
+    fi
+    play_now ;;
+  play)
+    [ -n "${DISPLAY:-}" ] || die "there is no screen to draw on"
+    [ -x "$PLAY" ] || die "the animation program is missing (carpatic-intro-play)"
+    rm -f "$SLOW"; mark_this_login; : > "$DONE"; shift; play_now "$@" ;;
+  set)
+    case ${2:-} in
+      first-login-only|every-login|off) m_set INTRO "$2"; say "The login animation will play: $2." ;;
+      *) die "choose one of: first-login-only, every-login, off" ;;
+    esac ;;
+  video) theme_video ;;
+  reset) rm -f "$DONE" "$SLOW"; say "Done. The animation may play again at your next login." ;;
+  status)
+    say "setting: $(mode)"
+    r=$(skip_reason); if [ -n "$r" ]; then say "would play now: no ($r)"; else say "would play now: yes"; fi
+    if [ -f "$STATE_DIR/intro.log.json" ]; then say "last run: $(cat "$STATE_DIR/intro.log.json")"; fi ;;
+  -h|--help|help) sed -n '2,13p' "$SELF" | sed 's/^# \{0,1\}//' ;;
+  *) die "unknown command '$1' (try: play, set, status, reset)" ;;
+esac

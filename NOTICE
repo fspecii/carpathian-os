@@ -1,0 +1,22 @@
+Carpathian OS contains original Rust window-manager code, licensed under MIT
+(see LICENSE). Separately attributed third-party components and adapted
+assets retain their existing licenses and notices below.
+The master/stack workflow is inspired by suckless dwm; this repository does not copy its implementation or the modified legacy dwm fork.
+X11 protocol access uses x11rb 0.13.2, licensed under MIT OR Apache-2.0. Dependencies retain their own licenses.
+The earlier Carpatic OS project remains a read-only source reference. The configuration files under config/ are now adapted from its desktop/config directory (the terminal default is changed from st to xterm). Their runtime TOML design comes from dwm-titus; bundled color palettes include Omarchy-derived MIT material. These configuration assets retain the legacy project's credits and licenses. The Rust WM core is separate from the C dwm implementation.
+
+integration/carpatic/ contains adapted desktop helper/configuration sources from
+../carpatic-os (copied 2026-10-09). These are shared with the legacy desktop;
+its C dwm implementation is neither copied nor built. Rust-session adaptations
+change WM process signalling from dwm to carpatic-wm. Upstream file notices and
+licenses remain in the copied sources.
+
+tests/legacy/ contains adapted regression scripts from ../carpatic-os/tests.
+The Rust decoration implementation references the legacy button styles and
+geometry behavior, while retaining its own Rust rendering implementation.
+
+LinPad era theme palettes and procedural wallpaper reference:
+https://github.com/fspecii/LinPad/tree/01246414fe9517d883b9489ba3e9e9f3780f479e/themes/desktop-themes
+Palettes and wallpaper generator: CC0 1.0 as declared by their source files.
+Carpatic profiles and wallpaper-generator adaptations are original integration.
+No vendor logos or proprietary fonts are included.

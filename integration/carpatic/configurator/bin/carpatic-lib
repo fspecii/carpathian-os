@@ -1,0 +1,34 @@
+# shellcheck shell=sh
+# Shared helpers for carpatic-* configurator tools (POSIX sh). Source with: . "$(dirname "$0")/carpatic-lib" or from PATH.
+CARPATIC_SHARE=${CARPATIC_SHARE:-/usr/local/share/carpatic/configurator}
+CFG_DIR=${CARPATIC_CONFIG:-$HOME/.config/carpatic}
+STATE_DIR=${CARPATIC_STATE:-$HOME/.local/state/carpatic}
+CUR=$STATE_DIR/current
+SETTINGS=$CFG_DIR/settings.conf
+mkdir -p "$CFG_DIR" "$CUR"
+
+say() { printf '%s\n' "$*"; }
+die() { printf 'carpatic: %s\n' "$*" >&2; exit 1; }
+
+# settings.conf is KEY=VALUE, written only by this lib (never sourced blindly: values are quoted)
+get_setting() { # key [default]
+  v=$(sed -n "s/^$1=\"\(.*\)\"$/\1/p" "$SETTINGS" 2>/dev/null | tail -1 | sed 's/\\\([\\"$`]\)/\1/g')   # undo set_setting's escaping
+  [ -n "$v" ] && printf '%s' "$v" || printf '%s' "${2:-}"
+}
+set_setting() { # key value
+  tmp=$SETTINGS.$$
+  # settings.conf is SOURCED by carpatic-apply: escape \ " $ ` and drop newlines so a value (a wallpaper file name!) can never become code or a second key
+  v=$(printf '%s' "$2" | tr '\n\r' '  ' | sed 's/[\\"$`]/\\&/g')
+  { grep -v "^$1=" "$SETTINGS" 2>/dev/null; printf '%s="%s"\n' "$1" "$v"; } > "$tmp" && mv "$tmp" "$SETTINGS"
+}
+# Themes live in the system share and, for themes the user imported (carpatic theme import), in ~/.config/carpatic/themes
+theme_dir() { if [ -f "$CFG_DIR/themes/$1/colors.toml" ]; then echo "$CFG_DIR/themes/$1"; else echo "$CARPATIC_SHARE/themes/$1"; fi; }
+list_themes() { { ls "$CARPATIC_SHARE/themes" 2>/dev/null; ls "$CFG_DIR/themes" 2>/dev/null; } | sort -u | while read -r t; do [ -f "$(theme_dir "$t")/colors.toml" ] && echo "$t"; done; }
+list_profiles() { for f in "$CARPATIC_SHARE"/profiles/*.conf; do basename "$f" .conf; done; }
+theme_mode() { sed -n 's/^mode *= *"\(.*\)"/\1/p' "$(theme_dir "$1")/colors.toml" | head -1; }
+profile_get() { # profile key : quoted values may contain # and spaces; unquoted values end at a space or #
+  f=$CARPATIC_SHARE/profiles/$1.conf
+  v=$(sed -n "s/^$2=\"\([^\"]*\)\".*$/\1/p" "$f" | head -1)
+  [ -n "$v" ] || v=$(sed -n "s/^$2=\([^\" #][^ #]*\).*$/\1/p" "$f" | head -1)
+  printf '%s\n' "$v"
+}

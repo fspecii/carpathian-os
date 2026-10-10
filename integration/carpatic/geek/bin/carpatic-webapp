@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""carpatic-webapp: sites as apps, each with its own window, profile and icon.
+
+  carpatic-webapp add NAME URL [--icon FILE|LINK] [--browser PROGRAM] [--offline]
+  carpatic-webapp preset NAME             add a ready-made one (see: presets)
+  carpatic-webapp presets [--plain]       the ready-made web apps
+  carpatic-webapp list [--plain]          your web apps
+  carpatic-webapp launch NAME             open it (or raise its window if it is already open)
+  carpatic-webapp remove NAME [--keep-data]
+  carpatic-webapp gui                     pick from a menu
+With a Chromium-based browser installed the site opens as a plain app window; otherwise Firefox with its own stripped-down profile.
+"""
+import os
+import signal
+import sys
+
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+here = os.path.dirname(os.path.realpath(__file__))
+for d in (os.path.join(here, "..", "lib"), "/usr/local/lib/carpatic-geek"):
+    sys.path.insert(0, d)
+os.environ["PATH"] = here + ":" + os.environ.get("PATH", "")
+import carpatic_apps as A  # noqa: E402
+
+
+def err(m, code=1):
+    print(f"carpatic webapp: {m}", file=sys.stderr)
+    return code
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return 0
+    cmd, rest = argv[0], argv[1:]
+    plain = "--plain" in rest
+    rest = [a for a in rest if a != "--plain"]
+    try:
+        if cmd == "add":
+            icon = browser = None
+            offline = False
+            pos = []
+            it = iter(rest)
+            for a in it:
+                if a == "--icon":
+                    icon = next(it, None)
+                elif a == "--browser":
+                    browser = next(it, None)
+                elif a == "--offline":
+                    offline = True
+                elif a.startswith("--"):
+                    return err(f"I do not know the option {a}. See: carpatic-webapp --help", 2)
+                else:
+                    pos.append(a)
+            if len(pos) != 2:
+                return err("give a name and an address, for example: carpatic webapp add Notion https://www.notion.so", 2)
+            A.webapp_add(pos[0], pos[1], icon, browser, fetch=not offline)
+        elif cmd == "preset":
+            if len(rest) != 1:
+                return err("which one? See: carpatic webapp presets", 2)
+            m = next((p for p in A.presets("webapps") if A.slug(p[0]) == A.slug(rest[0])), None)
+            if not m:
+                return err(f"I do not know a ready-made web app called '{rest[0]}'. See: carpatic webapp presets", 2)
+            A.webapp_add(m[0], m[1])
+        elif cmd == "presets":
+            for p in A.presets("webapps"):
+                print(f"{p[0]}|{p[2]}" if plain else f"{p[0]:<18} {p[2]:<22} {p[1]}")
+        elif cmd == "list":
+            es = A.load_entries("webapp")
+            if not es and not plain:
+                print("No web apps yet. Add one: carpatic webapp add Notion https://www.notion.so")
+            for e in es:
+                print(f"{e['name']}|{e['url']}" if plain else f"{e['name']:<18} {e['url']}")
+        elif cmd == "names":
+            for e in A.load_entries("webapp"):
+                print(e["slug"])
+        elif cmd == "launch":
+            if len(rest) != 1:
+                return err("which one? See: carpatic webapp list", 2)
+            e = A.find_entry("webapp", rest[0])
+            if not e:
+                return err(f"you have no web app called '{rest[0]}'. See: carpatic webapp list")
+            cmdline = A.launch("webapp", e, dry=os.environ.get("CARPATIC_DRY") == "1")
+            if os.environ.get("CARPATIC_DRY") == "1":
+                print(" ".join(cmdline))
+        elif cmd == "remove":
+            if not rest or rest[0].startswith("--"):
+                return err("which one? See: carpatic webapp list", 2)
+            A.remove("webapp", rest[0], keep_data="--keep-data" in rest)
+        elif cmd == "gui":
+            os.execvp("carpatic-menu", ["carpatic-menu", "install.webapp"])
+        else:
+            return err(f"I do not know '{cmd}'. Try: add, preset, presets, list, launch, remove, gui.", 2)
+    except A.Problem as e:
+        return err(str(e))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

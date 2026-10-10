@@ -1,0 +1,496 @@
+#!/usr/bin/env python3
+"""carpatic-startmenu [--skin zen|kylin] [--list-json] : the start menu of the Zen and Kylin style packs.
+
+Original GTK3 code (MIT). The look follows the layouts of the Zorin Menu (search + list left, user / places / power right) and of the UKUI start menu
+(LinPad themes/kylin/DESIGN-SPEC.md section 3: 312 | 396 | 56 columns, 40 px rows, 32 px icons, radius 12, 8 px from the panel) but no upstream code is used.
+Colours come from the active Carpatic theme (settings.conf THEME/ACCENT + colors.toml), so every theme and accent works.
+
+Keyboard: Super (or the start button) opens and closes it, typing searches, Up/Down select, Enter starts, Esc closes, Tab switches Pinned/All/Recent.
+Right-click on an app: pin or unpin. State: ~/.config/carpatic/startmenu-pinned, ~/.local/state/carpatic/startmenu-usage.json.
+"""
+import json, os, re, signal, subprocess, sys, time
+
+sys.path.insert(0, "/usr/local/lib/carpatic"); sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+from carpatic_stylekit import *  # noqa: E402,F401,F403  (HOME, SHARE, CFG, STATE, read_kv, theme_colors, palette, mix, lum)
+
+# ---------------------------------------------------------------- pure data helpers (unit-tested on the host without a display)
+
+CATEGORY_MAP = [  # (display name, desktop-entry categories that put an app there), first match wins
+    ("Internet", {"Network", "WebBrowser", "Email", "Chat", "InstantMessaging", "FileTransfer", "P2P"}),
+    ("Office", {"Office", "WordProcessor", "Spreadsheet", "Presentation"}),
+    ("Media", {"AudioVideo", "Audio", "Video", "Player", "Music", "Recorder"}),
+    ("Graphics", {"Graphics", "Photography", "RasterGraphics", "VectorGraphics", "Viewer"}),
+    ("Games", {"Game"}),
+    ("Development", {"Development", "IDE", "TextEditor"}),
+    ("Settings", {"Settings", "DesktopSettings", "HardwareSettings"}),
+    ("System", {"System", "Monitor", "PackageManager", "Emulator", "FileManager", "TerminalEmulator"}),
+    ("Utilities", {"Utility", "Accessories", "Calculator", "Archiving", "Calendar", "Clock"}),
+]
+
+def category_of(cats):
+    s = {x for x in (cats or "").split(";") if x}
+    for name, keys in CATEGORY_MAP:
+        if s & keys:
+            return name
+    return "Other"
+
+def usage_load(path=None):
+    try:
+        return json.load(open(path or os.path.join(STATE, "startmenu-usage.json")))
+    except (OSError, ValueError):
+        return {}
+
+def usage_bump(app_id, path=None, now=None):
+    path = path or os.path.join(STATE, "startmenu-usage.json")
+    u = usage_load(path)
+    n, _ = u.get(app_id, [0, 0])
+    u[app_id] = [n + 1, int(now or time.time())]
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".%d" % os.getpid()
+    json.dump(u, open(tmp, "w")); os.replace(tmp, path)
+
+def recent_ids(usage, limit=12):
+    return [k for k, v in sorted(usage.items(), key=lambda kv: -kv[1][1])][:limit]
+
+DEFAULT_PINNED = ["thunar", "firefox", "chromium", "org.gnome.Epiphany", "carpatic-store", "carpatic-terminal", "mousepad", "carpatic-settings",
+                  "org.gnome.Calculator", "xfce4-taskmanager", "gimp", "vlc"]
+
+def pinned_load(available, path=None):
+    """pinned desktop ids: the user's file, else the defaults that are installed (max 8)"""
+    path = path or os.path.join(CFG, "startmenu-pinned")
+    try:
+        ids = [l.strip() for l in open(path) if l.strip() and not l.startswith("#")]
+        return [i for i in ids if i in available]
+    except OSError:
+        return [i for i in DEFAULT_PINNED if i in available][:8]
+
+def pinned_save(ids, path=None):
+    path = path or os.path.join(CFG, "startmenu-pinned")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    open(path, "w").write("# pinned apps of the start menu, one desktop id per line\n" + "\n".join(ids) + "\n")
+
+def match(query, name, comment="", keywords=""):
+    """rank 0 = prefix of the name, 1 = word prefix, 2 = substring of name, 3 = comment/keywords, None = no match"""
+    q = query.casefold().strip()
+    if not q:
+        return 0
+    n = name.casefold()
+    if n.startswith(q):
+        return 0
+    if any(w.startswith(q) for w in re.split(r"[\s\-_.]+", n)):
+        return 1
+    if q in n:
+        return 2
+    if q in (comment or "").casefold() or q in (keywords or "").casefold():
+        return 3
+    return None
+
+def build_css(p, skin):
+    r_win = 12 if skin == "kylin" else 15
+    r_row = 4 if skin == "kylin" else 10
+    r_in = 6 if skin == "kylin" else 12
+    return f"""
+window.csm {{ background: {p['surface']}; border: 1px solid {p['line']}; border-radius: {r_win}px; color: {p['fg']}; }}
+.csm * {{ outline-width: 0; }}
+.csm entry {{ background: {p['base']}; color: {p['fg']}; border: 1px solid {p['line']}; border-radius: {r_in}px; min-height: 36px; padding: 0 12px; caret-color: {p['accent']}; }}
+.csm entry:focus {{ border-color: {p['accent']}; box-shadow: none; }}
+.csm list, .csm flowbox, .csm scrolledwindow, .csm viewport {{ background: transparent; }}
+.csm scrolledwindow, .csm scrolledwindow undershoot, .csm scrolledwindow overshoot {{ border: 0; box-shadow: none; background-image: none; }}
+.csm row, .csm flowboxchild {{ border-radius: {r_row}px; padding: 0; margin: 1px 0; background: transparent; }}
+.csm row:hover, .csm flowboxchild:hover {{ background: {p['hover']}; }}
+.csm row:selected, .csm flowboxchild:selected {{ background: {p['tint']}; color: {p['fg']}; }}
+.csm .appname {{ color: {p['fg']}; }}
+.csm .sub, .csm .hdr {{ color: {p['muted']}; font-size: 90%; }}
+.csm .hdr {{ font-weight: bold; padding: 8px 12px 2px 12px; }}
+.csm .tab {{ background: transparent; border: 0; border-radius: {r_in}px; padding: 4px 12px; min-height: 28px; color: {p['muted']}; box-shadow: none; }}
+.csm .tab:hover {{ background: {p['hover']}; }}
+.csm .tab.on {{ background: {p['tint']}; color: {p['fg']}; font-weight: bold; }}
+.csm .side {{ background: {p['base']}; }}
+.csm .zbtn label {{ font-weight: normal; }}
+.csm .zbtn {{ background: transparent; border: 0; border-radius: {r_row}px; padding: 6px 10px; color: {p['fg']}; box-shadow: none; }}
+.csm .zbtn:hover {{ background: {p['hover']}; }}
+.csm .zbtn:active {{ background: {p['press']}; }}
+.csm .power {{ background: {p['hover']}; }}
+.csm .avatar {{ background: {p['accent']}; color: {p['accent_fg']}; border-radius: 999px; font-weight: bold; min-width: 40px; min-height: 40px; }}
+.csm .div {{ background: {p['line']}; min-width: 1px; min-height: 1px; }}
+.csm .runrow {{ color: {p['muted']}; }}
+.csm .dot {{ background: {p['accent']}; border-radius: 999px; min-width: 8px; min-height: 8px; }}
+"""
+
+# ---------------------------------------------------------------- GUI
+
+def main(argv):
+    skin = "zen"
+    if "--skin" in argv:
+        skin = argv[argv.index("--skin") + 1]
+    if skin not in ("zen", "kylin"):
+        print("carpatic-startmenu: unknown skin", skin, file=sys.stderr); return 2
+    import gi
+    gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0")
+    from gi.repository import Gtk, Gdk, Gio, GLib, Pango
+    import cairo
+
+    rtd = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+    pidfile = os.path.join(rtd, "carpatic-startmenu.pid")
+    try:  # toggle: a second call closes the first
+        old = int(open(pidfile).read().strip())
+        os.kill(old, 0)
+        if "carpatic-startmenu" in open(f"/proc/{old}/cmdline").read():
+            os.kill(old, signal.SIGTERM); return 0
+    except (OSError, ValueError):
+        pass
+    open(pidfile, "w").write(str(os.getpid()))
+
+    apps = {}
+    for a in Gio.AppInfo.get_all():
+        if not a.should_show():
+            continue
+        aid = (a.get_id() or "").removesuffix(".desktop")
+        apps[aid] = a
+    names = sorted(apps, key=lambda i: apps[i].get_display_name().casefold())
+    usage = usage_load()
+    pinned = pinned_load(set(apps))
+    P = palette(theme_colors())
+    prof = read_kv(os.path.join(CFG, "profile.env"))
+    panel_h = int(prof.get("BAR_BOTTOM", "48") or 48)
+
+    win = Gtk.Window(type=Gtk.WindowType.POPUP)  # override-redirect popup: no title bar, no focus fight with dwm
+    win.set_name("csm"); win.get_style_context().add_class("csm")
+    css = Gtk.CssProvider(); css.load_from_data(build_css(P, skin).encode())
+    Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_USER)
+    W, H = (766, 688) if skin == "kylin" else (720, 560)
+    disp = Gdk.Display.get_default()
+    seat = disp.get_default_seat()
+    _, px, py = seat.get_pointer().get_position()
+    mon = disp.get_monitor_at_point(px, py)
+    geo = mon.get_geometry() if mon else None
+    if geo is None or geo.width <= 0:  # headless / odd displays
+        geo = Gdk.Rectangle(); geo.x, geo.y, geo.width, geo.height = 0, 0, 1280, 800
+    W = min(W, geo.width - 16); H = min(H, geo.height - panel_h - 16)
+    win.set_default_size(W, H); win.set_size_request(W, H)
+    gap = 8
+    X, Y = geo.x + gap, geo.y + geo.height - panel_h - gap - H
+
+    state = {"mode": "pinned", "cat": "", "q": "", "grouped": False, "tab": "pinned"}
+    quitting = []
+
+    def close(*_):
+        if quitting:
+            return
+        quitting.append(1)
+        try:
+            seat.ungrab()
+        except Exception:
+            pass
+        Gtk.main_quit()
+
+    def launch(aid=None, cmd=None, term=False):
+        try:
+            if aid:
+                apps[aid].launch([], disp.get_app_launch_context())
+                usage_bump(aid)
+            elif cmd:
+                subprocess.Popen(["sh", "-c", cmd], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except GLib.Error as e:
+            subprocess.Popen(["notify-send", "Could not start the app", str(e.message)])
+        close()
+
+    def sh_close(*cmd):
+        subprocess.Popen(list(cmd), start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); close()
+
+    # ---- widgets
+    def app_icon(aid, size):
+        img = Gtk.Image.new_from_gicon(apps[aid].get_icon() or Gio.ThemedIcon.new("application-x-executable"), Gtk.IconSize.DIALOG)
+        img.set_pixel_size(size); return img
+
+    def row_for(aid):
+        r = Gtk.ListBoxRow(); r.aid = aid
+        b = Gtk.Box(spacing=12); b.set_margin_start(10 if skin == "zen" else 8); b.set_margin_end(8)
+        b.set_margin_top(4 if skin == "zen" else 4); b.set_margin_bottom(4)
+        b.pack_start(app_icon(aid, 32), False, False, 0)
+        l = Gtk.Label(label=apps[aid].get_display_name(), xalign=0); l.get_style_context().add_class("appname")
+        l.set_ellipsize(Pango.EllipsizeMode.END); b.pack_start(l, True, True, 0)
+        if aid in pinned and state["mode"] != "pinned":
+            pass
+        r.add(b); r.connect("button-press-event", lambda w, e, a=aid: on_row_click(w, e, a)); return r
+
+    def on_row_click(w, e, aid):
+        if e.button == 3:
+            m = Gtk.Menu()
+            it = Gtk.MenuItem(label="Unpin from start" if aid in pinned else "Pin to start")
+            it.connect("activate", lambda *_: toggle_pin(aid)); m.append(it); m.show_all(); m.popup_at_pointer(e); return True
+        return False
+
+    def toggle_pin(aid):
+        if aid in pinned: pinned.remove(aid)
+        else: pinned.append(aid)
+        pinned_save(pinned); rebuild()
+
+    def header(text):
+        r = Gtk.ListBoxRow(); r.set_selectable(False); r.set_activatable(False)
+        l = Gtk.Label(label=text, xalign=0); l.get_style_context().add_class("hdr"); r.add(l); return r
+
+    lst = Gtk.ListBox(); lst.set_selection_mode(Gtk.SelectionMode.BROWSE); lst.set_activate_on_single_click(True)
+    lst.connect("row-activated", lambda lb, r: on_activate(r))
+    sw = Gtk.ScrolledWindow(); sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC); sw.add(lst); sw.set_vexpand(True)
+    entry = Gtk.SearchEntry(); entry.set_placeholder_text("Search apps, files and commands" if skin == "zen" else "Search App")
+    tab_btns = {}
+    grid = Gtk.FlowBox(); grid.set_max_children_per_line(4); grid.set_min_children_per_line(3); grid.set_selection_mode(Gtk.SelectionMode.SINGLE)
+    grid.set_homogeneous(True); grid.set_valign(Gtk.Align.START); grid.set_activate_on_single_click(True); grid.connect("child-activated", lambda g, c: launch(c.aid))
+
+    def on_activate(r):
+        if getattr(r, "aid", None): launch(r.aid)
+        elif getattr(r, "cmd", None): launch(cmd=r.cmd)
+
+    def clear(c):
+        for ch in c.get_children(): c.remove(ch)
+
+    def visible_ids():
+        q = state["q"]
+        if q:
+            scored = []
+            for i in names:
+                a = apps[i]
+                k = match(q, a.get_display_name(), a.get_description() or "", " ".join(a.get_keywords() or []) if hasattr(a, "get_keywords") else "")
+                if k is not None: scored.append((k, i))
+            scored.sort(key=lambda t: (t[0], apps[t[1]].get_display_name().casefold()))
+            return [i for _, i in scored]
+        if state["mode"] == "pinned" and skin == "zen":
+            return list(pinned)
+        if state["mode"] == "recent":
+            return [i for i in recent_ids(usage) if i in apps]
+        ids = names
+        if state["cat"]:
+            ids = [i for i in names if category_of(apps[i].get_categories()) == state["cat"]]
+        return ids
+
+    def rebuild():
+        clear(lst)
+        ids = visible_ids()
+        if state["q"] or state["mode"] != "all" or not state["grouped"]:
+            for i in ids: lst.add(row_for(i))
+        else:  # category grouping
+            cur = None
+            for i in sorted(ids, key=lambda i: (category_of(apps[i].get_categories()), apps[i].get_display_name().casefold())):
+                c = category_of(apps[i].get_categories())
+                if c != cur: lst.add(header(c)); cur = c
+                lst.add(row_for(i))
+        if state["q"] and not ids:
+            r = Gtk.ListBoxRow(); r.cmd = state["q"]
+            l = Gtk.Label(label=f"Run  {state['q']}", xalign=0); l.get_style_context().add_class("runrow"); l.set_margin_start(14); l.set_margin_top(10); l.set_margin_bottom(10)
+            r.add(l); lst.add(r)
+        elif not ids:
+            r = Gtk.ListBoxRow(); r.set_selectable(False)
+            l = Gtk.Label(label={"pinned": "Nothing pinned yet. Right-click an app to pin it.", "recent": "Apps you open will show up here."}.get(state["mode"], "No apps."), xalign=0)
+            l.get_style_context().add_class("sub"); l.set_margin_start(14); l.set_margin_top(14); r.add(l); lst.add(r)
+        lst.show_all(); select_first()
+        if skin == "kylin": rebuild_grid()
+        else:
+            for k, b in tab_btns.items():
+                ctx = b.get_style_context(); (ctx.add_class if k == state["mode"] else ctx.remove_class)("on")
+
+    def select_first():
+        for r in lst.get_children():
+            if r.get_selectable():
+                lst.select_row(r); break
+        adj = sw.get_vadjustment(); adj.set_value(0)
+
+    def rebuild_grid():
+        clear(grid)
+        ids = pinned if state["tab"] == "pinned" else [i for i in recent_ids(usage, 12) if i in apps]
+        for kk, b in tab_btns.items():
+            ctx = b.get_style_context(); (ctx.add_class if kk == state["tab"] else ctx.remove_class)("on")
+        for i in ids:
+            c = Gtk.FlowBoxChild(); c.aid = i
+            b = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6); b.set_margin_top(10); b.set_margin_bottom(8)
+            b.pack_start(app_icon(i, 48), False, False, 0)
+            l = Gtk.Label(label=apps[i].get_display_name()); l.set_ellipsize(Pango.EllipsizeMode.END); l.set_max_width_chars(11); l.get_style_context().add_class("appname")
+            b.pack_start(l, False, False, 0); c.add(b)
+            c.connect("button-press-event", lambda w, e, a=i: on_row_click(w, e, a)); grid.add(c)
+        grid.show_all()
+
+    def set_mode(m):
+        state["mode"] = m; state["q"] = ""; entry.set_text(""); rebuild()
+
+    def tabs(labels, target):
+        box = Gtk.Box(spacing=4)
+        for key, text in labels:
+            b = Gtk.Button(label=text); b.get_style_context().add_class("tab"); b.set_can_focus(False)
+            b.connect("clicked", lambda w, k=key: target(k)); tab_btns[key] = b; box.pack_start(b, False, False, 0)
+        return box
+
+    def places():
+        out = []
+        for label, d, icon in (("Home", GLib.get_home_dir(), "user-home"), ("Documents", GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOCUMENTS), "folder-documents"),
+                               ("Downloads", GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD), "folder-download"),
+                               ("Pictures", GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES), "folder-pictures"),
+                               ("Music", GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_MUSIC), "folder-music"),
+                               ("Videos", GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_VIDEOS), "folder-videos")):
+            if d and os.path.isdir(d): out.append((label, d, icon))
+        return out
+
+    def flat_button(label, icon, cb, size=18, expand=True):
+        b = Gtk.Button(); b.get_style_context().add_class("zbtn"); b.set_can_focus(False); b.set_relief(Gtk.ReliefStyle.NONE)
+        bx = Gtk.Box(spacing=10)
+        img = Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.BUTTON); img.set_pixel_size(size); bx.pack_start(img, False, False, 0)
+        if label:
+            l = Gtk.Label(label=label, xalign=0); bx.pack_start(l, True, True, 0)
+        b.add(bx); b.connect("clicked", lambda *_: cb()); return b
+
+    def icon_button(icon, tip, cb, popup=None):
+        b = Gtk.Button(); b.get_style_context().add_class("zbtn"); b.set_can_focus(False); b.set_relief(Gtk.ReliefStyle.NONE); b.set_tooltip_text(tip)
+        img = Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR); b.add(img); b.connect("clicked", lambda *_: cb()); return b
+
+    user_name = GLib.get_real_name() if GLib.get_real_name() not in ("", "Unknown") else GLib.get_user_name()
+
+    if skin == "zen":
+        outer = Gtk.Box(); win.add(outer)
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8); left.set_margin_start(14); left.set_margin_end(10); left.set_margin_top(14); left.set_margin_bottom(12)
+        left.set_size_request(W - 250 - 24, -1)
+        left.pack_start(entry, False, False, 0)
+        tb = tabs([("pinned", "Pinned"), ("all", "All apps"), ("recent", "Recent")], set_mode)
+        catbtn = Gtk.MenuButton(label="Categories"); catbtn.get_style_context().add_class("tab"); catbtn.set_can_focus(False)
+        cm = Gtk.Menu()
+        for c in [""] + [n for n, _ in CATEGORY_MAP] + ["Other"]:
+            it = Gtk.MenuItem(label=c or "All categories")
+            it.connect("activate", lambda w, c=c: (state.update(cat=c, mode="all", q=""), entry.set_text(""), catbtn.set_label(c or "Categories"), rebuild()))
+            cm.append(it)
+        cm.show_all(); catbtn.set_popup(cm); tb.pack_end(catbtn, False, False, 0)
+        left.pack_start(tb, False, False, 0); left.pack_start(sw, True, True, 0)
+        outer.pack_start(left, True, True, 0)
+        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2); right.get_style_context().add_class("side")
+        right.set_size_request(250, -1); right.set_margin_start(0)
+        rin = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2); rin.set_margin_start(10); rin.set_margin_end(10); rin.set_margin_top(14); rin.set_margin_bottom(12)
+        right.pack_start(rin, True, True, 0)
+        uh = Gtk.Box(spacing=10); av = Gtk.Label(label=(user_name[:1] or "?").upper()); av.get_style_context().add_class("avatar"); av.set_size_request(40, 40)
+        uh.pack_start(av, False, False, 0); ul = Gtk.Label(label=user_name, xalign=0); ul.set_ellipsize(Pango.EllipsizeMode.END); uh.pack_start(ul, True, True, 0)
+        rin.pack_start(uh, False, False, 0); rin.pack_start(Gtk.Box(), False, False, 6)
+        hp = Gtk.Label(label="Places", xalign=0); hp.get_style_context().add_class("hdr"); hp.set_margin_start(0); rin.pack_start(hp, False, False, 0)
+        for label, d, icon in places():
+            rin.pack_start(flat_button(label, icon, lambda d=d: sh_close("xdg-open", d)), False, False, 0)
+        hs = Gtk.Label(label="System", xalign=0); hs.get_style_context().add_class("hdr"); rin.pack_start(hs, False, False, 0)
+        rin.pack_start(flat_button("Settings", "preferences-system", lambda: sh_close("carpatic-settings")), False, False, 0)
+        if "carpatic-store" in apps:
+            rin.pack_start(flat_button("Software", "system-software-install", lambda: launch("carpatic-store")), False, False, 0)
+        rin.pack_end(Gtk.Box(), False, False, 2)
+        pw = Gtk.Box(spacing=4, homogeneous=True)
+        for icon, tip, cb in (("system-lock-screen", "Lock", lambda: sh_close("carpatic-lock")),
+                              ("weather-clear-night", "Sleep", lambda: sh_close("carpatic-powermenu", "--choose", "Sleep")),
+                              ("system-shutdown", "Power options", lambda: sh_close("carpatic-powermenu"))):
+            b = icon_button(icon, tip, cb); b.get_style_context().add_class("power"); pw.pack_start(b, True, True, 0)
+        rin.pack_end(pw, False, False, 0)
+        outer.pack_start(right, False, False, 0)
+    else:
+        outer = Gtk.Box(); win.add(outer)
+        lw = 312 if W >= 700 else 260
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8); left.set_size_request(lw, -1)
+        left.set_margin_start(16); left.set_margin_end(12); left.set_margin_top(12); left.set_margin_bottom(8)
+        left.pack_start(entry, False, False, 0)
+        lh = Gtk.Box(); l1 = Gtk.Label(label="All apps", xalign=0); l1.get_style_context().add_class("sub"); lh.pack_start(l1, True, True, 4)
+        gb = Gtk.Button(label="Categories"); gb.get_style_context().add_class("tab"); gb.set_can_focus(False)
+        gb.connect("clicked", lambda *_: (state.update(grouped=not state["grouped"]), set_mode("all")))
+        lh.pack_end(gb, False, False, 0); left.pack_start(lh, False, False, 0); left.pack_start(sw, True, True, 0)
+        outer.pack_start(left, False, False, 0)
+        d1 = Gtk.Box(); d1.get_style_context().add_class("div"); outer.pack_start(d1, False, False, 0)
+        mid = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6); mid.set_margin_top(12); mid.set_margin_start(12); mid.set_margin_end(12)
+        mid.pack_start(tabs([("pinned", "Favorites"), ("recent", "Recent")], lambda k: (state.update(tab=k), rebuild_grid())), False, False, 0)
+        gsw = Gtk.ScrolledWindow(); gsw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC); gsw.add(grid); gsw.set_vexpand(True)
+        mid.pack_start(gsw, True, True, 0); outer.pack_start(mid, True, True, 0)
+        d2 = Gtk.Box(); d2.get_style_context().add_class("div"); outer.pack_start(d2, False, False, 0)
+        side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4); side.set_size_request(56, -1); side.get_style_context().add_class("side")
+        side.set_margin_top(8); side.set_margin_bottom(8)
+        for icon, tip, cb in (("avatar-default", user_name, lambda: sh_close("carpatic-settings")),
+                              ("computer", "Computer", lambda: sh_close("thunar")),
+                              ("preferences-system", "Settings", lambda: sh_close("carpatic-settings"))):
+            b = icon_button(icon, tip, cb); b.set_size_request(40, 40); side.pack_start(b, False, False, 0); b.set_halign(Gtk.Align.CENTER)
+        pb = icon_button("system-shutdown", "Power", lambda: sh_close("carpatic-powermenu")); pb.set_size_request(40, 40); pb.set_halign(Gtk.Align.CENTER); side.pack_end(pb, False, False, 0)
+        lk = icon_button("system-lock-screen", "Lock screen", lambda: sh_close("carpatic-lock")); lk.set_size_request(40, 40); lk.set_halign(Gtk.Align.CENTER); side.pack_end(lk, False, False, 0)
+        outer.pack_start(side, False, False, 0)
+
+    # ---- keyboard
+    def on_changed(e):
+        state["q"] = e.get_text().strip(); rebuild()
+
+    def move(delta):
+        rows = [r for r in lst.get_children() if r.get_selectable()]
+        if not rows: return
+        cur = lst.get_selected_row()
+        i = rows.index(cur) + delta if cur in rows else 0
+        r = rows[max(0, min(len(rows) - 1, i))]; lst.select_row(r)
+        a = sw.get_vadjustment(); alloc = r.get_allocation()
+        if alloc.y < a.get_value(): a.set_value(alloc.y)
+        elif alloc.y + alloc.height > a.get_value() + a.get_page_size(): a.set_value(alloc.y + alloc.height - a.get_page_size())
+
+    def on_key(w, e):
+        k = e.keyval
+        if k == Gdk.KEY_Escape: close(); return True
+        if k == Gdk.KEY_Down: move(1); return True
+        if k == Gdk.KEY_Up: move(-1); return True
+        if k in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+            r = lst.get_selected_row()
+            if r: on_activate(r)
+            return True
+        if k == Gdk.KEY_Tab and skin == "zen" and not state["q"]:
+            order = ["pinned", "all", "recent"]; set_mode(order[(order.index(state["mode"]) + 1) % 3]); return True
+        return False
+
+    def on_button(w, e):
+        # outside click closes (the seat grab sends every click to us)
+        x, y = e.x_root, e.y_root
+        if not (X <= x <= X + W and Y <= y <= Y + H): close()
+        return False
+
+    entry.connect("search-changed", on_changed)
+    win.connect("key-press-event", on_key)
+    win.connect("button-press-event", on_button)
+    win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+    win.connect("destroy", close)
+    GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, lambda: (close(), False)[1])
+
+    state["mode"] = "pinned" if skin == "zen" else "all"
+    rebuild()
+
+    # rounded corners without a compositor: shape the window with an anti-alias-free mask
+    def shape(*_):
+        r = 12 if skin == "kylin" else 15
+        s = cairo.ImageSurface(cairo.FORMAT_A1, W, H); c = cairo.Context(s)
+        c.new_sub_path(); c.arc(W - r, r, r, -1.5708, 0); c.arc(W - r, H - r, r, 0, 1.5708); c.arc(r, H - r, r, 1.5708, 3.1416); c.arc(r, r, r, 3.1416, 4.7124); c.close_path(); c.fill()
+        win.shape_combine_region(Gdk.cairo_region_create_from_surface(s))
+    snap = os.environ.get("CARPATIC_SNAPSHOT")
+    if snap:  # development / docs: render the menu offscreen into a PNG (works on a headless GDK_BACKEND=broadway display) and quit
+        off = Gtk.OffscreenWindow(); off.set_decorated(False); off.set_name("csm"); off.get_style_context().add_class("csm"); off.set_default_size(W, H); off.set_size_request(W, H)
+        win.remove(outer); off.add(outer); off.show_all()
+        def save():
+            if os.environ.get("CARPATIC_SNAPSHOT_DEBUG"):
+                def dump(w, d=0):
+                    a = w.get_allocation(); print("  " * d + f"{type(w).__name__} {w.get_name()} {a.x},{a.y} {a.width}x{a.height}")
+                    if hasattr(w, "get_children") and d < 3:
+                        for c in w.get_children(): dump(c, d + 1)
+                dump(outer)
+            off.get_pixbuf().savev(snap, "png", [], []); Gtk.main_quit(); return False
+        GLib.timeout_add(600, save); Gtk.main(); return 0
+    win.move(X, Y)
+    win.show_all()
+    shape()
+    win.move(X, Y)
+    entry.grab_focus()
+
+    def grab():
+        st = seat.grab(win.get_window(), Gdk.SeatCapabilities.ALL, True, None, None, None)
+        if st != Gdk.GrabStatus.SUCCESS:
+            GLib.timeout_add(50, lambda: grab() and False)
+        return False
+    GLib.idle_add(grab)
+    GLib.timeout_add(int(os.environ.get("CARPATIC_STARTMENU_TIMEOUT", "0") or 0) * 1000 or 2 ** 31 - 1, lambda: (close(), False)[1])
+    try:
+        Gtk.main()
+    finally:
+        try: os.unlink(pidfile)
+        except OSError: pass
+    return 0
+
+if __name__ == "__main__":
+    if "--list-json" in sys.argv:  # headless helper for tests: pinned defaults, categories
+        print(json.dumps({"pinned": DEFAULT_PINNED}))
+        sys.exit(0)
+    sys.exit(main(sys.argv[1:]))

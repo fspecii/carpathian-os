@@ -1,0 +1,39 @@
+#!/bin/sh
+# carpatic-input-method: typing in Chinese, Japanese, Korean, Vietnamese and other languages that need an input method.
+#
+#   carpatic-input-method status                    which input method is on and what is installed
+#   carpatic-input-method set fcitx5|ibus|off        choose it (takes effect after you log out and in; the session starts it)
+#   carpatic-input-method install <chinese|japanese|korean|vietnamese|other>   install the packages for a language (asks for your password)
+#   carpatic-input-method configure                 open the settings window of the chosen input method
+#
+# fcitx5 is the default recommendation: it works in GTK, Qt, Electron and Chrome (also inside the compatibility box).
+# State: ~/.config/carpatic/input-method (read at login by /etc/profile.d/carpatic-im.sh). License: MIT. POSIX sh.
+set -u
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}/carpatic"; F="$CFG/input-method"
+die() { printf 'carpatic-input-method: %s\n' "$*" >&2; exit 1; }
+cur() { [ -f "$F" ] && cat "$F" || echo off; }
+pk() { case "$1" in
+  chinese)    echo "fcitx5 fcitx5-gtk fcitx5-qt fcitx5-configtool fcitx5-chinese-addons font-noto-cjk";;
+  japanese)   echo "fcitx5 fcitx5-gtk fcitx5-qt fcitx5-configtool fcitx5-anthy font-noto-cjk";;
+  korean)     echo "fcitx5 fcitx5-gtk fcitx5-qt fcitx5-configtool fcitx5-hangul font-noto-cjk";;
+  vietnamese) echo "fcitx5 fcitx5-gtk fcitx5-qt fcitx5-configtool fcitx5-unikey";;
+  other)      echo "fcitx5 fcitx5-gtk fcitx5-qt fcitx5-configtool";;
+  *) die "language: chinese, japanese, korean, vietnamese or other";; esac; }
+case "${1:-status}" in
+  status) printf 'input method: %s\n' "$(cur)"
+          for p in fcitx5 fcitx5-gtk fcitx5-qt ibus; do if apk info -e "$p" >/dev/null 2>&1; then echo "  installed: $p"; fi; done;;
+  set) case "${2:-}" in fcitx5|ibus|off) mkdir -p "$CFG"; printf '%s\n' "$2" > "$F"; echo "Done. Log out and in again to use it.";;
+         *) die "choose fcitx5, ibus or off";; esac;;
+  install) pkgs=$(pk "${2:-}") || exit 1
+          if [ "$(id -u)" = 0 ]; then apk add --no-cache $pkgs; else pkexec apk add --no-cache $pkgs || die "installation was cancelled or failed."; fi
+          mkdir -p "$CFG"; [ -f "$F" ] && [ "$(cat "$F")" != off ] || echo fcitx5 > "$F"; echo "Done. Log out and in again, then press Ctrl+Space to switch.";;
+  configure) case "$(cur)" in fcitx5) exec fcitx5-configtool;; ibus) exec ibus-setup;; *) die "no input method is on (carpatic-input-method set fcitx5)";; esac;;
+  session) # called by the session after login: start the daemon
+          case "$(cur)" in
+            fcitx5) command -v fcitx5 >/dev/null 2>&1 && ! pgrep -u "$(id -u)" -x fcitx5 >/dev/null 2>&1 && fcitx5 -d >/dev/null 2>&1;;
+            ibus)   command -v ibus-daemon >/dev/null 2>&1 && ibus-daemon -drx >/dev/null 2>&1;;
+          esac;;
+  -h|--help|help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//';;
+  *) die "unknown command '$1' (try: carpatic-input-method help)";;
+esac
+exit 0

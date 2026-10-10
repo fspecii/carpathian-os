@@ -1,0 +1,404 @@
+#!/bin/sh
+# carpatic-apply [--restart] [--live]
+#   --live: fast path for colour-only changes (theme / accent): re-renders only the colour-dependent files from the values cached by the last full run
+#   (vars.kv, live.env), skips unchanged outputs and reloads only what changed. Falls back to the full run when anything else changed (style, fonts, icons,
+#   scale, mode flip) or no cache exists. The outputs are byte-identical to a full run (tests/test-logic.sh checks it).
+# Regenerates every themed/profiled config from (PROFILE, THEME, ACCENT, WALLPAPER) in ~/.config/carpatic/settings.conf and
+# reloads what can be reloaded live. --restart also restarts bars/hotkey daemons (needed after a profile change). The layout is NOT re-applied by cycling through the workspaces any more (that hid the Welcome window for ~4 s): dwm applies default_layout from themes.toml live.
+#   --only CATS / --skip CATS : categories desktop terminal editors browser qt cli (comma separated). The user's "Also colour" choice
+#   (settings ALSO) is honoured too. App colouring (terminals' configs, editors, browsers, Qt, CLI tools) is done by carpatic-retint in parallel,
+#   in the background, so this command returns quickly; CARPATIC_NO_RELOAD=1 runs it in the foreground (tests).
+. "$(dirname "$0")/carpatic-lib" 2>/dev/null || . carpatic-lib
+session_present() { carpatic-session-process present --name "$1"; }
+session_signal() { carpatic-session-process stop --name "$1" --signal "$2"; }
+# wallpaper: fill mode (WALLPAPER_MODE) and per-monitor pictures; the light/dark pair / per-theme picture come from carpatic-wallpaper (wallpapers/)
+wp_resolve() { # when the THEME just changed: switch WP to the paired / per-theme picture (a picture picked by hand is never overridden)
+  command -v carpatic-wallpaper >/dev/null 2>&1 || return 0
+  _p=$(carpatic-wallpaper resolve 2>/dev/null); [ -n "$_p" ] && [ -f "$_p" ] && { WP=$_p; set_setting WALLPAPER "$_p"; }
+  return 0
+}
+wp_paint() { # $1 = resolved picture; keep per-monitor choices and explicit fill semantics
+  _mode=$(get_setting WALLPAPER_MODE fill)
+  # An active file desktop hides the root pixmap. The helper owns backend
+  # routing; its failure must not be disguised by a successful hidden feh paint.
+  if command -v carpatic-wallpaper >/dev/null 2>&1; then
+    carpatic-wallpaper paint "$1" --fill "$_mode"
+    return $?
+  fi
+  case $_mode in fit) _f=--bg-max ;; stretch) _f=--bg-scale ;; center) _f=--bg-center ;; tile) _f=--bg-tile ;; *) _f=--bg-fill ;; esac
+  feh --no-fehbg $_f "$1" 2>/dev/null
+}
+restart=0; ONLY=""; SKIP=""; LIVE=0
+while [ $# -gt 0 ]; do case $1 in --restart) restart=1; shift;; --live) LIVE=1; shift;; --only) ONLY=$(echo "$2" | tr ',' ' '); shift 2;; --skip) SKIP=$(echo "$2" | tr ',' ' '); shift 2;; *) shift;; esac; done
+
+# ------------------------------------------------------------------ --live fast path
+if [ "$LIVE" = 1 ] && [ -z "$ONLY$SKIP" ] && [ -f "$CUR/vars.kv" ] && [ -f "$CUR/live.env" ]; then
+  . "$CUR/live.env"           # SIG MODE_C ACCDARK ACCLIGHT GTKPAL PROFILE_C
+  . "$SETTINGS"               # settings.conf is KEY="value" lines: sourcing it costs no fork
+  sig=$(grep -v '^\(THEME\|ACCENT\|WALLPAPER\)=' "$SETTINGS" | cksum)
+  colors=$(theme_dir "${THEME:-carpatic}")/colors.toml
+  mode=$(sed -n 's/^mode *= *"\(.*\)"/\1/p' "$colors" 2>/dev/null | head -1)
+  [ -f "$(dirname "$colors")/look.conf" ] && lookn=1 || lookn=0
+  case ${THEME:-carpatic} in nothing|nothing-light) _noth=1 ;; *) _noth=0 ;; esac
+  if [ "$sig" = "$SIG" ] && [ "${NOTHING_C:-0}" = "$_noth" ] && [ -f "$colors" ] && [ "$mode" = "$MODE_C" ] && [ "$LOOKC" = 0 ] && [ "$lookn" = 0 ]; then
+    THEME=${THEME:-carpatic}; ACCENT=${ACCENT:-}
+    case $THEME in carpatic|carpatic-light) [ -n "$ACCENT" ] || { [ "$mode" = light ] && ACCENT=$ACCLIGHT || ACCENT=$ACCDARK; } ;; esac
+    export ACCENT; printf '%s\n' "$ACCENT" > "$CUR/accent.effective"
+    sed -i "s/^THEME=.*/THEME=$THEME/" "$CUR/vars.kv"
+    T=$CARPATIC_SHARE/templates
+    { printf '%s|%s|\n' "$T/dwm-themes.toml.tpl" "$CUR/themes.toml" "$T/Xresources.tpl" "$CUR/Xresources"; printf '%s|%s|nonl\n' "$T/osc.tpl" "$CUR/osc"
+      printf '%s|%s|\n' "$T/alacritty.toml.tpl" "$CUR/alacritty.toml" "$T/dunstrc.tpl" "$CUR/dunstrc" "$T/rofi.colors.tpl" "$CUR/rofi/colors.rasi" "$T/start.svg.tpl" "$CUR/icons/carpatic-start.svg"
+      [ "$GTKPAL" = 1 ] && printf '%s|%s|\n' "$T/gtk.css.tpl" "$CUR/gtk.css" "$GTKTPL_C" "$CUR/gtk3.css"
+      for n in windows macos ubuntu tiling; do printf '%s|%s|\n' "$T/rofi/$n.rasi.tpl" "$CUR/rofi/$n.rasi"; done
+      for f in "$T"/tint2/*.tint2rc.tpl; do n=${f##*/}; printf '%s|%s|\n' "$f" "$CUR/tint2/${n%.tpl}"; done; } > "$CUR/render.live"
+    OUTS="$CUR/themes.toml $CUR/Xresources $CUR/osc $CUR/alacritty.toml $CUR/dunstrc $CUR/rofi/colors.rasi $CUR/gtk.css $CUR/gtk3.css $CUR/tint2/*.tint2rc"
+    old=$(cksum $OUTS 2>/dev/null)
+    carpatic-render --multi "$colors" "$CUR/render.live" "$CUR/vars.kv"
+    new=$(cksum $OUTS 2>/dev/null)
+    changed() { case "$old" in *"$(echo "$new" | grep " $1\$")"*) return 1;; esac; return 0; }
+    changed "$CUR/themes.toml" && cp "$CUR/themes.toml" "$HOME/.config/dwm-titus/themes.toml"
+    changed "$CUR/dunstrc" && cp "$CUR/dunstrc" "$HOME/.config/dunst/dunstrc"
+    changed "$CUR/alacritty.toml" && cp "$CUR/alacritty.toml" "$HOME/.config/alacritty/alacritty.toml"
+    changed "$CUR/gtk3.css" && cp "$CUR/gtk3.css" "$HOME/.config/gtk-3.0/gtk.css"
+    changed "$CUR/gtk.css" && cp "$CUR/gtk.css" "$HOME/.config/gtk-4.0/gtk.css"
+    changed "$CUR/Xresources" && cp "$CUR/Xresources" "$HOME/.Xresources"
+    changed "$CUR/rofi/colors.rasi" && cp "$CUR/rofi/colors.rasi" "$HOME/.config/rofi/colors.rasi"
+    WP=${WALLPAPER:-}; [ -n "$WP" ] || WP=$(theme_dir "$THEME")/wallpaper.jpg; [ -f "$WP" ] || WP=/usr/local/share/carpatic/wallpaper.png
+    wp_resolve
+    [ "$(cat "$CFG_DIR/wallpaper" 2>/dev/null)" = "$WP" ] && wpsame=1 || { wpsame=0; printf '%s\n' "$WP" > "$CFG_DIR/wallpaper"; }
+    if [ -n "${DISPLAY:-}" ] && [ "${CARPATIC_NO_RELOAD:-0}" != 1 ]; then
+      changed "$CUR/Xresources" && xrdb -merge "$HOME/.Xresources" 2>/dev/null &
+      [ "$wpsame" = 1 ] || wp_paint "$WP" &
+      changed "$CUR/themes.toml" && session_signal carpatic-wm USR1 2>/dev/null
+      changed "$CUR/osc" && for pts in /dev/pts/[0-9]*; do [ -O "$pts" ] && cat "$CUR/osc" > "$pts" 2>/dev/null; done
+      changed "$CUR/dunstrc" && session_present dunst >/dev/null 2>&1 && { session_signal dunst TERM; (dunst >/dev/null 2>&1 &); }
+      session_signal tint2 USR1 2>/dev/null
+    fi
+    if [ "${CARPATIC_NO_RELOAD:-0}" = 1 ]; then carpatic-retint --sync; else (setsid carpatic-retint >/dev/null 2>&1 &); fi
+    (carpatic-hook run theme-set "$THEME" >/dev/null 2>&1 &) 2>/dev/null
+    wait; exit 0
+  fi
+  # anything but a colour change: do the full run below
+fi
+ALSO=$(get_setting ALSO "terminal editors browser qt cli")
+cat_on() { # category : in ALSO, in --only (when given), not in --skip
+  case " $ALSO desktop " in *" $1 "*) ;; *) return 1;; esac
+  [ -z "$ONLY" ] || case " $ONLY " in *" $1 "*) ;; *) return 1;; esac
+  case " $SKIP " in *" $1 "*) return 1;; esac; return 0; }
+export CARPATIC_SKIP_CATS="$SKIP"
+PROFILE=$(get_setting PROFILE tiling)
+MOTION_ANIM_INT=1
+if [ "$(get_setting MOTION full)" = reduced ] || [ -e "$CFG_DIR/reduced-motion" ]; then MOTION_ANIM_INT=0; fi
+THEME=$(get_setting THEME carpatic)
+ACCENT=$(get_setting ACCENT "")
+# a style may bring its own default accent (Ubuntu orange, macOS/Windows blue), but only on the two Carpatic themes: other themes keep their own accent
+case $THEME in carpatic|carpatic-light) [ -n "$ACCENT" ] || ACCENT=$(profile_get "$PROFILE" ACCENT_$(theme_mode "$THEME")) ;; esac
+WALLPAPER=$(get_setting WALLPAPER "")
+[ -f "$CARPATIC_SHARE/profiles/$PROFILE.conf" ] || die "profile '$PROFILE' missing"
+[ -f "$(theme_dir "$THEME")/colors.toml" ] || die "theme '$THEME' missing"
+export ACCENT
+printf '%s\n' "$ACCENT" > "$CUR/accent.effective" 2>/dev/null
+COLORS=$(theme_dir "$THEME")/colors.toml
+T=$CARPATIC_SHARE/templates
+pf() { profile_get "$PROFILE" "$1"; }
+MODE=$(theme_mode "$THEME"); DARKMODE=true; [ "$MODE" = light ] && DARKMODE=false
+PANEL_DESIGN=$(pf PANEL_DESIGN); BAR=$(pf BAR); BAR_TOP=$(pf BAR_TOP); BAR_BOTTOM=$(pf BAR_BOTTOM); BAR_LEFT=$(pf BAR_LEFT)
+
+# --- typography / GTK / icons / cursor: user override (settings.conf) > style default (profile conf) > built-in ---
+# theme look file (themes/<name>/look.conf): FONT_UI FONT_MONO FONT_HEAD ICON_light ICON_dark ... overrides the style default, not the user's choice
+LOOK=$(theme_dir "$THEME")/look.conf
+tl() { [ -r "$LOOK" ] && sed -n "s/^$1=\"\{0,1\}\([^\"#]*[^\" #]\)\"\{0,1\}[ ]*\(#.*\)\{0,1\}$/\1/p" "$LOOK" | head -1; }
+S() { v=$(get_setting "$1" ""); [ -n "$v" ] && { printf '%s' "$v"; return; }; v=$(tl "$2"); [ -n "$v" ] && { printf '%s' "$v"; return; }; v=$(pf "$2"); [ -n "$v" ] && printf '%s' "$v" || printf '%s' "$3"; }
+have_dir() { # kind name : kind=icons|themes
+  for d in /usr/share/$1 "$HOME/.local/share/$1" "$HOME/.icons"; do [ -d "$d/$2" ] && return 0; done; return 1; }
+have_font() { [ "${CARPATIC_ASSUME_FONTS:-0}" = 1 ] && return 0; command -v fc-list >/dev/null 2>&1 || return 0; fc-list : family 2>/dev/null | tr ',' '\n' | grep -qxF "$1"; }
+UI=$(S UI_FONT FONT_UI "Noto Sans"); have_font "$UI" || { UI=$(pf FONT_UI_FALLBACK); [ -n "$UI" ] && have_font "$UI" || UI="DejaVu Sans"; }
+MONO=$(S MONO_FONT FONT_MONO "JetBrains Mono"); have_font "$MONO" || MONO="DejaVu Sans Mono"
+HEAD=$(tl FONT_HEAD); [ -n "$HEAD" ] && have_font "$HEAD" || HEAD=$UI
+SZ=$(S UI_SIZE FONT_UI_SIZE 10); MONO_SZ=$(S MONO_SIZE FONT_MONO_SIZE 10)
+HINTING=$(get_setting HINTING slight); RGBA=$(get_setting RGBA rgb); LCDFILTER=$(get_setting LCDFILTER lcddefault)
+AA=$(get_setting ANTIALIAS 1)
+# display scale in percent: the SCALE setting (100..300) or, when it is "auto" / unset, the policy of carpatic-scale for the main screen (resolution + physical size)
+SCALE=$( { "$(dirname "$0")/carpatic-scale" effective || carpatic-scale effective; } 2>/dev/null ); case $SCALE in ''|*[!0-9]*) SCALE=100;; esac
+AA_BOOL=true; [ "$AA" = 0 ] && AA_BOOL=false
+HINTING_ON=1; HINTING_BOOL=true; [ "$HINTING" = none ] && { HINTING_ON=0; HINTING_BOOL=false; }
+[ "$HINTING" = none ] && HINTING=none
+# one mechanism at every scale: fractional font DPI plus pixel sizes multiplied by the scale (the renderer scales the px of every generated CSS, dwm and the
+# panel scale their own geometry): GDK_SCALE stays 1 so dwm, panel and the apps agree on device pixels at 125%, 150%, 200% alike
+DPI=$((96 * SCALE / 100)); GDK_SCALE=1
+DPI_X=$((DPI * 1024)); DPI_UNSCALED=$((96 * 1024))
+CURSOR=$(S CURSOR_THEME CURSOR "Adwaita"); have_dir icons "$CURSOR" || CURSOR=Adwaita
+CURSOR_SZ=$(( $(S CURSOR_SIZE CURSOR_SIZE 24) * SCALE / 100 ))
+BUTTON_LAYOUT=$(pf BUTTON_LAYOUT); [ -n "$BUTTON_LAYOUT" ] || BUTTON_LAYOUT="menu:minimize,maximize,close"
+# GTK: "" = automatic (style's native theme if installed, else adw-gtk3 recoloured by the palette)
+GTKSEL=$(get_setting GTK_THEME ""); GTK_PALETTE=0
+# Carpatic's own style families (gtktheme/: macos windows ubuntu zen kylin carpatic) are the default for every profile that names a GTK_STYLE;
+# a native pack (WhiteSur, Yaru, Zorin ...) is only used when the user picks it (GTK_THEME in settings.conf).
+GTKSTYLE=$(get_setting GTK_STYLE ""); [ -n "$GTKSTYLE" ] || GTKSTYLE=$(pf GTK_STYLE); [ -n "$GTKSTYLE" ] || GTKSTYLE=carpatic
+case $THEME in nothing|nothing-light) [ -z "$(get_setting GTK_STYLE "")" ] && GTKSTYLE=nothing ;; esac
+GTKTPL=$CARPATIC_SHARE/templates/gtk/$GTKSTYLE-$MODE.css.tpl; [ -f "$GTKTPL" ] || GTKTPL=$CARPATIC_SHARE/templates/gtk/carpatic-$MODE.css.tpl
+if [ -z "$GTKSEL" ]; then
+  if [ -n "$(pf GTK_STYLE)" ] && [ -f "$GTKTPL" ]; then GTKSEL=palette
+  else GTKSEL=$(pf GTK_PREFERRED_$MODE); { [ -n "$GTKSEL" ] && have_dir themes "$GTKSEL"; } || GTKSEL=palette; fi
+fi
+if [ "$GTKSEL" = palette ]; then
+  GTK_PALETTE=1; GTKSEL=adw-gtk3; [ "$MODE" = light ] || GTKSEL=adw-gtk3-dark
+  have_dir themes "$GTKSEL" || GTKSEL=Adwaita
+fi
+ICONSEL=$(get_setting ICON_THEME "")
+if [ -z "$ICONSEL" ]; then
+  ICONSEL=$(tl ICON_PREFERRED_$MODE); { [ -n "$ICONSEL" ] && have_dir icons "$ICONSEL"; } || { ICONSEL=$(pf ICON_PREFERRED_$MODE); { [ -n "$ICONSEL" ] && have_dir icons "$ICONSEL"; } || ICONSEL=$(pf ICON_$MODE); }
+fi
+have_dir icons "$ICONSEL" || ICONSEL=Adwaita
+# the style's own folder colour (gtktheme/: Papirus with a per-style folder colour) when the style's icon pack is not installed and the user picked none
+if [ -z "$(get_setting ICON_THEME "")" ]; then case $ICONSEL in Papirus-Dark) _ov=Carpatic-$GTKSTYLE-Dark ;; Papirus-Light|Papirus) _ov=Carpatic-$GTKSTYLE-Light ;; *) _ov= ;; esac
+  [ -n "$_ov" ] && have_dir icons "$_ov" && ICONSEL=$_ov; fi
+# rofi takes a single icon theme with no fallback chain: if the selected pack lacks basic app icons, use Papirus there
+ROFI_ICONS=$ICONSEL
+for d in /usr/share/icons "$HOME/.local/share/icons" "$HOME/.icons"; do [ -d "$d/$ICONSEL" ] && { find "$d/$ICONSEL" -name 'utilities-terminal.svg' 2>/dev/null | grep -q . || ROFI_ICONS=$(pf ICON_$MODE); break; }; done
+DARKMODE_INT=1; [ "$MODE" = light ] && DARKMODE_INT=0
+# live reload of the user stylesheet in running GTK3 apps (gtktheme/module): only when the module is installed
+GTKMODULES=""; for d in /usr/lib /usr/lib64 /usr/local/lib; do [ -f "$d/gtk-3.0/modules/libcarpatic-livecss.so" ] && GTKMODULES=carpatic-livecss; done
+SZ_SM=$((SZ - 2)); SZ_L=$((SZ + 1)); SZ_XL=$((SZ + 7))
+CORNER_RADIUS=$(S CORNER_RADIUS CORNER_RADIUS 0); INNER_GAP=$(S INNER_GAP INNER_GAP 8); OUTER_GAP=$(S OUTER_GAP OUTER_GAP 8)
+BORDER_WIDTH=$(S BORDER_WIDTH BORDER_WIDTH 2); BORDER_ACTIVE=$(S BORDER_ACTIVE BORDER_ACTIVE ""); BORDER_INACTIVE=$(S BORDER_INACTIVE BORDER_INACTIVE ""); BORDER_HIGHLIGHT=$(S BORDER_HIGHLIGHT BORDER_HIGHLIGHT 0); SMART_GAPS=$(S SMART_GAPS SMART_GAPS 0); DRAG_TILED=$(S DRAG_TILED DRAG_TILED float)
+# the window look is set in logical pixels: dwm works in device pixels, so follow the display scale (Settings > Fonts > Scale)
+for v in CORNER_RADIUS INNER_GAP OUTER_GAP BORDER_WIDTH BORDER_HIGHLIGHT; do eval "$v=\$(( \$$v * SCALE / 100 ))"; done
+NOTIFY_POS=$(pf NOTIFY_POS); NOTIFY_WIDTH=$(pf NOTIFY_WIDTH); NOTIFY_RADIUS=$(pf NOTIFY_RADIUS); NOTIFY_FORMAT=$(sed -n 's/^NOTIFY_FORMAT="\(.*\)"$/\1/p' "$CARPATIC_SHARE/profiles/$PROFILE.conf" | head -1); [ -n "$NOTIFY_FORMAT" ] || NOTIFY_FORMAT='<b>%s</b>\n%b'
+TB_INT=1; [ "$(pf TITLEBARS)" = off ] && TB_INT=0
+BSTYLE=$(S WINDOW_BUTTONS TITLEBAR_STYLE windows); BSIDE=$(get_setting BUTTONS_SIDE auto); BSHOWN=$(get_setting BUTTONS_SHOWN all); TALIGN=$(get_setting TITLE_ALIGN auto)
+# every template extra, computed once and written to vars.kv (read by the single-process renderer; --live reuses it)
+TBB=$(pf TITLEBAR_BUTTONS); WORKSPACES=$(get_setting WORKSPACES 4); case $WORKSPACES in [1-9]) ;; *) WORKSPACES=4 ;; esac; WS_NAMES=$(get_setting WS_NAMES ""); DEFLAYOUT=$(S LAYOUT LAYOUT tile); case $DEFLAYOUT in tile|float) ;; *) DEFLAYOUT=tile ;; esac; TRAYI=0; [ "$BAR" = dwm ] && TRAYI=1
+NOTIFY_OFFSET_Y=$(( 40 * SCALE / 100 ))
+case ${NOTIFY_POS:-top-right} in bottom-*) NOTIFY_OFFSET_Y=$(( (${BAR_BOTTOM:-0} + 12) * SCALE / 100 )) ;; esac   # toasts sit above a bottom taskbar, whatever its height
+cat > "$CUR/vars.kv" <<EOT
+HOME=$HOME
+THEME=$THEME
+DARKMODE=$DARKMODE
+BAR_TOP=${BAR_TOP:-0}
+BAR_BOTTOM=${BAR_BOTTOM:-0}
+BAR_LEFT=${BAR_LEFT:-0}
+PROFILE=$PROFILE
+TITLEBARS_INT=$TB_INT
+TITLEBAR_BUTTONS=$TBB
+BSTYLE=$BSTYLE
+BSIDE=$BSIDE
+BSHOWN=$BSHOWN
+TALIGN=$TALIGN
+DEFLAYOUT=$DEFLAYOUT
+WORKSPACES=$WORKSPACES
+WS_NAMES=$WS_NAMES
+TRAY_INT=$TRAYI
+BORDER_WIDTH=$BORDER_WIDTH
+BORDER_ACTIVE=$BORDER_ACTIVE
+BORDER_INACTIVE=$BORDER_INACTIVE
+BORDER_HIGHLIGHT=$BORDER_HIGHLIGHT
+SMART_GAPS=$SMART_GAPS
+DRAG_TILED=$DRAG_TILED
+CORNER_RADIUS=$CORNER_RADIUS
+INNER_GAP=$INNER_GAP
+OUTER_GAP=$OUTER_GAP
+NOTIFY_POS=${NOTIFY_POS:-top-right}
+NOTIFY_WIDTH=$(( ${NOTIFY_WIDTH:-340} * SCALE / 100 ))
+NOTIFY_OFFSET_Y=$NOTIFY_OFFSET_Y
+NOTIFY_RADIUS=$(( ${NOTIFY_RADIUS:-0} * SCALE / 100 ))
+NOTIFY_FORMAT=$NOTIFY_FORMAT
+UI=$UI
+HEAD=$HEAD
+SZ=$SZ
+SZ_SM=$SZ_SM
+SZ_L=$SZ_L
+SZ_XL=$SZ_XL
+MONO=$MONO
+MONO_SZ=$MONO_SZ
+HINTING=$HINTING
+HINTING_ON=$HINTING_ON
+HINTING_BOOL=$HINTING_BOOL
+AA=$AA
+AA_BOOL=$AA_BOOL
+RGBA=$RGBA
+LCDFILTER=$LCDFILTER
+DPI=$DPI
+DPI_X=$DPI_X
+DPI_UNSCALED=$DPI_UNSCALED
+GDK_SCALE=$GDK_SCALE
+UI_SCALE=$SCALE
+CURSOR=$CURSOR
+CURSOR_SZ=$CURSOR_SZ
+GTK=$GTKSEL
+ICONTHEME=$ICONSEL
+GTKMODULES=$GTKMODULES
+ROFI_ICONS=$ROFI_ICONS
+DARKMODE_INT=$DARKMODE_INT
+BUTTON_LAYOUT=$BUTTON_LAYOUT
+EOT
+
+if ! cat_on desktop; then
+  # app categories only (e.g. `carpatic theme apply --only terminal`): no shell/bar/GTK regeneration
+  cat_on terminal && { mkdir -p "$CUR"; carpatic-render "$COLORS" "$T/osc.tpl" | tr -d '\n' > "$CUR/osc"; for pts in /dev/pts/[0-9]*; do [ -O "$pts" ] && cat "$CUR/osc" > "$pts" 2>/dev/null; done; }
+  if [ "${CARPATIC_NO_RELOAD:-0}" = 1 ]; then carpatic-retint --sync ${ONLY:+--only "$ONLY"} ${SKIP:+--skip "$SKIP"}; else carpatic-retint ${ONLY:+--only "$ONLY"} ${SKIP:+--skip "$SKIP"}; fi
+  exit 0
+fi
+mkdir -p "$CUR/tint2" "$CUR/rofi" "$HOME/.config/dwm-titus" "$HOME/.config/dunst" "$HOME/.config/sxhkd" \
+         "$HOME/.config/gtk-3.0" "$HOME/.config/alacritty" "$CFG_DIR/hooks"
+
+# --- palette-derived files: one renderer process for all of them ---
+mkdir -p "$CUR/tint2" "$CUR/rofi" "$CUR/icons"
+{ printf '%s|%s|\n' "$T/dwm-themes.toml.tpl" "$CUR/themes.toml" "$T/Xresources.tpl" "$CUR/Xresources"; printf '%s|%s|nonl\n' "$T/osc.tpl" "$CUR/osc"
+  printf '%s|%s|\n' "$T/alacritty.toml.tpl" "$CUR/alacritty.toml" "$T/dunstrc.tpl" "$CUR/dunstrc" "$T/fonts.conf.tpl" "$CUR/fonts.conf" "$T/xsettingsd.conf.tpl" "$CUR/xsettingsd.conf" \
+    "$T/rofi.colors.tpl" "$CUR/rofi/colors.rasi" "$T/start.svg.tpl" "$CUR/icons/carpatic-start.svg"
+  [ "$GTK_PALETTE" = 1 ] && printf '%s|%s|\n' "$T/gtk.css.tpl" "$CUR/gtk.css" "$GTKTPL" "$CUR/gtk3.css"
+  for n in windows macos ubuntu tiling; do printf '%s|%s|\n' "$T/rofi/$n.rasi.tpl" "$CUR/rofi/$n.rasi"; done
+  for f in "$T"/tint2/*.tint2rc.tpl; do n=${f##*/}; printf '%s|%s|\n' "$f" "$CUR/tint2/${n%.tpl}"; done
+} > "$CUR/render.list"
+carpatic-render --multi "$COLORS" "$CUR/render.list" "$CUR/vars.kv"
+[ "$GTK_PALETTE" = 1 ] || { echo "/* native GTK theme $GTKSEL: no palette overrides */" > "$CUR/gtk.css"; cp "$CUR/gtk.css" "$CUR/gtk3.css"; }
+
+# --- profile-derived files ---
+DEFHK=$HOME/.local/share/dwm-titus/config/hotkeys.toml
+[ -f "$DEFHK" ] || DEFHK=$CARPATIC_SHARE/fallback-hotkeys.toml
+KEYFILE=$(pf KEYS)
+carpatic-genkeys "$DEFHK" "$CARPATIC_SHARE/profiles/common.keys" "$CARPATIC_SHARE/profiles/$KEYFILE" > "$CUR/hotkeys.toml"
+DEFRULES=$HOME/.local/share/dwm-titus/config/window-rules.toml
+[ -f "$DEFRULES" ] && carpatic-genrules "$DEFRULES" > "$CUR/window-rules.toml"
+SX=$(pf SXHKD); if [ -n "$SX" ] && [ "$SX" != none ]; then cp "$CARPATIC_SHARE/profiles/$SX" "$CUR/sxhkdrc"; else : > "$CUR/sxhkdrc"; fi
+printf "%s\n" "$DEFLAYOUT" > "$CFG_DIR/dwm-deflayout"
+cat > "$CFG_DIR/profile.env" <<EOT
+PROFILE=$PROFILE
+BAR=$BAR
+PANEL_DESIGN=$PANEL_DESIGN
+PANEL_OPTS="$(pf PANEL_OPTS)"
+BAR_TOP=${BAR_TOP:-0}
+BAR_BOTTOM=${BAR_BOTTOM:-0}
+BAR_LEFT=${BAR_LEFT:-0}
+LAUNCHER=$(pf LAUNCHER)
+BAR_TEMPLATES="$(pf BAR_TEMPLATES)"
+SUPERTAP=$(pf SUPERTAP)
+LAYOUT=$DEFLAYOUT
+EOT
+
+mkdir -p "$HOME/.local/share/applications" "$CUR/icons"
+cat > "$HOME/.local/share/applications/carpatic-start.desktop" <<EOT
+[Desktop Entry]
+Type=Application
+Name=Start
+Exec=carpatic-launch
+Icon=$CUR/icons/carpatic-start.svg
+NoDisplay=true
+EOT
+
+# hide tool/duplicate entries from the launchers (user-level NoDisplay overrides)
+for id in compton feh gcr-prompter gcr-viewer libfm-pref-apps lxshortcut pcmanfm-desktop-pref picom rofi-theme-selector rofi st \
+          thunar-bulk-rename thunar-settings thunar-volman-settings kvantummanager tint2 tint2conf xfce4-about yad-icon-browser yad-settings \
+          xfce4-settings-manager xfce4-appfinder desktop-preferences htop uxterm xterm exo-preferred-applications debian-uxterm; do
+  [ -f "/usr/share/applications/$id.desktop" ] || continue
+  f=$HOME/.local/share/applications/$id.desktop
+  [ -f "$f" ] || printf '[Desktop Entry]\nType=Application\nName=%s\nExec=true\nNoDisplay=true\nHidden=true\n' "$id" > "$f"
+done
+
+# --- install into the places the programs read ---
+install_if_changed() { cmp -s "$1" "$2" 2>/dev/null || cp "$1" "$2"; }
+install_if_changed "$CUR/themes.toml" "$HOME/.config/dwm-titus/themes.toml"
+install_if_changed "$CUR/hotkeys.toml" "$HOME/.config/dwm-titus/hotkeys.toml"
+[ -f "$CUR/window-rules.toml" ] && install_if_changed "$CUR/window-rules.toml" "$HOME/.config/dwm-titus/window-rules.toml"
+install_if_changed "$CUR/dunstrc" "$HOME/.config/dunst/dunstrc"
+# on-screen display bubbles (volume, brightness ...): the drop-in is regenerated so its px values follow the display scale
+mkdir -p "$HOME/.config/dunst/dunstrc.d"
+cat > "$HOME/.config/dunst/dunstrc.d/90-carpatic-osd.conf" <<EOT
+# Carpatic: on-screen display bubbles (volume, brightness, screenshots, radios). Drop-in, works with any dunstrc theme. Written by carpatic-apply (display scale $SCALE%).
+[global]
+    progress_bar_corner_radius = $(( 999 ))
+    progress_bar_height = $(( 8 * SCALE / 100 ))
+    progress_bar_frame_width = 0
+
+[carpatic-osd]
+    appname = carpatic-osd
+    timeout = 1.5
+    history_ignore = yes
+    skip_display = no
+    min_icon_size = $(( 32 * SCALE / 100 ))
+    max_icon_size = $(( 48 * SCALE / 100 ))
+EOT
+install_if_changed "$CUR/sxhkdrc" "$HOME/.config/sxhkd/sxhkdrc"
+install_if_changed "$CUR/alacritty.toml" "$HOME/.config/alacritty/alacritty.toml"
+install_if_changed "$CUR/gtk3.css" "$HOME/.config/gtk-3.0/gtk.css"
+mkdir -p "$HOME/.config/gtk-4.0" "$HOME/.config/fontconfig" "$HOME/.config/xsettingsd" "$HOME/.icons/default"
+for v in 3 4; do
+cat > "$HOME/.config/gtk-$v.0/settings.ini" <<EOT
+[Settings]
+gtk-theme-name=$GTKSEL
+gtk-icon-theme-name=$ICONSEL
+gtk-cursor-theme-name=$CURSOR
+gtk-cursor-theme-size=$CURSOR_SZ
+gtk-font-name=$UI $SZ
+gtk-enable-animations=$MOTION_ANIM_INT
+gtk-application-prefer-dark-theme=$DARKMODE_INT
+gtk-modules=$GTKMODULES
+gtk-decoration-layout=$BUTTON_LAYOUT
+gtk-xft-antialias=$AA
+gtk-xft-hinting=$HINTING_ON
+gtk-xft-hintstyle=hint$HINTING
+gtk-xft-rgba=$RGBA
+gtk-xft-dpi=$DPI_X
+EOT
+done
+install_if_changed "$CUR/gtk.css" "$HOME/.config/gtk-4.0/gtk.css"
+# Thunar layout per style (headerbar/menubar, icon size and colour, default view); background, needs the session bus
+[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] && command -v carpatic-thunar >/dev/null 2>&1 && (carpatic-thunar "$GTKSTYLE" "$([ "$TB_INT" = 1 ] && echo titlebars || echo none)" >/dev/null 2>&1 &)
+install_if_changed "$CUR/fonts.conf" "$HOME/.config/fontconfig/fonts.conf"
+install_if_changed "$CUR/xsettingsd.conf" "$HOME/.config/xsettingsd/xsettingsd.conf"
+printf 'Gtk/EnableAnimations %s\n' "$MOTION_ANIM_INT" >> "$HOME/.config/xsettingsd/xsettingsd.conf"
+printf '[Icon Theme]\nName=Default\nInherits=%s\n' "$CURSOR" > "$HOME/.icons/default/index.theme"
+printf '%s:size=%s:antialias=%s\n' "$HEAD" "$(( SZ + 1 ))" "$AA_BOOL" > "$CFG_DIR/dwm-font"
+printf '%s:size=%s:antialias=%s\n' "$MONO" "$MONO_SZ" "$AA_BOOL" > "$CFG_DIR/term-font"
+OLD_APPEARANCE=$(cat "$CFG_DIR/appearance.env" 2>/dev/null)
+cat > "$CFG_DIR/appearance.env" <<EOT
+UI_FONT="$UI $SZ"
+HEAD_FONT="$HEAD"
+MONO_FONT="$MONO $MONO_SZ"
+GTK_THEME="$GTKSEL"
+ICON_THEME="$ICONSEL"
+ROFI_ICONS="$ROFI_ICONS"
+CURSOR_THEME="$CURSOR"
+CURSOR_SIZE="$CURSOR_SZ"
+SCALE="$SCALE"
+MODE="$MODE"
+EOT
+install_if_changed "$CUR/Xresources" "$HOME/.Xresources"
+mkdir -p "$HOME/.config/rofi" ; cp "$CUR/rofi/colors.rasi" "$HOME/.config/rofi/colors.rasi" 2>/dev/null || true
+
+# --- wallpaper ---
+WP=$WALLPAPER
+[ -z "$WP" ] && WP=$(theme_dir "$THEME")/wallpaper.jpg
+[ -f "$WP" ] || WP=/usr/local/share/carpatic/wallpaper.png
+wp_resolve
+printf '%s\n' "$WP" > "$CFG_DIR/wallpaper"
+
+# --- live reload (only when a display is available) ---
+if [ -n "${DISPLAY:-}" ] && [ "${CARPATIC_NO_RELOAD:-0}" != 1 ]; then
+  command -v xrdb >/dev/null && xrdb -merge "$HOME/.Xresources" 2>/dev/null
+  wp_paint "$WP"
+  command -v fc-cache >/dev/null && fc-cache -f >/dev/null 2>&1 &
+  if command -v xsettingsd >/dev/null 2>&1; then
+    if session_present xsettingsd >/dev/null 2>&1; then session_signal xsettingsd HUP; else (xsettingsd >/dev/null 2>&1 &); fi
+  fi
+  session_signal carpatic-wm USR1 2>/dev/null          # re-read hotkeys/themes/rules (also done by inotify)
+  # recolor open terminals (st/xterm/urxvt/alacritty honour OSC 4/10/11/12)
+  cat_on terminal && for pts in /dev/pts/[0-9]*; do [ -O "$pts" ] && cat "$CUR/osc" > "$pts" 2>/dev/null; done
+  if session_present dunst >/dev/null 2>&1; then session_signal dunst TERM; (dunst >/dev/null 2>&1 &); fi
+  if [ "$restart" = 1 ]; then carpatic-session restart; else session_signal tint2 USR1 2>/dev/null; fi
+  if [ "${CARPATIC_SESSION:-0}" = 1 ] && command -v carpatic-animations >/dev/null 2>&1; then
+    carpatic-animations apply >/dev/null 2>&1 || :
+  fi
+fi
+# cache for --live (see the top of this file)
+{ printf 'SIG="%s"\n' "$(grep -v '^\(THEME\|ACCENT\|WALLPAPER\)=' "$SETTINGS" | cksum)"; printf 'MODE_C=%s\nACCDARK=%s\nACCLIGHT=%s\nGTKPAL=%s\nGTKTPL_C=%s\nNOTHING_C=%s\nLOOKC=%s\n' "$MODE" "$(pf ACCENT_dark)" "$(pf ACCENT_light)" "$GTK_PALETTE" "$GTKTPL" "$(case $THEME in nothing|nothing-light) echo 1 ;; *) echo 0 ;; esac)" "$([ -f "$LOOK" ] && echo 1 || echo 0)"; } > "$CUR/live.env"
+# colour the apps outside the shell (terminal configs, editors, browsers, Qt, CLI tools): parallel, in the background
+if [ "${CARPATIC_NO_RELOAD:-0}" = 1 ]; then carpatic-retint --sync ${ONLY:+--only "$ONLY"} ${SKIP:+--skip "$SKIP"}
+else (setsid carpatic-retint ${ONLY:+--only "$ONLY"} ${SKIP:+--skip "$SKIP"} >/dev/null 2>&1 &); fi
+# user hooks (~/.config/carpatic/hooks/<point> or <point>.d/*, see `carpatic hook list`); older installs without carpatic-hook run the single script
+run_hook() { if command -v carpatic-hook >/dev/null 2>&1; then carpatic-hook run "$@" 2>/dev/null; elif [ -x "$CFG_DIR/hooks/$1" ]; then p=$1; shift; "$CFG_DIR/hooks/$p" "$@" 2>/dev/null; fi; }
+run_hook theme-set "$THEME"
+[ "$restart" = 1 ] && run_hook profile-set "$PROFILE"
+[ "$OLD_APPEARANCE" != "$(cat "$CFG_DIR/appearance.env" 2>/dev/null)" ] && [ -n "$OLD_APPEARANCE" ] && run_hook font-set "$UI $SZ"
+exit 0

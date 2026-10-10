@@ -1,0 +1,21 @@
+#!/bin/sh
+# carpatic-profile list|current|set <name> [--no-apply]
+. "$(dirname "$0")/carpatic-lib" 2>/dev/null || . carpatic-lib
+cmd=${1:-current}; [ $# -gt 0 ] && shift
+case $cmd in
+  list) for p in $(list_profiles); do printf '%-10s %s\n' "$p" "$(profile_get "$p" LABEL)"; done ;;
+  current) say "$(get_setting PROFILE tiling)" ;;
+  set)
+    name=${1:?usage: carpatic-profile set <name>}; shift
+    [ -f "$CARPATIC_SHARE/profiles/$name.conf" ] || die "unknown profile '$name' (try: carpatic-profile list)"
+    preset_theme=$(profile_get "$name" DEFAULT_THEME)
+    [ -z "$preset_theme" ] || [ -f "$(theme_dir "$preset_theme")/colors.toml" ] || die "profile '$name' refers to unknown theme '$preset_theme'"
+    if [ "$(get_setting PROFILE "")" != "$name" ]; then
+      for k in WINDOW_BUTTONS BUTTONS_SIDE BUTTONS_SHOWN TITLE_ALIGN BORDER_ACTIVE BORDER_INACTIVE BORDER_WIDTH BORDER_HIGHLIGHT CORNER_RADIUS INNER_GAP OUTER_GAP SMART_GAPS; do set_setting $k ""; done
+      [ -z "$preset_theme" ] || set_setting THEME "$preset_theme"
+    fi
+    set_setting PROFILE "$name"
+    [ "${1:-}" = --no-apply ] && exit 0
+    exec carpatic-apply --restart ;;
+  *) die "usage: carpatic-profile list|current|set <name>" ;;
+esac

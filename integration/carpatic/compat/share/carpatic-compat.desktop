@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Compatibility Box
+GenericName=Run apps built for other Linux systems
+Comment=A terminal inside the box that runs Chrome, Zoom, AppImages and other software Alpine cannot run directly. Not a sandbox: programs in it can reach your files
+Exec=st -e carpatic-compat shell
+Icon=carpatic-compat
+Terminal=false
+Categories=System;
+Keywords=glibc;ubuntu;appimage;deb;container;

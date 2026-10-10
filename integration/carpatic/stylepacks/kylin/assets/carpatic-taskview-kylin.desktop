@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Task view
+Comment=See all open windows
+Exec=carpatic-switch
+Icon=/usr/local/share/carpatic/stylepacks/kylin/taskview.svg
+NoDisplay=true

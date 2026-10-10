@@ -1,0 +1,85 @@
+#!/bin/sh
+# carpatic-hook: scripts that run on events. Idea from Omarchy's omarchy-hook (MIT, see NOTICE).
+#
+#   carpatic-hook list                 hook points, and which of them have your scripts
+#   carpatic-hook run POINT [args]     run the scripts of a point now (this is what the tools call)
+#   carpatic-hook new POINT [name]     create a script from a template and open it in your editor
+#   carpatic-hook edit POINT           open the first script of a point (creates one when there is none)
+#   carpatic-hook wrap NAME -- CMD...  run pre-NAME hooks, then CMD, then post-NAME hooks when CMD succeeded
+#
+# A hook is an executable file ~/.config/carpatic/hooks/POINT (one script) and/or every executable in
+# ~/.config/carpatic/hooks/POINT.d/ (run in name order). They get the arguments shown by `list`, plus CARPATIC_HOOK=POINT.
+# A hook that fails never stops the tool that called it: the failure is logged in ~/.local/state/carpatic/hooks.log and shown once.
+set -u
+HERE=$(cd "$(dirname "$0")" && pwd)
+SHARE=
+for d in "${CARPATIC_GEEK_SHARE:-}" "$HERE/../share" /usr/local/share/carpatic/geek; do [ -n "$d" ] && [ -r "$d/hooks.tsv" ] && { SHARE=$d; break; }; done
+CFG=${CARPATIC_CONFIG:-$HOME/.config/carpatic}
+HOOKS=$CFG/hooks
+LOG=${CARPATIC_STATE:-$HOME/.local/state/carpatic}/hooks.log
+points() { grep -v '^#' "$SHARE/hooks.tsv" | cut -d'|' -f1; }
+known() { points | grep -qx "$1"; }
+err() { printf 'carpatic hook: %s\n' "$*" >&2; }
+scripts() { # point -> executable files, in order
+  [ -x "$HOOKS/$1" ] && [ -f "$HOOKS/$1" ] && printf '%s\n' "$HOOKS/$1"
+  if [ -d "$HOOKS/$1.d" ]; then for f in "$HOOKS/$1.d"/*; do [ -f "$f" ] && [ -x "$f" ] && printf '%s\n' "$f"; done; fi
+  return 0
+}
+run_point() { # point args...
+  p=$1; shift; fails=0
+  for s in $(scripts "$p"); do
+    out=$(CARPATIC_HOOK=$p "$s" "$@" 2>&1); rc=$?
+    if [ "$rc" != 0 ]; then
+      fails=$((fails+1)); mkdir -p "$(dirname "$LOG")"
+      printf '%s %s exit %s: %s\n' "$(date '+%F %T')" "$s" "$rc" "$out" >> "$LOG"
+      err "your hook $(basename "$s") for '$p' did not finish well (code $rc). Details: $LOG"
+    fi
+  done
+  return 0
+}
+case ${1:-list} in
+  list)
+    printf '%-15s %-12s %-6s %s\n' HOOK ARGUMENTS YOURS WHEN
+    grep -v '^#' "$SHARE/hooks.tsv" | while IFS='|' read -r p a w; do
+      n=$(scripts "$p" | wc -l | tr -d ' ')
+      printf '%-15s %-12s %-6s %s\n' "$p" "$a" "$n" "$w"
+    done
+    printf '\nYour hooks live in %s\nMake one with: carpatic hook new theme-set\n' "$HOOKS" ;;
+  run)
+    p=${2:-}; [ -n "$p" ] || { err "which hook? See: carpatic hook list"; exit 2; }
+    known "$p" || { err "I do not know a hook called '$p'. See: carpatic hook list"; exit 2; }
+    shift 2; run_point "$p" "$@" ;;
+  new|edit)
+    verb=$1; p=${2:-}; [ -n "$p" ] || { err "which hook? For example: carpatic hook $verb theme-set"; exit 2; }
+    known "$p" || { err "I do not know a hook called '$p'. See: carpatic hook list"; exit 2; }
+    name=${3:-10-mine}
+    f=$(scripts "$p" | head -1)
+    if [ "$verb" = new ] || [ -z "$f" ]; then
+      mkdir -p "$HOOKS/$p.d"; f=$HOOKS/$p.d/$name
+      [ -e "$f" ] && { err "$f already exists. Edit it with: carpatic hook edit $p"; exit 1; }
+      args=$(grep "^$p|" "$SHARE/hooks.tsv" | cut -d'|' -f2); when=$(grep "^$p|" "$SHARE/hooks.tsv" | cut -d'|' -f3)
+      cat > "$f" <<T
+#!/bin/sh
+# Carpatic hook '$p': runs $when.
+# Arguments: $args
+# It runs with your rights, in the background of the tool that called it. Keep it quick. Delete this file to stop it.
+# Try it by hand: carpatic hook run $p ${args:+EXAMPLE}
+notify-send -a carpatic "Carpatic hook: $p" "\$*" 2>/dev/null
+T
+      chmod +x "$f"
+      printf 'Created %s\n' "$f"
+    fi
+    if [ -t 0 ] && [ -t 1 ]; then exec "${VISUAL:-${EDITOR:-$(command -v nvim || command -v vi)}}" "$f"; fi
+    printf '%s\n' "$f" ;;
+  wrap)
+    n=${2:-}; [ -n "$n" ] || { err "wrap needs a name and a command"; exit 2; }
+    shift 2; [ "${1:-}" = -- ] && shift
+    [ $# -gt 0 ] || { err "wrap needs a command after --"; exit 2; }
+    known "pre-$n" && run_point "pre-$n"
+    "$@"; rc=$?
+    [ "$rc" = 0 ] && known "post-$n" && run_point "post-$n"
+    exit "$rc" ;;
+  points) points ;;
+  -h|--help|help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) err "I do not know '$1'. Try: list, run, new, edit, wrap."; exit 2 ;;
+esac

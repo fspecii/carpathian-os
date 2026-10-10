@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+"""carpatic-progress [--title TEXT] [--root] -- COMMAND [ARGS...]
+Runs a command in a small progress window (live percentage / status lines, friendly error with "Try again", no terminal). For launchers and
+menu entries that used to open a terminal for a long action. --root asks for administrator rights (polkit dialog, or our own password dialog with doas/sudo)."""
+import os, sys
+HERE = os.path.dirname(os.path.realpath(__file__))
+os.environ["GDK_BACKEND"] = "x11"; os.environ.pop("WAYLAND_DISPLAY", None)
+for p in (HERE, os.path.join(HERE, "..", "lib"), "/usr/local/lib/carpatic-settings", "/usr/lib/carpatic-settings"):
+    if os.path.isdir(os.path.join(p, "cset")) and p not in sys.path: sys.path.insert(0, p)
+def main(argv):
+    title, root = "Working", False; i = 0
+    while i < len(argv) and argv[i] != "--":
+        if argv[i] == "--title": title = argv[i + 1]; i += 2
+        elif argv[i] == "--root": root = True; i += 1
+        else: i += 1
+    cmd = argv[i + 1:]
+    if not cmd: print("usage: carpatic-progress [--title TEXT] [--root] -- COMMAND [ARGS...]", file=sys.stderr); return 2
+    if not (os.environ.get("CARPATIC_FORCE") or os.environ.get("CARPATIC_SESSION") or os.path.isdir("/usr/share/carpatic") or os.path.isdir("/usr/local/share/carpatic")):
+        print("carpatic-progress: not a Carpatic session", file=sys.stderr); return 2
+    import gi; gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+    from cset import ui, theme
+    from gi.repository import Gdk
+    prov = Gtk.CssProvider(); prov.load_from_data(theme.css().encode()); Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), prov, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
+    rc = [1]
+    sheet = ui.ProgressSheet(None, title, [(title, title + "...", cmd, root, {})], lambda ok: (rc.__setitem__(0, 0 if ok else 1), Gtk.main_quit()))
+    sheet.set_keep_above(True); sheet.show_all(); sheet.ex.hide() if not sheet.finished else None
+    Gtk.main(); return rc[0]
+sys.exit(main(sys.argv[1:]))

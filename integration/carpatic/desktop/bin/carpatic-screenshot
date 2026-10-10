@@ -1,0 +1,15 @@
+#!/bin/sh
+# carpatic-screenshot [region|full|window]  -> ~/Pictures/Screenshots/Screenshot-<time>.png + clipboard + notification with preview
+# Print = region (drag to select, Esc cancels), Shift+Print = whole screen, Ctrl+Print = active window.
+mode=${1:-region}
+d=${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots; mkdir -p "$d"
+f=$d/Screenshot-$(date +%Y%m%d-%H%M%S).png
+case $mode in
+  full)   maim -u "$f" ;;
+  window) maim -u -i "$(xdotool getactivewindow)" "$f" ;;
+  *)      maim -u -s -b 2 -c 0.36,0.78,0.66,0.35 "$f" ;;
+esac || { rm -f "$f"; exit 0; }       # cancelled with Esc
+[ -s "$f" ] || { rm -f "$f"; exit 0; }
+command -v xclip >/dev/null 2>&1 && xclip -selection clipboard -t image/png -i "$f" >/dev/null 2>&1
+notify-send -a carpatic-osd -u low -t 4000 -i "$f" -h string:x-dunst-stack-tag:osd-shot "Screenshot copied" "Saved in Pictures/Screenshots" 2>/dev/null
+echo "$f"

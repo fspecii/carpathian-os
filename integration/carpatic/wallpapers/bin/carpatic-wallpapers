@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+"""carpatic-wallpapers: the wallpaper browser as a window. Options: --tab carpatic|mine|wallhaven|colours  --mode dark|light  --shot FILE  --size WxH"""
+import argparse, os, sys
+here = os.path.dirname(os.path.realpath(__file__))
+for d in (os.path.join(here, "..", "lib"), "/usr/local/share/carpatic/wallpapers/lib"):
+    if os.path.isdir(os.path.join(d, "carpatic_wallpapers")): sys.path.insert(0, d); break
+
+def main():
+    ap = argparse.ArgumentParser(); ap.add_argument("--tab", default="carpatic"); ap.add_argument("--mode", default=""); ap.add_argument("--shot"); ap.add_argument("--size", default="980x760")
+    ap.add_argument("--delay", type=float, default=2.5); a = ap.parse_args()
+    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        print("No display found. Start this from your desktop session.", file=sys.stderr); return 1
+    import gi; gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk, GLib
+    from carpatic_wallpapers import ui, apply
+    mode = a.mode or apply.theme_mode()
+    ui.install_css(mode, standalone=True)
+    w, h = (int(x) for x in a.size.split("x"))
+    app = Gtk.Application(application_id="org.carpatic.Wallpapers")
+    def activate(app):
+        win = ui.WallpaperWindow(app, a.tab, (w, h)); win.show_all()
+        if a.shot:
+            def shoot():
+                from gi.repository import Gdk
+                gw = win.get_window(); pb = Gdk.pixbuf_get_from_window(gw, 0, 0, gw.get_width(), gw.get_height()); pb.savev(a.shot, "png", [], []); app.quit(); return False
+            GLib.timeout_add(int(a.delay * 1000), shoot)
+    app.connect("activate", activate)
+    return app.run([])
+sys.exit(main())

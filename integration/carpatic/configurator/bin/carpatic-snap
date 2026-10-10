@@ -1,0 +1,36 @@
+#!/bin/sh
+# carpatic-snap left|right|max|restore : snap the active (floating) window inside the usable work area.
+. "$HOME/.config/carpatic/profile.env" 2>/dev/null
+w=$(xdotool getactivewindow 2>/dev/null) || exit 0
+set -- "$1" $(xdotool getdisplaygeometry)
+act=$1; SW=$2; SH=$3; BW=2
+X0=${BAR_LEFT:-0}; Y0=${BAR_TOP:-0}; AW=$((SW - X0)); AH=$((SH - Y0 - ${BAR_BOTTOM:-0}))
+# the live work area published by dwm (bars and docks of the running panel, any design, size or scale) wins over the profile's nominal sizes
+wa=$(xprop -root _NET_WORKAREA 2>/dev/null | sed -n 's/.*= *\([0-9]*\), *\([0-9]*\), *\([0-9]*\), *\([0-9]*\).*/\1 \2 \3 \4/p')
+[ -n "$wa" ] && { set -- "$act" $wa; X0=$2; Y0=$3; AW=$4; AH=$5; }
+# In an auto-tiling workspace the arrows move between tiles (like LinPad and tiling window managers); Up/Down maximise and restore. Snapping is for floating workspaces.
+if [ "$(xprop -root _CARPATIC_LAYOUT 2>/dev/null | sed -n 's/.*= *"\(.*\)"/\1/p')" = tile ]; then
+  case $act in
+    left)  exec xdotool key --clearmodifiers super+alt+k ;;
+    right) exec xdotool key --clearmodifiers super+alt+j ;;
+    max)   exec xdotool key --clearmodifiers super+z ;;
+    restore) eval "$(xdotool getwindowgeometry --shell "$w")"; [ "$WIDTH" -ge $((AW - 40)) ] && exec xdotool key --clearmodifiers super+z; exit 0 ;;
+  esac
+fi
+S=${XDG_RUNTIME_DIR:-/tmp}/carpatic-snap.$w
+case $act in
+  restore) [ -f "$S" ] && { read -r x y ww hh < "$S"; xdotool windowsize "$w" "$ww" "$hh" windowmove "$w" "$x" "$y"; rm -f "$S"; }; exit 0 ;;
+esac
+if [ ! -f "$S" ]; then
+  eval "$(xdotool getwindowgeometry --shell "$w")"; echo "$X $Y $WIDTH $HEIGHT" > "$S"
+fi
+case $act in
+  left)  x=$X0;              ww=$((AW/2 - 2*BW)); ;;
+  right) x=$((X0 + AW/2));   ww=$((AW/2 - 2*BW)); ;;
+  max)   x=$X0;              ww=$((AW - 2*BW)); ;;
+esac
+# the title bar is its own window right above the client: its height comes off the usable height (0 without title bars)
+TB=$(xwininfo -id "$w" 2>/dev/null | awk '/Absolute upper-left X/{cx=$NF} /Absolute upper-left Y/{cy=$NF} END{print cx, cy}' | { read -r cx cy
+  xwininfo -root -tree 2>/dev/null | awk -v cx="$cx" -v cy="$cy" '/\(has no name\)/ && match($0, /[0-9]+x[0-9]+\+-?[0-9]+\+-?[0-9]+/) { split(substr($0, RSTART, RLENGTH), a, /[x+]/); if (a[3] == cx && a[2] + a[4] == cy && a[2] > 8 && a[2] < 80) { print a[2]; exit } }'; })
+TB=${TB:-0}
+xdotool windowsize "$w" "$ww" "$((AH - TB - 2*BW))" windowmove "$w" "$x" "$Y0"

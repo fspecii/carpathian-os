@@ -1,0 +1,32 @@
+# Carpatic dark. Generated from design/tokens/tokens.toml (Omarchy colors.toml schema).
+mode = "dark"
+
+accent = "#5cc8a8"
+selection = "#264743"
+muted = "#6b778c"
+
+background = "#11151c"
+dark_background = "#171c25"
+darker_background = "#0b0e13"
+lighter_background = "#1e2430"
+
+foreground = "#e7ecf3"
+dark_foreground = "#6b778c"
+light_foreground = "#a3aec0"
+bright_foreground = "#e7ecf3"
+
+red = "#f0707a"
+green = "#7bd389"
+yellow = "#f2c25a"
+blue = "#6cb4f0"
+magenta = "#c39ae8"
+cyan = "#5cc8a8"
+orange = "#f2a65a"
+brown = "#765638"
+
+bright_red = "#f78a93"
+bright_green = "#95e3a0"
+bright_yellow = "#f7d27e"
+bright_blue = "#8cc6f6"
+bright_magenta = "#d2b0f0"
+bright_cyan = "#78d6b9"

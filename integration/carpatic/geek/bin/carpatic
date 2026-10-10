@@ -1,0 +1,156 @@
+#!/bin/sh
+# carpatic: one front door for every Carpatic tool.   carpatic <area> <verb> [arguments]
+#
+# Idea from Omarchy's `omarchy` router (MIT, see NOTICE), rebuilt for POSIX sh and the existing carpatic-* tools:
+# a plain table (share/commands.tsv) maps `carpatic theme set nord` to `carpatic-theme set nord`. The old commands keep working.
+#
+# Exit codes: 0 done, 1 the tool failed, 2 you typed something it does not understand, 3 not available on this computer.
+set -u
+HERE=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
+SELF_SHARE=
+for d in "${CARPATIC_GEEK_SHARE:-}" "$HERE/../share" /usr/local/share/carpatic/geek; do
+  [ -n "$d" ] && [ -r "$d/commands.tsv" ] && { SELF_SHARE=$d; break; }
+done
+TABLE=$SELF_SHARE/commands.tsv
+VERSION=$(cat "$SELF_SHARE/VERSION" 2>/dev/null || echo 1)
+PATH="$HERE:$PATH:/usr/local/sbin:/usr/sbin:/sbin"; export PATH
+
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
+  B=$(printf '\033[1m'); A=$(printf '\033[36m'); D=$(printf '\033[2m'); R=$(printf '\033[0m')
+else B=; A=; D=; R=; fi
+
+err() { printf 'carpatic: %s\n' "$*" >&2; }
+usage_err() { err "$1"; shift; for l in "$@"; do printf '  %s\n' "$l" >&2; done; exit 2; }
+
+[ -r "$TABLE" ] || { err "my command list is missing ($TABLE). Reinstalling the geek tools fixes it: sh geek/install.sh"; exit 3; }
+
+areas()  { awk -F'|' '$1=="@area"{print $2}' "$TABLE"; }
+area_desc() { awk -F'|' -v a="$1" '$1=="@area" && $2==a{print $3}' "$TABLE"; }
+has_area() { areas | grep -qx "$1"; }
+rows()   { awk -F'|' -v a="$1" '$1==a' "$TABLE"; }     # all rows of an area
+verbs()  { rows "$1" | cut -d'|' -f2 | grep -vx '\*'; }
+row()    { awk -F'|' -v a="$1" -v v="$2" '$1==a && $2==v' "$TABLE" | head -1; }
+
+# Closest word(s): edit distance <= 2 or shared prefix of 2+ letters
+suggest() { # word list...
+  w=$1; shift
+  printf '%s\n' "$@" | awk -v w="$w" '
+    function lev(a,b,  i,j,la,lb,d,c,m){ la=length(a); lb=length(b)
+      for(i=0;i<=la;i++)d[i,0]=i; for(j=0;j<=lb;j++)d[0,j]=j
+      for(i=1;i<=la;i++)for(j=1;j<=lb;j++){ c=(substr(a,i,1)==substr(b,j,1))?0:1
+        m=d[i-1,j]+1; if(d[i,j-1]+1<m)m=d[i,j-1]+1; if(d[i-1,j-1]+c<m)m=d[i-1,j-1]+c; d[i,j]=m }
+      return d[la,lb] }
+    NF{ if (lev(w,$1)<=2 || (length(w)>=2 && index($1,substr(w,1,2))==1) ) print $1 }' | head -3 | tr '\n' ',' | sed 's/,$//; s/,/, /g'
+}
+
+# --- help -------------------------------------------------------------------------------------------------------------
+help_all() {
+  printf '%scarpatic%s %s: one command for your whole desktop\n\n' "$B" "$R" "$VERSION"
+  printf 'Usage: carpatic <area> <verb> [arguments]\n'
+  printf '       carpatic help <area>      show the verbs of one area\n'
+  printf '       carpatic keys             open the keyboard shortcut cheat sheet\n'
+  printf '       carpatic menu             open the menu (also Super+Alt+Space)\n\n'
+  for a in $(areas); do
+    printf '  %s%-11s%s %s\n' "$A" "$a" "$R" "$(area_desc "$a")"
+    rows "$a" | awk -F'|' -v D="$D" -v R="$R" '$2!="*"{v=v (v==""?"":", ") $2} END{ if (v!="") printf "  %s            %s%s\n", D, v, R }'
+  done
+  printf '\nEvery tool also works on its own (carpatic-theme, carpatic-store, ...). Add --help to any area for details.\n'
+  printf 'Exit codes: 0 done, 1 the tool failed, 2 not understood, 3 not available here.\n'
+}
+
+help_area() {
+  a=$1
+  printf '%scarpatic %s%s: %s\n\n' "$B" "$a" "$R" "$(area_desc "$a")"
+  rows "$a" | awk -F'|' -v A="$A" -v R="$R" '{ v=$2; if (v=="*") v="[anything]"; printf "  carpatic %s %s%-14s%s %s\n", $1, A, v, R, $6 }'
+  printf '\nTry: carpatic %s <verb> --help\n' "$a"
+}
+
+# --- completion: carpatic --complete [words typed so far, without the one being completed] --------------------------------
+complete_source() { # source word
+  case $1 in
+    @themes)   command -v carpatic-theme >/dev/null 2>&1 && carpatic-theme list 2>/dev/null | awk '{print $1}' ;;
+    @profiles) command -v carpatic-profile >/dev/null 2>&1 && carpatic-profile list 2>/dev/null | awk '{print $1}' ;;
+    "") ;;
+    *) sh -c "$1" 2>/dev/null ;;
+  esac
+}
+do_complete() {
+  case $# in
+    0) areas; printf '%s\n' help version; return ;;
+  esac
+  a=$1
+  [ "$a" = help ] && { [ $# -eq 1 ] && areas; return; }
+  has_area "$a" || return 0
+  [ $# -eq 1 ] && { verbs "$a"; return; }
+  r=$(row "$a" "$2"); [ -n "$r" ] || r=$(row "$a" '*')
+  [ -n "$r" ] && complete_source "$(printf '%s' "$r" | cut -d'|' -f5)"
+}
+
+# --- dispatch ---------------------------------------------------------------------------------------------------------
+run_row() { # row args...
+  r=$1; shift
+  tool=$(printf '%s' "$r" | cut -d'|' -f3); fixed=$(printf '%s' "$r" | cut -d'|' -f4)
+  # a leading '!' in the table means "needs administrator rights", '+' means "only when arguments are given (it changes something)"
+  elev=
+  case $tool in
+    '!'*) elev=1; tool=${tool#!} ;;
+    '+'*) [ $# -gt 0 ] && elev=1; tool=${tool#+} ;;
+  esac
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    err "'$tool' is not installed on this computer, so I cannot do that here."
+    case $tool in
+      carpatic-rollback|carpatic-update|carpatic-compat) printf '  It is part of the daily-driver tools. Reinstall them with: sh compat/install.sh\n' >&2 ;;
+      carpatic-store*|carpatic-ai|carpatic-drivers)      printf '  It is part of the store. Reinstall it with: sh store/system/setup-flatpak.sh\n' >&2 ;;
+      carpatic-power)                                    printf '  It is part of the power tools. Reinstall them with: sh power/install.sh\n' >&2 ;;
+      *) printf '  Reinstall the Carpatic tools to bring it back (see: carpatic system doctor).\n' >&2 ;;
+    esac
+    exit 3
+  fi
+  # shellcheck disable=SC2086
+  if [ -n "$elev" ] && [ "$(id -u)" != 0 ]; then carpatic-sudo "$tool" $fixed "$@"; else "$tool" $fixed "$@"; fi
+  rc=$?
+  [ "$rc" = 127 ] && { err "'$tool' could not start a program it needs. Check the installation with: carpatic system doctor"; exit 3; }
+  exit "$rc"
+}
+
+[ $# -eq 0 ] && { help_all; exit 0; }
+case $1 in
+  -h|--help) help_all; exit 0 ;;
+  -V|--version|version) echo "carpatic $VERSION"; exit 0 ;;
+  --complete) shift; do_complete "$@"; exit 0 ;;
+  --areas) areas; exit 0 ;;
+  --table) cat "$TABLE"; exit 0 ;;
+  help)
+    shift
+    [ $# -eq 0 ] && { help_all; exit 0; }
+    has_area "$1" || usage_err "I do not know '$1'." "Areas: $(areas | tr '\n' ' ')"
+    help_area "$1"; exit 0 ;;
+esac
+
+area=$1; shift
+if ! has_area "$area"; then
+  s=$(suggest "$area" $(areas))
+  if [ -n "$s" ]; then usage_err "I do not know '$area'. Did you mean: $s?" "See everything with: carpatic --help"
+  else usage_err "I do not know '$area'." "See everything with: carpatic --help"; fi
+fi
+
+if [ $# -eq 0 ]; then
+  # an area without a verb: the ones with a '*' row just run, the rest show their verbs
+  r=$(row "$area" '*')
+  [ -n "$r" ] && run_row "$r"
+  dv=$(awk -F'|' -v a="$area" '$1=="@default" && $2==a{print $3}' "$TABLE")
+  if [ -n "$dv" ]; then r=$(row "$area" "$dv"); [ -n "$r" ] && run_row "$r"; fi
+  help_area "$area"; exit 0
+fi
+case $1 in -h|--help|help) help_area "$area"; exit 0 ;; esac
+
+verb=$1; shift
+r=$(row "$area" "$verb")
+if [ -z "$r" ]; then
+  star=$(row "$area" '*')
+  if [ -n "$star" ]; then set -- "$verb" "$@"; run_row "$star" "$@"; fi
+  s=$(suggest "$verb" $(verbs "$area"))
+  if [ -n "$s" ]; then usage_err "'carpatic $area' has no '$verb'. Did you mean: $s?" "All verbs: carpatic help $area"
+  else usage_err "'carpatic $area' has no '$verb'." "All verbs: carpatic help $area"; fi
+fi
+run_row "$r" "$@"

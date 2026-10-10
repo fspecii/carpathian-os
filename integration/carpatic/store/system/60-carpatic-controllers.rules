@@ -1,0 +1,14 @@
+# Carpatic: game controller access for the logged-in user (Steam Input needs uaccess/input group).
+# Based on the public steam-devices / game-devices-udev rule sets.
+KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess", MODE="0660", GROUP="input"
+# Valve: Steam Controller, Steam Deck, Valve Index
+SUBSYSTEM=="usb", ATTRS{idVendor}=="28de", MODE="0660", TAG+="uaccess"
+KERNEL=="hidraw*", ATTRS{idVendor}=="28de", MODE="0660", TAG+="uaccess"
+# Sony DualShock 4 / DualSense
+KERNEL=="hidraw*", ATTRS{idVendor}=="054c", ATTRS{idProduct}=="05c4|09cc|0ce6|0df2", MODE="0660", TAG+="uaccess"
+# Microsoft Xbox One / Series (USB)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="045e", ATTRS{idProduct}=="02d1|02dd|02e3|02ea|0b12|0b13", MODE="0660", TAG+="uaccess"
+# Nintendo Switch Pro / Joy-Con
+KERNEL=="hidraw*", ATTRS{idVendor}=="057e", ATTRS{idProduct}=="2009|2006|2007", MODE="0660", TAG+="uaccess"
+# 8BitDo
+SUBSYSTEM=="usb", ATTRS{idVendor}=="2dc8", MODE="0660", TAG+="uaccess"

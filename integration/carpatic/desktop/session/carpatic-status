@@ -1,0 +1,16 @@
+#!/bin/sh
+# Status text for dwm's bar (root window name): "82%   148 MB   Wed 7 Oct  23:50"  (design system: no pipes, no hostname).
+bat() {
+  for b in /sys/class/power_supply/BAT*; do
+    [ -r "$b/capacity" ] || continue
+    c=$(cat "$b/capacity"); s=$(cat "$b/status" 2>/dev/null)
+    case $s in Charging) g="+" ;; *) g="" ;; esac
+    printf '%s%s%%   ' "$g" "$c"; return
+  done
+}
+sleep 1
+while :; do
+  mem=$(free -m | awk '/Mem:/{print $3}')
+  xsetroot -name " $(bat)${mem} MB   $(date '+%a %-d %b  %H:%M') " || exit 0
+  sleep 20
+done

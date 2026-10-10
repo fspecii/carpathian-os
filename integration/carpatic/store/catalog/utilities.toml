@@ -1,0 +1,203 @@
+# Carpatic store catalog: Utilities
+# Each [[app]]: id (unique), name, description, source (apk|flatpak|ai|compat), pkg (apk package or Flathub app id),
+# icon (icon-theme name), newcomer (good for newcomers), optional: size_mb, note, detail (long text), exec (launch cmd), term (run in a terminal), launch="none" (daemon, no Open button)
+[category]
+id = "utilities"
+name = "Utilities"
+icon = "applications-utilities"
+order = 8
+blurb = "Handy everyday tools"
+
+[[app]]
+id = "keepassxc"
+name = "KeePassXC"
+pkg = "keepassxc"
+source = "apk"
+icon = "keepassxc"
+newcomer = true
+size_mb = 15
+description = "Password manager that keeps data on your computer."
+
+[[app]]
+id = "bitwarden"
+name = "Bitwarden"
+pkg = "com.bitwarden.desktop"
+source = "flatpak"
+icon = "bitwarden"
+newcomer = false
+size_mb = 189
+description = "Cloud password manager."
+
+[[app]]
+id = "thunar"
+name = "Thunar"
+pkg = "thunar"
+source = "apk"
+icon = "system-file-manager"
+newcomer = true
+size_mb = 10
+description = "Simple file manager."
+
+[[app]]
+id = "file-roller"
+name = "Archive Manager"
+pkg = "file-roller"
+source = "apk"
+icon = "file-roller"
+newcomer = true
+size_mb = 3
+description = "Open and create zip, tar and 7z files."
+
+[[app]]
+id = "pavucontrol"
+name = "Volume Control"
+pkg = "pavucontrol"
+source = "apk"
+icon = "multimedia-volume-control"
+newcomer = true
+size_mb = 2
+description = "Choose speakers, microphones and volume."
+
+[[app]]
+id = "flameshot"
+name = "Flameshot"
+pkg = "flameshot"
+source = "apk"
+icon = "flameshot"
+newcomer = true
+size_mb = 10
+description = "Screenshot tool with annotations."
+
+[[app]]
+id = "qbittorrent"
+name = "qBittorrent"
+pkg = "qbittorrent"
+source = "apk"
+icon = "qbittorrent"
+newcomer = false
+size_mb = 25
+description = "Torrent client."
+
+[[app]]
+id = "localsend"
+name = "LocalSend"
+pkg = "org.localsend.localsend_app"
+source = "flatpak"
+icon = "localsend"
+newcomer = true
+size_mb = 23
+description = "Send files to nearby devices over Wi-Fi."
+
+[[app]]
+id = "gparted"
+name = "GParted"
+pkg = "gparted"
+source = "apk"
+icon = "gparted"
+newcomer = false
+size_mb = 5
+description = "Disk partition editor."
+
+[[app]]
+id = "flatseal"
+name = "Flatseal"
+pkg = "com.github.tchx84.Flatseal"
+source = "flatpak"
+icon = "flatseal"
+newcomer = false
+size_mb = 1
+description = "Review and change Flatpak app permissions."
+
+[[app]]
+id = "gnome-calculator"
+name = "Calculator"
+pkg = "org.gnome.Calculator"
+source = "flatpak"
+icon = "accessories-calculator"
+newcomer = true
+size_mb = 2
+description = "Simple calculator (also our Flatpak test app)."
+
+[[app]]
+id = "satty"
+name = "Satty"
+pkg = "satty"
+source = "apk"
+icon = "applets-screenshooter"
+newcomer = false
+size_mb = 12
+launch = "none"
+description = "Draw arrows, boxes and text on screenshots (used by the Trigger menu)."
+
+[[app]]
+id = "ffmpeg"
+name = "FFmpeg"
+pkg = "ffmpeg"
+source = "apk"
+icon = "video-x-generic"
+newcomer = false
+size_mb = 25
+launch = "none"
+description = "Records the screen (Trigger menu) and converts video and audio."
+
+[[app]]
+id = "mousepad"
+name = "Text Editor"
+pkg = "mousepad"
+source = "apk"
+icon = "org.xfce.mousepad"
+newcomer = true
+size_mb = 1
+description = "Simple, fast text editor for notes, config files and code."
+
+[[app]]
+id = "galculator"
+name = "Calculator"
+pkg = "galculator"
+source = "apk"
+icon = "galculator"
+newcomer = true
+size_mb = 1
+description = "Basic and scientific calculator."
+
+[[app]]
+id = "eog"
+name = "Image Viewer"
+pkg = "eog"
+source = "apk"
+icon = "org.gnome.eog"
+newcomer = true
+size_mb = 4
+description = "View photos and pictures."
+
+[[app]]
+id = "xarchiver"
+name = "Archive Manager (light)"
+pkg = "xarchiver"
+source = "apk"
+icon = "xarchiver"
+newcomer = true
+size_mb = 1
+description = "Open and create zip, tar and 7z files; used by Files."
+
+[[app]]
+id = "alpine"
+name = "Mail"
+pkg = "alpine"
+source = "apk"
+icon = "mail-unread"
+newcomer = true
+size_mb = 9
+exec = "carpatic-mail"
+term = true
+description = "Small email program that runs in a terminal window (IMAP and SMTP; Gmail needs an app password). About 9 MB."
+
+[[app]]
+id = "claws-mail"
+name = "Claws Mail"
+pkg = "claws-mail"
+source = "apk"
+icon = "claws-mail"
+newcomer = false
+size_mb = 195
+description = "Fast, classic desktop mail client (IMAP, POP3, SMTP). About 195 MB because it needs a web engine."

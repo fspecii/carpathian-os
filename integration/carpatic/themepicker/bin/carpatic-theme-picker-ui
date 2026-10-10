@@ -1,0 +1,493 @@
+#!/usr/bin/env python3
+"""carpatic-theme-picker-ui: the Carpatic theme picker window and its resident helper (GTK3 + cairo).
+
+Left/Right change the focused row (the real desktop follows, debounced), Up/Down move between rows, Enter keeps, Esc puts everything back.
+Run through `carpatic-theme-picker` (the hotkey command); `--daemon` keeps this process alive after the window closes so the next
+open is a simple map of an already drawn window; `--show` opens it straight away.  Settings go through settings.conf + carpatic-apply."""
+import os, sys, time, json, signal, subprocess, warnings
+warnings.simplefilter("ignore")          # GTK 3 deprecation notices (set_wmclass, unix_signal_add) must not end up in a log nobody reads
+HERE = os.path.dirname(os.path.abspath(__file__))
+for d in (os.path.join(HERE, "..", "lib"), "/usr/local/lib/carpatic-themepicker"):
+    if os.path.isdir(d): sys.path.insert(0, d)
+T_START = time.monotonic()
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0"); gi.require_version("Pango", "1.0"); gi.require_version("PangoCairo", "1.0")
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import Gtk, Gdk, GLib, Gio
+import cairo
+import tp_data, tp_model, tp_card, tp_render
+from tp_model import Session, Applier, KEYS, LOOK_KEYS, read_settings, read_text, write_settings, restore_settings
+
+HOME = os.path.expanduser("~")
+CFG = os.environ.get("CARPATIC_CONFIG") or os.path.join(HOME, ".config", "carpatic")
+SETTINGS = os.path.join(CFG, "settings.conf")
+RUN = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+FIFO = os.environ.get("CARPATIC_PICKER_FIFO") or os.path.join(RUN, "carpatic-theme-picker-%d.fifo" % os.getuid())
+PIDFILE = FIFO + ".pid"
+LOG = os.environ.get("CARPATIC_PICKER_LOG")                  # JSON lines with timings (tests and the README numbers)
+LIVE_SKIP = "editors,browser,qt,cli"                         # app configs are rewritten once, when Enter keeps the result
+DELAY = float(os.environ.get("CARPATIC_PICKER_DELAY", "0.15"))
+
+
+def log(**kw):
+    if not LOG: return
+    kw["t"] = round(time.time(), 3)
+    try:
+        with open(LOG, "a") as f: f.write(json.dumps(kw) + "\n")
+    except OSError:
+        pass
+
+
+def read_appearance():
+    d = tp_data.read_env(os.path.join(CFG, "appearance.env"))
+    ui = d.get("UI_FONT", "Inter 10").rsplit(" ", 1); mono = d.get("MONO_FONT", "JetBrains Mono 10").rsplit(" ", 1)
+    return (ui[0] or "Inter", ui[1] if len(ui) > 1 and ui[1].isdigit() else "10", mono[0] or "JetBrains Mono")
+
+
+class Picker(Gtk.Window):
+    def __init__(self, daemon):
+        super().__init__(type=Gtk.WindowType.POPUP)       # override-redirect: no title bar, never tiled, never moved by the window manager
+        self.daemon = daemon
+        self.cat = tp_data.Catalog()
+        self.session = None
+        self.card = None
+        self.visible_now = False
+        self.t_show = None; self.first_draw_logged = True; self.frame = None; self.last_render_ms = 0
+        self.original_text = None; self.written = {}; self.applied = {}
+        self.proc = None
+        self.applier = Applier(self.run_job, lambda d, fn: GLib.timeout_add(int(d * 1000), self._once(fn)), GLib.source_remove, delay=DELAY, abort=self.abort_job)
+        self.anim_id = None; self.grabbed = False; self.t_key = None; self.prefetch_id = None
+        self.set_title("Carpatic theme picker"); self.set_wmclass("carpatic-theme-picker", "Carpatic-theme-picker")
+        self.set_app_paintable(True); self.set_decorated(False); self.set_resizable(False)
+        scr = self.get_screen(); vis = scr.get_rgba_visual()
+        self.composited = bool(vis and scr.is_composited())
+        if self.composited: self.set_visual(vis)
+        self.add_events(Gdk.EventMask.KEY_PRESS_MASK | Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK |
+                        Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK | Gdk.EventMask.TOUCH_MASK)
+        self.connect("draw", self.on_draw); self.connect("key-press-event", self.on_key)
+        self.connect("button-press-event", self.on_button); self.connect("scroll-event", self.on_scroll)
+        self.connect("grab-broken-event", lambda *a: self.cancel() if self.visible_now else None)
+        self.swipe = Gtk.GestureSwipe.new(self); self.swipe.set_touch_only(True); self.swipe.connect("swipe", self.on_swipe)
+        self.swipe.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        self.size = (0, 0)
+        self.scroll_acc = 0.0
+
+    @staticmethod
+    def _once(fn):
+        def w():
+            fn(); return False
+        return w
+
+    # ------------------------------------------------------------ showing and hiding
+    def monitor_geometry(self):
+        d = Gdk.Display.get_default()
+        seat = d.get_default_seat(); ptr = seat.get_pointer()
+        _, x, y = ptr.get_position()
+        m = d.get_monitor_at_point(x, y) or d.get_primary_monitor() or d.get_monitor(0)
+        return m.get_geometry()
+
+    def show_picker(self, row=None):
+        if self.visible_now:           # already open: just go to the asked row (a second press of the hotkey with a row, `carpatic theme pick accent`)
+            if row and self.session and not self.session.entering():
+                for i, r in enumerate(self.session.rows):
+                    if r.id == row: self.session.goto_row(i)
+                self.redraw()
+            return
+        self.t_show = time.monotonic(); self.first_draw_logged = False
+        self.cat._themes = None            # themes may have been added since the last open (cheap: one directory listing)
+        snap = read_settings(SETTINGS); self.original_text = read_text(SETTINGS)
+        self.written = dict(snap); self.applied = dict(snap)
+        self.session = Session(self.cat, snap)
+        ui, size, mono = read_appearance()
+        if self.card is None: self.card = tp_card.Card(self.cat, self.session, ui, mono, int(size))
+        else:
+            self.card.s = self.session; self.card.ui, self.card.mono = ui, mono; self.card.strip_x = None
+        self.card.status = ""; self.card.toast = ""
+        if row:
+            for i, r in enumerate(self.session.rows):
+                if r.id == row: self.session.goto_row(i)
+        g = self.monitor_geometry()
+        sc = self.card.fit(g.width, g.height)
+        w, h = int(round(tp_card.CW * sc)), int(round(tp_card.CH * sc))
+        self.card.fit(w, h, 0); self.card_scale = sc
+        self.set_size_request(w, h); self.resize(w, h); self.size = (w, h)
+        self.move(g.x + (g.width - w) // 2, g.y + (g.height - h) // 2)
+        self.visible_now = True
+        self.frame = self.render_frame()        # drawn before it is mapped
+        self.show_all()
+        GLib.idle_add(self.grab, 0)
+        log(event="show", row=row or "")
+
+    def grab(self, tries=0):
+        """Take the keyboard and pointer. Right after the hotkey the window manager's own grab of the shortcut keys may still be active
+        (the keys are physically down), so a refusal is retried every 15 ms for up to a second, as rofi does."""
+        gw = self.get_window()
+        if gw is None or not self.visible_now or self.grabbed: return False
+        seat = Gdk.Display.get_default().get_default_seat()
+        st = seat.grab(gw, Gdk.SeatCapabilities.ALL, True, None, None, None, None)
+        self.grabbed = (st == Gdk.GrabStatus.SUCCESS)
+        if self.grabbed:
+            log(event="grab", tries=tries, ms=round((time.monotonic() - self.t_show) * 1000)); self.shape()
+        elif tries < 66:
+            GLib.timeout_add(15, self.grab, tries + 1)
+        else:      # something else owns the keyboard (the lock screen, a stuck grab): a picker nobody can steer would be worse than none
+            log(event="grab-failed", status=str(st))
+            self.cancel_silently()
+            try: subprocess.Popen(["notify-send", "-i", "preferences-desktop-theme", "The theme picker could not open", "Another program is holding the keyboard. Close it and try again."], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except OSError: pass
+        return False
+
+    def cancel_silently(self):
+        """Close without touching the desktop (nothing was changed yet)."""
+        self.applier.drop(); self.hide_picker()
+
+    def shape(self):
+        """No compositor: cut the corners out of the window (X Shape) so the card is a rounded rectangle."""
+        gw = self.get_window()
+        if gw is None or self.composited: return
+        w, h = self.size
+        mask = cairo.ImageSurface(cairo.FORMAT_A8, w, h); c = cairo.Context(mask)
+        tp_render.rrect(c, 0, 0, w, h, tp_card.RADIUS * self.card.scale + 1); c.set_source_rgba(0, 0, 0, 1); c.fill()
+        gw.shape_combine_region(Gdk.cairo_region_create_from_surface(mask), 0, 0)
+
+    def hide_picker(self):
+        if not self.visible_now: return
+        self.visible_now = False
+        if self.grabbed:
+            Gdk.Display.get_default().get_default_seat().ungrab(); self.grabbed = False
+        self.hide()
+        if self.anim_id: GLib.source_remove(self.anim_id); self.anim_id = None
+        if self.prefetch_id: GLib.source_remove(self.prefetch_id); self.prefetch_id = None
+        log(event="hide")
+        self.frame = None; self.trim_memory()
+        if not self.daemon: GLib.idle_add(Gtk.main_quit)
+
+    def trim_memory(self):
+        """A resident helper should stay small: keep the two newest wallpapers, give the rest (and freed arenas) back to the system."""
+        pics = tp_render.PICS
+        while len(pics.order) > 2: pics.walls.pop(pics.order.pop(0), None)
+        pics.icons.clear()
+        try:
+            import ctypes; ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except (OSError, AttributeError):
+            pass
+
+    # ------------------------------------------------------------ drawing
+    def render_frame(self):
+        """The whole card as a surface. Rendering before the window is mapped means it appears fully drawn, never as an empty black box."""
+        t0 = time.monotonic(); W, H = self.size
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32 if self.composited else cairo.FORMAT_RGB24, W, H)
+        cr = cairo.Context(surf); self.card.draw(cr, W, H, scale=getattr(self, "card_scale", None))
+        self.last_render_ms = round((time.monotonic() - t0) * 1000, 1)
+        return surf
+
+    def on_draw(self, w, cr):
+        if not self.session: return False
+        t0 = time.monotonic()
+        if self.frame is None: self.frame = self.render_frame()
+        cr.set_operator(cairo.OPERATOR_SOURCE); cr.set_source_surface(self.frame, 0, 0); cr.paint()
+        if not self.first_draw_logged:
+            self.first_draw_logged = True
+            log(event="first-draw", open_ms=round((time.monotonic() - self.t_show) * 1000, 1), draw_ms=self.last_render_ms, parts=self.card.timing)
+        elif self.t_key:
+            log(event="key-draw", ms=round((time.monotonic() - self.t_key) * 1000, 1)); self.t_key = None
+        return True
+
+    def redraw(self):
+        self.frame = None; self.queue_draw()
+        self.schedule_prefetch()
+        card = self.card
+        tgt = getattr(card, "_strip_target", None)
+        if tgt is not None and card.strip_x is not None and abs(card.strip_x - tgt) > .5 and self.anim_id is None:
+            self.last_frame = time.monotonic(); self.anim_id = GLib.timeout_add(16, self.tick)
+
+    def schedule_prefetch(self):
+        """After a draw, decode the wallpapers the next key press will need, one per idle slot (key events always win over this)."""
+        if self.prefetch_id is not None or not self.visible_now: return
+        todo = self.card.prefetch_paths()
+        if not todo: return
+        pw, ph = int(round(tp_card.LW * self.card.scale)), int(round(tp_card.PV_H * self.card.scale))
+        def step():
+            if not todo or not self.visible_now: self.prefetch_id = None; return False
+            tp_render.PICS.wallpaper(todo.pop(0), pw, ph)
+            if not todo: self.prefetch_id = None; return False
+            return True
+        self.prefetch_id = GLib.idle_add(step, priority=GLib.PRIORITY_LOW)
+
+    def tick(self):
+        card = self.card; now = time.monotonic(); dt = now - self.last_frame; self.last_frame = now
+        tgt = getattr(card, "_strip_target", None)
+        if tgt is None or not self.visible_now: self.anim_id = None; return False
+        k = 1 - pow(.0005, dt / .12) if True else 1       # critically smooth: ~120 ms to settle
+        card.strip_x += (tgt - card.strip_x) * min(1, k)
+        if abs(card.strip_x - tgt) < .5: card.strip_x = tgt; self.anim_id = None; self.frame = None; self.queue_draw(); return False
+        self.frame = None; self.queue_draw(); return True
+
+    # ------------------------------------------------------------ the real work: apply, keep, revert
+    def changed(self):
+        """Something in the session changed: ask the debouncer to put it on the real desktop."""
+        self.card.toast = ""
+        self.card.status = "Applying…"
+        self.applier.request({"kind": "live", "state": dict(self.session.live_state())})
+        self.redraw()
+
+    def abort_job(self, job):
+        """A newer choice arrived while this live apply still runs: stop it (the new one rewrites everything it touched)."""
+        if job["kind"] != "live" or self.proc is None: self.applier.aborting = False; return
+        try: os.killpg(self.proc.pid, signal.SIGTERM)
+        except OSError: pass
+        self.applied = {k: "?" for k in KEYS}          # unknown what the stopped run completed: the next one redoes everything
+        log(event="abort")
+
+    def run_job(self, job, done):
+        t0 = time.monotonic()
+        env = dict(os.environ)
+        if job["kind"] == "restore":
+            restore_settings(SETTINGS, self.original_text)
+            new = read_settings(SETTINGS)
+        else:
+            st = job["state"]
+            ch = {k: st.get(k, "") for k in KEYS if st.get(k, "") != self.written.get(k, "")}
+            if ch: write_settings(SETTINGS, ch)
+            new = {k: st.get(k, "") for k in KEYS}
+        moved = [k for k in KEYS if new.get(k, "") != self.applied.get(k, "")]
+        # a window-look key set to a value goes straight into themes.toml (carpatic-look, ~30 ms); handing a key back to the default needs the
+        # style's value, which only carpatic-apply knows
+        heavy = any(k not in LOOK_KEYS or new.get(k, "") == "" for k in moved)
+        look = bool(moved)
+        if job["kind"] == "restore": self.written = dict(read_settings(SETTINGS))
+        else: self.written.update({k: new.get(k, "") for k in KEYS})
+        self.applied = {k: new.get(k, "") for k in KEYS}
+        if heavy and any(k in moved for k in ("THEME", "WALLPAPER")) and job["kind"] != "final":
+            # the wallpaper is what the eye catches first: put it up at once, the colours follow when carpatic-apply is done
+            wp = new.get("WALLPAPER") or self.cat.default_wallpaper(new.get("THEME") or "carpatic")
+            if wp and os.path.isfile(wp):
+                try: subprocess.Popen(["feh", "--no-fehbg", "--bg-fill", wp], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except OSError: pass
+        if job["kind"] == "final":
+            cmd = "carpatic-profile set %s; " % job["profile"] if job.get("profile") else "carpatic-apply; "
+            cmd += "command -v carpatic-look >/dev/null 2>&1 && carpatic-look"
+        elif heavy:
+            cmd = "carpatic-apply --skip %s; command -v carpatic-look >/dev/null 2>&1 && carpatic-look" % LIVE_SKIP
+        elif look:
+            cmd = "command -v carpatic-look >/dev/null 2>&1 && carpatic-look"
+        else:
+            cmd = "true"
+        try:
+            p = subprocess.Popen(["sh", "-c", cmd], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            self.proc = p
+        except OSError:
+            GLib.idle_add(self._job_done, job, 1, t0, done); return
+
+        def exited(pid, status):
+            self.proc = None
+            self._job_done(job, os.waitstatus_to_exitcode(status), t0, done)
+        GLib.child_watch_add(GLib.PRIORITY_DEFAULT, p.pid, exited)
+
+    def _job_done(self, job, rc, t0, done):
+        ms = (time.monotonic() - t0) * 1000
+        st = self.applier.stats
+        log(event="applied", kind=job["kind"], rc=rc, apply_ms=round(ms), heavy=True)
+        if self.visible_now and self.card:
+            if rc < 0 or (rc != 0 and job["kind"] == "live" and self.applier.dirty): pass       # stopped on purpose: the newer apply reports
+            elif rc != 0 and job["kind"] != "final": self.card.status = "Could not apply that change"
+            else: self.card.status = "Applied in %.1f s" % (ms / 1000) if ms >= 100 else "Applied"
+            self.frame = None; self.queue_draw()
+        done()
+        return False
+
+    def keep(self):
+        s = self.session
+        if s.entering(): return
+        dirty = s.dirty()
+        profile = s.state.get("PROFILE", "") if s.state.get("PROFILE", "") != s.snapshot.get("PROFILE", "") else ""
+        log(event="keep", dirty=dirty)
+        self.hide_picker()
+        if not dirty: self.applier.drop(); return
+        self.applier.drop()
+        state = dict(s.state)
+        # the final apply waits for any live apply that is still running, then writes everything and re-colours the apps too
+        self.applier.request({"kind": "final", "state": state, "profile": profile}, immediate=True)
+
+    def cancel(self):
+        s = self.session
+        if s is None or not self.visible_now: return
+        log(event="cancel", dirty=s.dirty())
+        self.hide_picker()
+        self.applier.drop()
+        if s.dirty() or self.written != s.snapshot:
+            self.applier.request({"kind": "restore", "state": dict(s.snapshot)}, immediate=True)
+
+    # ------------------------------------------------------------ input
+    def after_change(self, did):
+        if did: self.changed()
+        else: self.redraw()
+
+    def on_key(self, w, ev):
+        if not self.session: return False
+        self.t_key = time.monotonic()
+        k = ev.keyval; s = self.session; name = Gdk.keyval_name(k) or ""
+        ctrl = bool(ev.state & Gdk.ModifierType.CONTROL_MASK)
+        ch = chr(Gdk.keyval_to_unicode(k)) if Gdk.keyval_to_unicode(k) else ""
+        if s.hex_entry is not None:
+            if name == "Escape": self.after_change(s.hex_done(False))
+            elif name in ("Return", "KP_Enter"): self.after_change(s.hex_done(True))
+            elif name == "BackSpace": s.hex_type("\b"); self.after_change(True) if tp_model.valid_hex(s.hex_entry) else self.redraw()
+            elif ch: s.hex_type(ch); self.after_change(True) if tp_model.valid_hex(s.hex_entry) else self.redraw()
+            return True
+        if s.save_entry is not None:
+            if name == "Escape": s.save_cancel(); self.redraw()
+            elif name in ("Return", "KP_Enter"): self.finish_save()
+            elif name == "BackSpace": s.save_type("\b"); self.redraw()
+            elif ch and not ctrl: s.save_type(ch); self.redraw()
+            return True
+        if name == "Escape":
+            if s.filter: s.filter = ""; self.redraw()
+            else: self.cancel()
+        elif name in ("Return", "KP_Enter"): self.keep()
+        elif name == "Left": self.after_change(s.change(-1))
+        elif name == "Right": self.after_change(s.change(1))
+        elif name == "Up": s.move_row(-1); self.redraw()
+        elif name == "Down": s.move_row(1); self.redraw()
+        elif name == "Tab": s.move_row(1); self.redraw()
+        elif name == "ISO_Left_Tab": s.move_row(-1); self.redraw()
+        elif name == "Home": self.after_change(self.jump(0))
+        elif name == "End": self.after_change(self.jump(-1))
+        elif name == "Delete": self.after_change(s.reset_row())
+        elif name == "BackSpace": s.type_filter("\b"); self.redraw()
+        elif ctrl and name in ("s", "S"): s.begin_save(); self.redraw()
+        elif ch == "#" and s.begin_hex(): self.redraw()
+        elif ch and ch.isprintable() and not ctrl and not (ev.state & Gdk.ModifierType.MOD1_MASK):
+            s.type_filter(ch); self.redraw()
+        return True
+
+    def jump(self, which):
+        vis = self.session.visible_options()
+        if not vis: return False
+        return self.session.choose(self.session.focus, vis[0 if which == 0 else -1][0])
+
+    def finish_save(self):
+        s = self.session; name = s.save_commit()
+        if not name: self.redraw(); return
+        slug = tp_data.save_user_theme(self.cat, name, s.state)
+        if slug:
+            s.adopt_saved(slug); self.card.toast = "Saved as “%s”" % tp_data.label_for(slug)
+            self.applier.request({"kind": "live", "state": dict(s.live_state())})
+        self.redraw()
+
+    def on_button(self, w, ev):
+        if not self.card or ev.button != 1: return False
+        s = self.session; kind, payload = self.card.hit(ev.x, ev.y)
+        if s.entering(): return True
+        if kind == "outside": self.cancel()
+        elif kind == "keep": self.keep()
+        elif kind == "cancel": self.cancel()
+        elif kind == "row": s.goto_row(payload); self.redraw()
+        elif kind == "chev": self.after_change(s.change(payload))
+        elif kind == "opt": self.after_change(s.choose(*payload))
+        elif kind == "preview" and ev.type == Gdk.EventType.DOUBLE_BUTTON_PRESS: self.keep()
+        return True
+
+    def on_scroll(self, w, ev):
+        s = self.session
+        if not s or s.entering(): return True
+        kind, _ = self.card.hit(ev.x, ev.y)
+        dx, dy = 0, 0
+        if ev.direction == Gdk.ScrollDirection.SMOOTH:
+            _, dx, dy = ev.get_scroll_deltas()
+        elif ev.direction == Gdk.ScrollDirection.UP: dy = -1
+        elif ev.direction == Gdk.ScrollDirection.DOWN: dy = 1
+        elif ev.direction == Gdk.ScrollDirection.LEFT: dx = -1
+        elif ev.direction == Gdk.ScrollDirection.RIGHT: dx = 1
+        self.scroll_acc += (dx if abs(dx) > abs(dy) else dy)
+        step = 0
+        if self.scroll_acc >= 1: step = 1
+        elif self.scroll_acc <= -1: step = -1
+        if step:
+            self.scroll_acc = 0
+            if kind == "row" or kind == "chev": s.move_row(step); self.redraw()
+            else: self.after_change(s.change(step))
+        return True
+
+    def on_swipe(self, g, vx, vy):
+        s = self.session
+        if not s or s.entering() or max(abs(vx), abs(vy)) < 120: return
+        if abs(vx) > abs(vy): self.after_change(s.change(1 if vx < 0 else -1))
+        else: s.move_row(1 if vy < 0 else -1); self.redraw()
+
+    # ------------------------------------------------------------ warm-up: everything the first open would otherwise pay for
+    def prewarm(self):
+        steps = [self.cat.theme_names, self.cat.icon_themes, self.cat.cursor_themes, self.cat.families, self._warm_card]
+        def step():
+            if not steps: return False
+            try: steps.pop(0)()
+            except Exception: pass
+            return bool(steps)
+        GLib.idle_add(step, priority=GLib.PRIORITY_LOW)
+
+    def _warm_card(self):
+        snap = read_settings(SETTINGS); s = Session(self.cat, snap)
+        ui, size, mono = read_appearance()
+        card = tp_card.Card(self.cat, s, ui, mono, int(size))
+        surf = cairo.ImageSurface(cairo.FORMAT_RGB24, 1040, 640); cr = cairo.Context(surf)
+        for n in range(len(s.rows)):
+            s.goto_row(n); card.draw(cr, 1040, 640)
+        for t in self.cat.theme_names(): card.thumb(t, None, 148, 83)
+        if self.card is None: self.card = card     # keep it: its thumbnails are cached, show_picker() rebinds the session
+
+
+# ---------------------------------------------------------------- daemon plumbing
+def serve(picker, args):
+    def dispatch(line):
+        cmd, _, arg = line.strip().partition(" ")
+        if cmd in ("show", "row"): picker.show_picker(arg or None)
+        elif cmd == "toggle":
+            picker.cancel() if picker.visible_now else picker.show_picker(arg or None)
+        elif cmd == "hide": picker.cancel()
+        elif cmd == "quit": Gtk.main_quit()
+    try: os.unlink(FIFO)
+    except OSError: pass
+    os.mkfifo(FIFO, 0o600)
+    fd = os.open(FIFO, os.O_RDWR | os.O_NONBLOCK)
+    buf = b""
+    def on_io(src, cond):
+        nonlocal buf
+        try: buf += os.read(fd, 4096)
+        except BlockingIOError: return True
+        while b"\n" in buf:
+            line, buf = buf.split(b"\n", 1)
+            dispatch(line.decode("utf-8", "replace"))
+        return True
+    GLib.io_add_watch(fd, GLib.PRIORITY_HIGH, GLib.IOCondition.IN, on_io)
+    with open(PIDFILE, "w") as f: f.write(str(os.getpid()))
+    def bye(*a):
+        for p in (FIFO, PIDFILE):
+            try: os.unlink(p)
+            except OSError: pass
+        Gtk.main_quit()
+    GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, lambda: (bye(), False)[1])
+    GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGINT, lambda: (bye(), False)[1])
+
+
+def main():
+    args = sys.argv[1:]
+    daemon = "--daemon" in args
+    row = None
+    if "--row" in args: row = args[args.index("--row") + 1]
+    if Gdk.Display.get_default() is None:
+        print("carpatic: the theme picker needs the desktop. In a terminal use: carpatic theme set <name>", file=sys.stderr); return 1
+    p = Picker(daemon)
+    if daemon: serve(p, args)
+    log(event="start", import_ms=round((time.monotonic() - T_START) * 1000), daemon=daemon)
+    if "--show" in args: GLib.idle_add(lambda: (p.show_picker(row), False)[1])
+    if daemon: p.prewarm()
+    Gtk.main()
+    for f in (FIFO, PIDFILE):
+        if daemon:
+            try: os.unlink(f)
+            except OSError: pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

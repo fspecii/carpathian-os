@@ -1,0 +1,609 @@
+.TH CARPATIC 1 "" "Carpatic OS" "Carpatic OS manual"
+.SH NAME
+carpatic \- one command for the whole Carpatic desktop
+.SH SYNOPSIS
+.B carpatic
+.RI [ area ]
+.RI [ verb ]
+.RI [ arguments ...]
+.br
+.B carpatic help
+.RI [ area ]
+.SH DESCRIPTION
+.B carpatic
+is a small router: it maps \fBcarpatic theme set nord\fR to \fBcarpatic-theme set nord\fR and so on.
+Every tool it calls also works on its own, so scripts written against the old names keep working.
+The list of commands is a plain text table (\fIcommands.tsv\fR); add a line to it to add a command.
+.PP
+Run \fBcarpatic\fR with no arguments to see every area, or \fBcarpatic help \fIarea\fR for the verbs of one area.
+Press Super+Alt+Space for the same things as a menu, and Super+K for the keyboard shortcut cheat sheet.
+.SH EXIT STATUS
+.TP
+.B 0
+Done.
+.TP
+.B 1
+The tool ran and failed. Its message says why.
+.TP
+.B 2
+Carpatic did not understand what you typed. It suggests the closest command.
+.TP
+.B 3
+The tool is not available on this computer (not installed, or needs hardware you do not have).
+.SH AREAS AND VERBS
+.SS theme
+Colours, wallpapers, theme packs, Omarchy theme import.
+.TP
+.B carpatic theme list
+List installed themes
+.TP
+.B carpatic theme current
+Show the theme in use
+.TP
+.B carpatic theme set
+Switch theme (\-\-accent #rrggbb, \-\-wallpaper FILE)
+.TP
+.B carpatic theme next
+Switch to the next theme
+.TP
+.B carpatic theme pick
+Open the theme picker: arrows change the theme, wallpaper, accent, borders, corners, gaps, icons, fonts
+.TP
+.B carpatic theme wallpaper
+Next wallpaper, set one, or list them (next, set FILE, list)
+.TP
+.B carpatic theme export
+Pack a theme into a shareable .carpatic\-theme.tar.gz
+.TP
+.B carpatic theme import
+Install a theme pack or an Omarchy theme directory
+.TP
+.B carpatic theme convert
+Check an Omarchy theme and print a conversion report
+.TP
+.B carpatic theme share
+Export a theme and show how to hand it to a friend
+.TP
+.B carpatic theme remove
+Remove a theme you imported
+.TP
+.B carpatic theme packs
+Icon, cursor, GTK and font packs you can add
+.SS wallpaper
+Wallpapers: Carpatic scenes, your own pictures, Wallhaven, rotation.
+.TP
+.B carpatic wallpaper open
+Open the wallpaper browser (Carpatic, My pictures, Wallhaven, Colours)
+.TP
+.B carpatic wallpaper list
+List the pictures (carpatic, mine, all; \-\-json)
+.TP
+.B carpatic wallpaper set
+Set the wallpaper from a path, id or title (\-\-fill MODE, \-\-theme, \-\-light, \-\-dark, \-\-monitor NAME)
+.TP
+.B carpatic wallpaper fill
+How the picture covers the screen
+.TP
+.B carpatic wallpaper add
+Add a file, a folder or a wallhaven.cc link to My pictures
+.TP
+.B carpatic wallpaper remove
+Stop listing a folder or file (nothing is deleted)
+.TP
+.B carpatic wallpaper next
+Next picture of the rotation collection
+.TP
+.B carpatic wallpaper random
+A random picture
+.TP
+.B carpatic wallpaper rotate
+Change the picture on a timer or at login (on \-\-every MIN \-\-collection NAME, off, status)
+.TP
+.B carpatic wallpaper collection
+Your own lists of pictures for rotation
+.TP
+.B carpatic wallpaper wallhaven
+Search Wallhaven (safe for work only) or fetch one picture by id
+.TP
+.B carpatic wallpaper accent
+Suggest an accent colour from the wallpaper (\-\-apply uses it)
+.TP
+.B carpatic wallpaper pair
+Different pictures for light and dark mode (pair light A dark B, pair off)
+.SS intro
+The login animation (mountains rise over your wallpaper).
+.TP
+.B carpatic intro play
+Play the login animation now
+.TP
+.B carpatic intro set
+Choose when it plays: first\-login\-only, every\-login or off
+.TP
+.B carpatic intro status
+Show the setting and whether it would play now
+.TP
+.B carpatic intro reset
+Let it play again at the next login
+.SS screensaver
+The idle screen (Carpatic mark, mountains, stars).
+.TP
+.B carpatic screensaver start
+Start the screensaver now (optionally one effect)
+.TP
+.B carpatic screensaver stop
+End the screensaver
+.TP
+.B carpatic screensaver status
+Show the settings and whether it would start now
+.TP
+.B carpatic screensaver set
+Turn it on or off, or: set timeout 5, set effect rain, set battery yes
+.SS widgets
+Desktop widgets: clock, calendar, weather and more (off until you turn them on).
+.TP
+.B carpatic widgets enable
+Turn widgets on (they are off by default)
+.TP
+.B carpatic widgets disable
+Turn widgets off completely; nothing keeps running
+.TP
+.B carpatic widgets status
+Say whether widgets are on and which ones are on the desktop
+.TP
+.B carpatic widgets list
+Every widget you can add, and which ones are on
+.TP
+.B carpatic widgets add
+Put a widget on the desktop: add weather L
+.TP
+.B carpatic widgets remove
+Take a widget off the desktop
+.TP
+.B carpatic widgets size
+Resize a widget: size clock L
+.TP
+.B carpatic widgets move
+Place a widget on the grid: move clock 4 0
+.TP
+.B carpatic widgets edit
+Drag, resize, add and remove widgets
+.TP
+.B carpatic widgets peek
+Show the widgets above your windows until you press a key
+.TP
+.B carpatic widgets look
+Card style (auto follows your theme)
+.TP
+.B carpatic widgets clock
+Clock face
+.TP
+.B carpatic widgets weather
+Weather place: weather city Bucharest
+.TP
+.B carpatic widgets todo
+The to\-do list: todo add Buy bread
+.TP
+.B carpatic widgets note
+Show or set the sticky note
+.TP
+.B carpatic widgets arrange
+Pack the widgets tightly, no gaps
+.TP
+.B carpatic widgets monitor
+Which screen shows the widgets: monitor primary, monitor 1
+.TP
+.B carpatic widgets reset
+Back to the default arrangement
+.TP
+.B carpatic widgets doctor
+Check what this computer can do for widgets
+.SS profile
+The desktop you feel at home in (windows, macos, ubuntu, tiling, beginner).
+.TP
+.B carpatic profile list
+List desktop profiles
+.TP
+.B carpatic profile current
+Show the profile in use
+.TP
+.B carpatic profile set
+Switch profile
+.SS appearance
+Fonts, icons, cursors, scaling.
+.TP
+.B carpatic appearance get
+Show fonts, icons, cursor and scale
+.TP
+.B carpatic appearance list
+List fonts, icons, cursors, gtk themes or presets
+.TP
+.B carpatic appearance set
+Change one or more settings: set ui\-font Inter ui\-size 10
+.TP
+.B carpatic appearance preset
+Apply a font and look preset
+.TP
+.B carpatic appearance reset
+Back to the style defaults
+.SS keys
+Keyboard shortcuts of the active profile.
+.TP
+.B carpatic keys show
+Searchable keyboard shortcut list (popup)
+.TP
+.B carpatic keys list
+Print the shortcuts of the active profile
+.TP
+.B carpatic keys search
+Print shortcuts that match words
+.TP
+.B carpatic keys html
+Write a printable HTML cheat sheet
+.TP
+.B carpatic keys pdf
+Write a printable PDF cheat sheet
+.TP
+.B carpatic keys all
+Write printable sheets (HTML and PDF) for every desktop style: all \-\-out FOLDER
+.TP
+.B carpatic keys json
+The shortcuts as JSON, for scripts
+.SS menu
+The keyboard menu (Super+Alt+Space).
+.TP
+.B carpatic menu [anything]
+Open the menu (optionally at a place: carpatic menu style)
+.SS store
+Apps from Alpine and Flathub.
+.TP
+.B carpatic store list
+List apps in the catalog
+.TP
+.B carpatic store search
+Search apps
+.TP
+.B carpatic store info
+Details about an app
+.TP
+.B carpatic store install
+Install an app or bundle
+.TP
+.B carpatic store remove
+Remove an app
+.TP
+.B carpatic store update
+Update apps (apk and Flatpak)
+.TP
+.B carpatic store bundles
+List bundles
+.TP
+.B carpatic store doctor
+Check Flatpak setup
+.TP
+.B carpatic store gui
+Open the graphical store
+.SS install
+Install apps, AI tools, dev environments, web apps.
+.TP
+.B carpatic install app
+Install an app or bundle
+.TP
+.B carpatic install ai
+Install AI tools (claude\-code, codex, ollama ...)
+.TP
+.B carpatic install dev
+Install a development environment (node, python, rust, go ...)
+.TP
+.B carpatic install webapp
+Add a web app: install webapp NAME URL
+.TP
+.B carpatic install tui
+Add a terminal app launcher: install tui NAME COMMAND
+.SS remove
+Remove what you installed.
+.TP
+.B carpatic remove app
+Remove an app
+.TP
+.B carpatic remove ai
+Remove AI tools
+.TP
+.B carpatic remove dev
+Remove a development environment
+.TP
+.B carpatic remove webapp
+Remove a web app
+.TP
+.B carpatic remove tui
+Remove a terminal app launcher
+.SS dev
+Development environments in one command.
+.TP
+.B carpatic dev list
+List development environments and which are installed
+.TP
+.B carpatic dev install
+Install a development environment
+.TP
+.B carpatic dev remove
+Remove a development environment
+.TP
+.B carpatic dev status
+Show versions of what is installed
+.TP
+.B carpatic dev db
+Database containers: db postgres start
+.TP
+.B carpatic dev nvim\-theme
+Regenerate the Neovim colours from your theme
+.SS webapp
+Web apps with their own window and profile.
+.TP
+.B carpatic webapp add
+Add a web app: add NAME URL [\-\-icon FILE]
+.TP
+.B carpatic webapp preset
+Add a ready\-made web app (youtube, github, gmail ...)
+.TP
+.B carpatic webapp presets
+List the ready\-made web apps
+.TP
+.B carpatic webapp list
+List your web apps
+.TP
+.B carpatic webapp launch
+Open a web app (or raise its window)
+.TP
+.B carpatic webapp remove
+Remove a web app
+.TP
+.B carpatic webapp gui
+Pick and add web apps from a menu
+.SS tui
+Terminal apps as launcher entries.
+.TP
+.B carpatic tui add
+Add a terminal app launcher: add NAME COMMAND
+.TP
+.B carpatic tui preset
+Add a ready\-made terminal app (btop, lazygit ...)
+.TP
+.B carpatic tui presets
+List the ready\-made terminal apps
+.TP
+.B carpatic tui list
+List your terminal app launchers
+.TP
+.B carpatic tui launch
+Open a terminal app (or raise its window)
+.TP
+.B carpatic tui remove
+Remove a terminal app launcher
+.SS ai
+AI tools, local models, GPU.
+.TP
+.B carpatic ai status
+What AI tooling is installed
+.TP
+.B carpatic ai install
+Install AI tools
+.TP
+.B carpatic ai remove
+Remove AI tools
+.TP
+.B carpatic ai update
+Update AI tools
+.TP
+.B carpatic ai models
+Local models: list, pull NAME, run NAME, rm NAME
+.TP
+.B carpatic ai gpu
+GPU compute check
+.TP
+.B carpatic ai llama
+llama.cpp server
+.TP
+.B carpatic ai webui
+Chat web page for local models: start, stop, status, open
+.TP
+.B carpatic ai doctor
+Check the AI setup
+.SS drivers
+Detect hardware and install drivers.
+.TP
+.B carpatic drivers detect
+Show hardware and recommended drivers
+.TP
+.B carpatic drivers install
+Install recommended drivers
+.SS power
+Battery, sleep, hibernate, power profiles.
+.TP
+.B carpatic power status
+Battery, AC, profile, sleep readiness
+.TP
+.B carpatic power doctor
+Explain whether hibernate works
+.TP
+.B carpatic power profile
+Show or set the power profile
+.TP
+.B carpatic power sleep
+Suspend or hibernate
+.TP
+.B carpatic power lock
+Lock the screen
+.TP
+.B carpatic power hibernate\-setup
+Prepare swap and resume for hibernate
+.TP
+.B carpatic power battery\-limit
+Stop charging at N percent
+.TP
+.B carpatic power brightness
+Screen brightness
+.SS update
+System updates.
+.TP
+.B carpatic update check
+Count available updates
+.TP
+.B carpatic update list
+List available updates
+.TP
+.B carpatic update apply
+Take a snapshot, then update (runs your pre\-update and post\-update hooks)
+.TP
+.B carpatic update status
+Updates waiting, restart needed
+.SS rollback
+Snapshots and rollback (Btrfs installs).
+.TP
+.B carpatic rollback snapshot
+Take a system snapshot
+.TP
+.B carpatic rollback list
+List snapshots
+.TP
+.B carpatic rollback restore
+Go back to a snapshot at the next restart
+.TP
+.B carpatic rollback delete
+Delete a snapshot
+.TP
+.B carpatic rollback prune
+Keep only the newest automatic snapshots
+.SS snapshot
+Shortcut for taking and listing snapshots.
+.TP
+.B carpatic snapshot create
+Take a system snapshot
+.TP
+.B carpatic snapshot list
+List snapshots
+.TP
+.B carpatic snapshot restore
+Go back to a snapshot at the next restart
+.SS compat
+Run Ubuntu\-only programs in a compatibility box.
+.TP
+.B carpatic compat run
+Run a program inside the compatibility box
+.TP
+.B carpatic compat shell
+Open a terminal in the box
+.TP
+.B carpatic compat install
+Install a .deb, AppImage or package in the box
+.TP
+.B carpatic compat wrap
+Put a command\-line program in the box on your PATH
+.TP
+.B carpatic compat remove
+Remove something from the box
+.TP
+.B carpatic compat list
+List what you added to the box
+.TP
+.B carpatic compat update
+Update the box
+.TP
+.B carpatic compat status
+Is the box ready?
+.TP
+.B carpatic compat setup
+Prepare the box
+.TP
+.B carpatic compat reset
+Delete the box (your files stay)
+.SS hook
+Scripts that run on events (theme change, update, screenshot).
+.TP
+.B carpatic hook list
+List hook points and your hooks
+.TP
+.B carpatic hook run
+Run a hook by hand
+.TP
+.B carpatic hook new
+Create a hook from a template and open it
+.TP
+.B carpatic hook edit
+Edit a hook in your editor
+.SS dotfiles
+Keep your Carpatic settings in your own git repository.
+.TP
+.B carpatic dotfiles init
+Start a git repository for ~/.config/carpatic
+.TP
+.B carpatic dotfiles status
+What changed since the last sync
+.TP
+.B carpatic dotfiles sync
+Commit changes and push them
+.TP
+.B carpatic dotfiles pull
+Fetch your repository and apply it
+.TP
+.B carpatic dotfiles remote
+Set the repository address
+.SS trigger
+Screenshot, screen recording, colour picker, clipboard history, share.
+.TP
+.B carpatic trigger screenshot
+Take a screenshot (region, full, window, annotate)
+.TP
+.B carpatic trigger record
+Record the screen
+.TP
+.B carpatic trigger colorpicker
+Pick a colour from the screen
+.TP
+.B carpatic trigger clipboard
+Clipboard history
+.TP
+.B carpatic trigger share
+Share the clipboard or a file as one download link on this network
+.TP
+.B carpatic trigger nightlight
+Night light (needs redshift)
+.TP
+.B carpatic trigger idle
+Lock the screen when idle
+.SS quicklook
+Preview any file with Space, like on a Mac.
+.TP
+.B carpatic quicklook [anything]
+Preview files without opening an app (Space in Files). Also: \-\-on, \-\-off, \-\-status, \-\-setup
+.SS tour
+The one\-screen welcome to the keyboard\-driven desktop.
+.TP
+.B carpatic tour [anything]
+Show the welcome card for the keyboard\-driven desktop
+.SS system
+About this computer.
+.TP
+.B carpatic system info
+Show this computer at a glance
+.TP
+.B carpatic system doctor
+Check that the Carpatic tools are all in place
+.TP
+.B carpatic system version
+Show the Carpatic version
+.SH COMPLETIONS
+Completions for bash, zsh and fish are installed with the package. They ask \fBcarpatic \-\-complete\fR, so they follow the table above.
+.SH FILES
+.TP
+.I ~/.config/carpatic/
+Your settings, hooks, menu additions and web apps.
+.TP
+.I ~/.config/carpatic/hooks/
+Executable scripts run on events: theme\-set, post\-update, screenshot, and more (\fBcarpatic hook list\fR).
+.TP
+.I ~/.config/carpatic/menu.d/
+Your own entries for the menu.
+.SH SEE ALSO
+Run \fBcarpatic help \fIarea\fR for the verbs of one area, and \fBcarpatic tour \-\-guide\fR for the guide for power users.
+.SH CREDITS
+The idea of one router, a keyboard menu, hooks and theme sharing comes from Omarchy (MIT). See NOTICE.

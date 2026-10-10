@@ -1,0 +1,49 @@
+#!/bin/sh
+# carpatic-theme-picker [show|toggle|daemon|quit|row <id>|help]
+# The theme picker (Super+Ctrl+Shift+Space, `carpatic theme pick`): Left/Right change the focused row and the desktop follows,
+# Up/Down move between rows, Enter keeps, Esc puts everything back.
+# A small helper stays running after the first use (and from login, see carpatic-session) so the picker opens at once: this script only
+# writes one line to its FIFO. Without a helper it starts one and shows the picker immediately.
+FIFO=${CARPATIC_PICKER_FIFO:-${XDG_RUNTIME_DIR:-/tmp}/carpatic-theme-picker-$(id -u).fifo}
+HERE=$(cd "$(dirname "$0")" && pwd)
+UI=$HERE/carpatic-theme-picker-ui; [ -x "$UI" ] || UI=$(command -v carpatic-theme-picker-ui)
+cmd=${1:-show}; [ $# -gt 0 ] && shift
+case $cmd in theme|mode|wallpaper|accent|border|bordercolor|corners|gaps|buttons|icons|cursor|font|fontsize|mono|style) set -- "$cmd"; cmd=show ;; esac
+alive() { [ -p "$FIFO" ] && [ -f "$FIFO.pid" ] && kill -0 "$(cat "$FIFO.pid" 2>/dev/null)" 2>/dev/null; }
+case $cmd in
+  help|-h|--help)
+    cat <<'EOT'
+carpatic-theme-picker            open the picker (Super+Ctrl+Shift+Space)
+carpatic-theme-picker ROW        open it on one row (also: row ROW): theme mode wallpaper accent border bordercolor corners gaps buttons icons cursor font fontsize mono style
+carpatic-theme-picker toggle     open, or revert and close when it is already open
+carpatic-theme-picker daemon     start the helper that keeps the picker ready (done at login)
+carpatic-theme-picker quit       stop the helper
+Keys: Left/Right change, Up/Down or Tab change row, Enter keep, Esc revert, Del reset the row, # your own accent colour, Ctrl+S save as my theme, type to search.
+EOT
+    ;;
+  show|toggle|row)
+    id=${1:-}; msg=$cmd; ui_args=--show
+    if [ -n "$id" ]; then
+      case $id in theme|mode|wallpaper|accent|border|bordercolor|corners|gaps|buttons|icons|cursor|font|fontsize|mono|style) ;;
+        *) echo "carpatic: no row called '$id'. Rows: theme mode wallpaper accent border bordercolor corners gaps buttons icons cursor font fontsize mono style" >&2; exit 2 ;; esac
+      msg="$cmd $id"; ui_args="--show --row $id"
+    fi
+    [ -n "${DISPLAY:-}" ] || { echo "carpatic: the theme picker needs the desktop. In a terminal use: carpatic theme set <name>" >&2; exit 1; }
+    if alive; then
+      printf '%s\n' "$msg" > "$FIFO"
+      # watchdog: a helper that is alive but stuck would leave the hotkey dead. If no window shows within 2 s, replace the helper.
+      if [ "$cmd" != toggle ] && command -v xdotool >/dev/null 2>&1; then
+        i=0; while [ $i -lt 40 ]; do xdotool search --onlyvisible --name "Carpatic theme picker" >/dev/null 2>&1 && exit 0; sleep 0.05; i=$((i+1)); done
+        pid=$(cat "$FIFO.pid" 2>/dev/null); [ -n "$pid" ] && kill "$pid" 2>/dev/null; sleep 0.2; rm -f "$FIFO" "$FIFO.pid"
+        exec python3 "$UI" --daemon $ui_args
+      fi
+    else exec python3 "$UI" --daemon $ui_args; fi ;;
+  daemon)
+    alive && exit 0
+    [ -e "${XDG_CONFIG_HOME:-$HOME/.config}/carpatic/no-picker-daemon" ] && exit 0     # opt out of the resident helper (~80 MB): the picker still opens, a second later
+    [ -n "${DISPLAY:-}" ] || exit 0
+    exec python3 "$UI" --daemon ;;
+  quit)
+    alive && printf 'quit\n' > "$FIFO" ;;
+  *) echo "usage: carpatic-theme-picker [show|toggle|row <id>|daemon|quit|help]" >&2; exit 2 ;;
+esac

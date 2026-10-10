@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Wallpapers
+Comment=Choose a wallpaper: Carpathian scenes, your pictures, Wallhaven, colours
+Exec=carpatic-wallpapers
+Icon=preferences-desktop-wallpaper
+Categories=Settings;DesktopSettings;GTK;
+Keywords=wallpaper;background;desktop;picture;wallhaven;
+StartupNotify=true

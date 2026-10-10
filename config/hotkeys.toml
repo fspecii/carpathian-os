@@ -1,0 +1,208 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║              DWM Hotkeys Configuration  ·  hotkeys.toml             ║
+# ╠══════════════════════════════════════════════════════════════════════╣
+# ║  LIVE RELOAD — save this file and changes apply instantly!           ║
+# ║  Manual reload:  kill -USR1 $(pidof dwm)                             ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  FORMAT — one binding per line:
+#    { mod="SUPER", key="x", desc="My app", func="spawn", exec=["myapp"] }
+#
+#  mod   Space-separated modifiers.  Use "" for no modifier.
+#          SUPER  SHIFT  CTRL  ALT
+#          Examples:  "SUPER"  "SUPER SHIFT"  "SUPER CTRL"  "SUPER CTRL SHIFT"
+#
+#  key   X11 key name.  Examples:
+#          Letters/numbers : "a"–"z", "0"–"9"
+#          Special         : "Return"  "space"  "Tab"  "Escape"  "Delete"
+#                            "F1"–"F12"  "Print"  "Home"  "End"  "Page_Up"
+#          Symbols         : "comma"  "period"  "semicolon"  "slash"  "equal"
+#                            "minus"  "bracket_left"  "bracket_right"  "grave"
+#
+#  func  What to do:
+#          spawn             → exec=[...] or cmd="..."  run a program / shell
+#          killclient        → close focused window
+#          zoom              → promote window to/from master
+#          focusstack        → focus next/prev window          (i=1 or i=-1)
+#          movestack         → reorder window in stack          (i=1 or i=-1)
+#          incnmaster        → add/remove window from master    (i=1 or i=-1)
+#          setmfact          → resize master area               (f=0.05 or f=-0.05)
+#          incgaps           → grow/shrink all tiling gaps live (i=2 or i=-2)
+#          setcfact          → resize window in stack slot      (f=0.25 / f=-0.25 / f=0.00)
+#          setlayout         → switch layout                    (layout_idx=0/1/2)
+#                               0=tiling  1=floating  2=monocle
+#          togglefloating    → float or tile focused window
+#          fullscreen        → true fullscreen (hides bar)
+#          togglefakefullscreen → fullscreen look, bar still works
+#          togglebar         → show/hide the status bar
+#          focusmon          → focus next/prev monitor           (i=1 or i=-1)
+#          tagmon            → send window to next/prev monitor  (i=1 or i=-1)
+#          view              → switch to a tag  (ui=-1 = show all)
+#          tag               → send window to a tag
+#          toggleview / toggletag → also show/tag alongside current
+#          quit              → exit DWM
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── VARIABLES ─────────────────────────────────────────────────────────────────
+# Define shortcuts here, then use $name in any exec or cmd value below.
+
+[vars]
+terminal = "xterm"
+webapp   = "webapp-launch"
+
+# ── KEYBINDINGS ───────────────────────────────────────────────────────────────
+# One binding per line.  Save the file to reload instantly.
+# Comments inside the array are fine — they are skipped automatically.
+
+keys = [
+  # ── Carpatic additions ──
+  { mod="SUPER SHIFT", key="space",  desc="Toggle floating",  func="togglefloating" },
+  { mod="SUPER",       key="p",      desc="App launcher", func="spawn", exec=["carpatic-launcher"] },
+  { mod="SUPER SHIFT", key="p",      desc="Command launcher (dmenu)", func="spawn", exec=["dmenu_run", "-fn", "Inter:size=10.5", "-nb", "#11151c", "-nf", "#e7ecf3", "-sb", "#1d3232", "-sf", "#e7ecf3"] },
+  { mod="SUPER",       key="s",      desc="App store", func="spawn", exec=["carpatic-store-gui"] },
+  { mod="SUPER SHIFT", key="Return", desc="Terminal",         func="spawn", exec=["$terminal"] },
+
+  # ── Launchers ────────────────────────────────────────────────────────────────
+  { mod="SUPER",            key="x",       desc="Terminal",                 func="spawn",       exec=["$terminal"] },
+
+  # ── Web apps ─────────────────────────────────────────────────────────────────
+
+  # ── Screenshots ───────────────────────────────────────────────────────────────
+
+  # ── Files & utilities ─────────────────────────────────────────────────────────
+
+  # ── Volume  (no modifier — press the media key directly) ─────────────────────
+
+  # ── Brightness ────────────────────────────────────────────────────────────────
+
+
+  # ── Hardware keys, power, lock (CARPATIC) ────────────────────────────────────
+  { mod="",  key="XF86AudioRaiseVolume", desc="Volume up",        func="spawn", exec=["carpatic-volume", "up"] },
+  { mod="",  key="XF86AudioLowerVolume", desc="Volume down",      func="spawn", exec=["carpatic-volume", "down"] },
+  { mod="",  key="XF86AudioMute",        desc="Mute",             func="spawn", exec=["carpatic-volume", "mute"] },
+  { mod="",  key="XF86AudioMicMute",     desc="Microphone mute",  func="spawn", exec=["carpatic-volume", "micmute"] },
+  { mod="",  key="XF86AudioPlay",        desc="Play / pause",     func="spawn", exec=["carpatic-media", "play-pause"] },
+  { mod="",  key="XF86AudioPause",       desc="Pause",            func="spawn", exec=["carpatic-media", "play-pause"] },
+  { mod="",  key="XF86AudioNext",        desc="Next track",       func="spawn", exec=["carpatic-media", "next"] },
+  { mod="",  key="XF86AudioPrev",        desc="Previous track",   func="spawn", exec=["carpatic-media", "previous"] },
+  { mod="",  key="XF86MonBrightnessUp",   desc="Brightness up",   func="spawn", exec=["carpatic-brightness", "up"] },
+  { mod="",  key="XF86MonBrightnessDown", desc="Brightness down", func="spawn", exec=["carpatic-brightness", "down"] },
+  { mod="",  key="XF86KbdBrightnessUp",   desc="Keyboard light up",   func="spawn", exec=["carpatic-brightness", "kbd-up"] },
+  { mod="",  key="XF86KbdBrightnessDown", desc="Keyboard light down", func="spawn", exec=["carpatic-brightness", "kbd-down"] },
+  { mod="",  key="XF86WLAN",             desc="Airplane mode",    func="spawn", exec=["carpatic-radio", "airplane"] },
+  { mod="",  key="XF86RFKill",           desc="Airplane mode",    func="spawn", exec=["carpatic-radio", "airplane"] },
+  { mod="",  key="XF86Bluetooth",        desc="Bluetooth on/off", func="spawn", exec=["carpatic-radio", "bluetooth"] },
+  { mod="",  key="XF86PowerOff",         desc="Power menu",       func="spawn", exec=["carpatic-powermenu"] },
+  { mod="",  key="XF86Sleep",            desc="Sleep",            func="spawn", exec=["carpatic-powermenu", "--choose", "Sleep"] },
+  { mod="",  key="XF86Hibernate",        desc="Hibernate",        func="spawn", exec=["carpatic-powermenu", "--choose", "Hibernate"] },
+  { mod="SUPER",            key="Escape", desc="Power menu",      func="spawn", exec=["carpatic-powermenu"] },
+  { mod="SUPER CTRL",       key="l",      desc="Lock screen",     func="spawn", exec=["carpatic-lock"] },
+  { mod="SUPER CTRL SHIFT", key="s",      desc="Sleep",           func="spawn", exec=["carpatic-powermenu", "--choose", "Sleep"] },
+  { mod="SUPER CTRL SHIFT", key="h",      desc="Hibernate",       func="spawn", exec=["carpatic-powermenu", "--choose", "Hibernate"] },
+  { mod="",       key="Print", desc="Screenshot: select an area", func="spawn", exec=["carpatic-screenshot", "region"] },
+  { mod="SHIFT",  key="Print", desc="Screenshot: whole screen",   func="spawn", exec=["carpatic-screenshot", "full"] },
+  { mod="CTRL",   key="Print", desc="Screenshot: this window",    func="spawn", exec=["carpatic-screenshot", "window"] },
+
+  # ── Window focus & movement ───────────────────────────────────────────────────
+  { mod="SUPER",            key="j",       desc="Focus next window",       func="focusstack",  i=1 },
+  { mod="SUPER",            key="k",       desc="Focus prev window",       func="focusstack",  i=-1 },
+  { mod="SUPER SHIFT",      key="j",       desc="Move window down",        func="movestack",   i=1 },
+  { mod="SUPER SHIFT",      key="k",       desc="Move window up",          func="movestack",   i=-1 },
+  { mod="SUPER",            key="Return",  desc="Promote to master",       func="zoom" },
+  { mod="SUPER",            key="Tab",     desc="Previous tag",            func="view" },
+  { mod="SUPER",            key="q",       desc="Close window",            func="killclient" },
+
+  # ── Master / stack sizing ─────────────────────────────────────────────────────
+  { mod="SUPER",            key="i",       desc="Add to master",           func="incnmaster",  i=1 },
+  { mod="SUPER",            key="d",       desc="Remove from master",      func="incnmaster",  i=-1 },
+  { mod="SUPER",            key="h",       desc="Shrink master",           func="setmfact",    f=-0.05 },
+  { mod="SUPER",            key="l",       desc="Grow master",             func="setmfact",    f=0.05 },
+  { mod="SUPER",            key="minus",   desc="Smaller gaps",            func="incgaps",     i=-2 },
+  { mod="SUPER",            key="equal",   desc="Larger gaps",             func="incgaps",     i=2 },
+  { mod="SUPER SHIFT",      key="h",       desc="Cfact grow",              func="setcfact",    f=0.25 },
+  { mod="SUPER SHIFT",      key="l",       desc="Cfact shrink",            func="setcfact",    f=-0.25 },
+  { mod="SUPER SHIFT",      key="o",       desc="Cfact reset",             func="setcfact",    f=0.00 },
+
+  # ── Layouts  (0=tiling  1=floating  2=monocle) ───────────────────────────────
+  { mod="SUPER",            key="t",       desc="Tile layout",             func="setlayout",   layout_idx=0 },
+  { mod="SUPER",            key="f",       desc="Float layout",            func="setlayout",   layout_idx=1 },
+  { mod="SUPER",            key="m",       desc="Fullscreen",              func="fullscreen" },
+  { mod="SUPER SHIFT",      key="m",       desc="Restore minimised window", func="unminimize" },
+  { mod="SUPER",            key="n",       desc="Minimise window",         func="minimize" },
+  { mod="SUPER",            key="z",       desc="Maximise / restore",      func="togglemaximize" },
+  { mod="SUPER",            key="space",   desc="Toggle float/tile",       func="togglefloating" },
+  { mod="SUPER SHIFT",      key="y",       desc="Fake fullscreen",         func="togglefakefullscreen" },
+  { mod="SUPER SHIFT",      key="b",       desc="Toggle bar",              func="togglebar" },
+
+  # ── Multi-monitor ─────────────────────────────────────────────────────────────
+  { mod="SUPER",            key="comma",   desc="Focus left monitor",      func="focusmon",    i=-1 },
+  { mod="SUPER",            key="period",  desc="Focus right monitor",     func="focusmon",    i=1 },
+  { mod="SUPER SHIFT",      key="comma",   desc="Send to left monitor",    func="tagmon",      i=-1 },
+  { mod="SUPER SHIFT",      key="period",  desc="Send to right monitor",   func="tagmon",      i=1 },
+
+  # ── Session / power ───────────────────────────────────────────────────────────
+  { mod="SUPER",            key="0",       desc="Show all tags",           func="view",        ui=-1 },
+  { mod="SUPER SHIFT",      key="q",       desc="Quit dwm",                func="quit" },
+
+]
+
+# ── TAG BINDINGS ──────────────────────────────────────────────────────────────
+# Each entry auto-generates 4 bindings for that tag number:
+#   SUPER + key                  → switch to tag
+#   SUPER + CTRL + key           → also show this tag alongside current
+#   SUPER + SHIFT + key          → send focused window to this tag
+#   SUPER + CTRL + SHIFT + key   → also show window on that tag
+#
+# key = X11 key name    tag = 0-based index  (0 = tag 1,  8 = tag 9)
+
+tag_keys = [
+  { key="1", tag=0 },
+  { key="2", tag=1 },
+  { key="3", tag=2 },
+  { key="4", tag=3 },
+  { key="5", tag=4 },
+  { key="6", tag=5 },
+  { key="7", tag=6 },
+  { key="8", tag=7 },
+  { key="9", tag=8 },
+]
+
+# ── CUSTOM SHORTCUTS ──────────────────────────────────────────────────────────
+# Add your own below.  Uncomment, fill in the fields, and save.
+#
+# { mod="SUPER SHIFT",  key="f",  desc="Firefox",   func="spawn",  exec=["firefox"] },
+# { mod="SUPER SHIFT",  key="c",  desc="VS Code",   func="spawn",  exec=["code"] },
+# { mod="SUPER SHIFT",  key="d",  desc="Discord",   func="spawn",  exec=["discord"] },
+# { mod="SUPER SHIFT",  key="s",  desc="Screenshot",func="spawn",  cmd="scrot -s ~/Pictures/screenshot.png" },
+
+
+# ── MOUSE BUTTON BINDINGS ─────────────────────────────────────────────────────
+#
+# Each { ... } entry in the buttons array maps a mouse click to a dwm action.
+#
+#  click   Where the click happens:
+#            ClkTagBar     → the tag/workspace bar
+#            ClkLtSymbol   → the layout symbol in the bar
+#            ClkStatusText → the status text (right side of bar)
+#            ClkWinTitle   → the window title in the bar
+#            ClkClientWin  → any client window
+#            ClkRootWin    → the desktop (no windows)
+#
+#  mod     Optional modifier (same format as hotkeys): "SUPER", "SUPER SHIFT", etc.
+#          Leave empty or omit for no modifier.
+#
+#  button  Mouse button number: 1=left  2=middle  3=right
+#
+#  func    Same functions as hotkeys.  For extra args: i=N, f=N, ui=N.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+buttons = [
+  { click="ClkTagBar",    mod="SUPER",  button=1,  func="tag" },
+  { click="ClkTagBar",    mod="SUPER",  button=3,  func="toggletag" },
+  { click="ClkClientWin", mod="SUPER",  button=1,  func="moveorplace",  i=2 },
+  { click="ClkClientWin", mod="SUPER",  button=3,  func="resizemouse" },
+  { click="ClkTagBar",    mod="",       button=1,  func="view" },
+  { click="ClkTagBar",    mod="",       button=3,  func="toggleview" },
+]

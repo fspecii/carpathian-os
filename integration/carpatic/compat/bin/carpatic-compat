@@ -1,0 +1,328 @@
+#!/bin/sh
+# carpatic-compat: run glibc-only software (Chrome, Zoom, vendor tools, AppImages, prebuilt SDKs) on Carpatic OS.
+#
+# Alpine uses musl, so many downloaded programs cannot start. This tool keeps one small Ubuntu "box" (a rootless
+# Podman container managed by distrobox) that shares your home folder, display, sound and clipboard with the desktop.
+# Apps you install in it get a normal launcher entry; command line tools land on your PATH.
+#
+# License: MIT. POSIX sh.
+set -u
+PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin"; export PATH
+
+NAME="${CARPATIC_COMPAT_NAME:-carpatic-compat}"
+IMAGE="${CARPATIC_COMPAT_IMAGE:-docker.io/library/ubuntu:24.04}"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/carpatic-compat"
+BIN="$HOME/.local/bin"
+APPS="$HOME/.local/share/applications"
+APPIMG="$HOME/Applications"
+DEPS="podman distrobox crun fuse-overlayfs slirp4netns netavark aardvark-dns passt shadow-uidmap shadow-subids bash"
+VERSION=1
+SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
+
+say()  { printf '%s\n' "$*"; }
+err()  { printf 'carpatic-compat: %s\n' "$*" >&2; }
+die()  { err "$*"; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+usage() {
+cat <<U
+carpatic-compat $VERSION: run programs built for other Linux distributions
+
+Usage: carpatic-compat <command> [arguments]
+
+  run <program> [args]      run a program (or any command) inside the compatibility box
+  shell                     open a terminal inside the box
+  install <what>            install software in the box and add it to your launcher / PATH. <what> can be:
+                              a package name          carpatic-compat install x11-apps
+                              a .deb file or link     carpatic-compat install ~/Downloads/zoom_amd64.deb
+                              an AppImage file        carpatic-compat install ~/Downloads/Thing.AppImage
+  wrap <program> [name]     put a command-line program on your PATH so it always runs in the box
+  remove <name>             remove a package (or AppImage) and its launcher entries
+  list                      list the apps and tools you added
+  update                    update everything inside the box
+  status                    show whether the box is ready
+  setup                     prepare the system and create the box (done automatically on first use)
+  reset                     delete the box (your files in your home folder stay untouched)
+  help                      show this text
+
+Your home folder is visible inside the box, and apps you start there appear on your desktop like any other.
+The box is not a sandbox: programs in it can read and change your files and see your screen.
+U
+}
+
+# ---------- host preparation ----------
+as_root() { # run "$@" with administrator rights
+  if [ "$(id -u)" = 0 ]; then "$@"
+  elif [ ! -t 0 ] && have pkexec && [ -n "${DISPLAY:-}" ]; then pkexec "$@"   # started from a launcher: graphical password prompt
+  elif have doas; then doas "$@"
+  elif have sudo; then sudo "$@"
+  else die "administrator rights are needed once to prepare the system. Run: su -c 'carpatic-compat setup'"; fi
+}
+
+deps_missing() { for p in $DEPS; do apk info -e "$p" >/dev/null 2>&1 || printf '%s ' "$p"; done; }
+
+host_ready() {
+  [ -z "$(deps_missing)" ] && grep -q "^$(id -un):" /etc/subuid 2>/dev/null && grep -q "^$(id -un):" /etc/subgid 2>/dev/null &&
+    [ -c /dev/fuse ] && [ -c /dev/net/tun ] && awk '$5=="/"' /proc/self/mountinfo | grep -q ' shared:' 
+}
+
+system_setup() { # root part: carpatic-compat --system-setup <user>
+  u="$1"
+  m=$(deps_missing)
+  if [ -n "$m" ]; then
+    say "Installing the compatibility tools..."
+    # shellcheck disable=SC2086
+    apk add --no-cache $m >/dev/null 2>&1 || apk add $m || die "could not install: $m. Check your internet connection."
+  fi
+  uid=$(id -u "$u"); base=$((100000 + (uid % 1000) * 65536))
+  for f in /etc/subuid /etc/subgid; do
+    touch "$f"; grep -q "^$u:" "$f" || echo "$u:$base:65536" >> "$f"
+  done
+  mkdir -p /usr/libexec/carpatic
+  if [ ! -x /usr/libexec/carpatic/compat-boot ]; then
+    printf '#!/bin/sh\nmodprobe tun 2>/dev/null; modprobe fuse 2>/dev/null\nmount --make-rshared / 2>/dev/null\nexit 0\n' > /usr/libexec/carpatic/compat-boot
+    chmod 755 /usr/libexec/carpatic/compat-boot
+  fi
+  /usr/libexec/carpatic/compat-boot
+  rc-update add cgroups default >/dev/null 2>&1; rc-service cgroups start >/dev/null 2>&1
+  true
+}
+
+ensure_runtime() {
+  if [ -z "${XDG_RUNTIME_DIR:-}" ] || [ ! -d "$XDG_RUNTIME_DIR" ]; then
+    if [ -d "/run/user/$(id -u)" ]; then XDG_RUNTIME_DIR="/run/user/$(id -u)"        # normal login session (elogind)
+    else XDG_RUNTIME_DIR="/tmp/runtime-$(id -u)"; mkdir -p "$XDG_RUNTIME_DIR"; chmod 700 "$XDG_RUNTIME_DIR"; fi
+  fi
+  export XDG_RUNTIME_DIR
+  cd "$HOME" 2>/dev/null || true       # rootless Podman refuses to start in a directory it cannot read
+  mkdir -p "$STATE"
+}
+
+box_exists() { podman container exists "$NAME" 2>/dev/null; }
+
+ensure_host() {
+  ensure_runtime
+  if ! host_ready; then
+    say "First use: preparing the system for the compatibility box (asks for your password once)..."
+    as_root "$SELF" --system-setup "$(id -un)" || die "setup did not finish."
+  fi
+}
+
+ensure_box() {
+  ensure_host
+  box_exists && return 0
+  say "Creating the compatibility box (Ubuntu 24.04). This downloads about 100 MB once..."
+  say "Note: the box is NOT a sandbox. Programs in it can read and change your home folder and see your screen, like any program you run."
+  distrobox create --yes --name "$NAME" --image "$IMAGE" --no-entry \
+    --additional-packages "xdg-utils ca-certificates curl libfuse2t64" >"$STATE/create.log" 2>&1 \
+    || { tail -5 "$STATE/create.log" >&2; die "could not create the box. Check your internet connection and try again."; }
+  # first start installs the extras above; do it now so later commands are quick
+  distrobox enter "$NAME" -- true >>"$STATE/create.log" 2>&1 || { tail -5 "$STATE/create.log" >&2; die "the box did not start."; }
+  say "Compatibility box ready."
+}
+
+inbox() { ensure_box; distrobox enter "$NAME" -- "$@"; }
+update_desktop_db() { have update-desktop-database && update-desktop-database "$APPS" >/dev/null 2>&1; true; }
+
+# ---------- launcher integration ----------
+export_pkg_apps() { # export every .desktop file and command a package ships
+  pkg="$1"
+  files=$(inbox sh -c "dpkg -L '$pkg' 2>/dev/null" || true)
+  mkdir -p "$BIN" "$APPS"
+  for d in $(printf '%s\n' "$files" | grep '^/usr/share/applications/.*\.desktop$'); do
+    inbox distrobox-export --app "$(basename "$d" .desktop)" >/dev/null 2>&1
+  done
+  for b in $(printf '%s\n' "$files" | grep -E '^/usr/(s?bin|games)/[^/]+$'); do
+    # never shadow a command the host already has (pactl, tar, python3...): those keep running natively
+    if host_has "$(basename "$b")"; then continue; fi
+    inbox distrobox-export --bin "$b" --export-path "$BIN" >/dev/null 2>&1
+  done
+  update_desktop_db
+}
+
+host_has() { # is <name> a real host command (ignoring our own wrappers in ~/.local/bin)?
+  p=$(PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -vx "$BIN" | paste -sd: -) command -v "$1" 2>/dev/null) && [ -n "$p" ]
+}
+
+apt_in_box() { # apt_in_box <apt-get arguments>
+  inbox sh -c "sudo apt-get update -qq >/dev/null 2>&1; sudo DEBIAN_FRONTEND=noninteractive apt-get $*" >"$STATE/install.log" 2>&1
+}
+
+# ---------- commands ----------
+cmd_install() {
+  [ $# -ge 1 ] || die "install what? Example: carpatic-compat install ~/Downloads/app.deb"
+  what="$1"
+  case "$what" in
+    http://*) die "that link is not encrypted (http). Use the https:// link, or download the file yourself and give me the file.";;
+    https://*)
+      mkdir -p "$HOME/Downloads"; fn=$(basename "${what%%\?*}" | tr -c 'A-Za-z0-9._+-' '_')
+      case $fn in ''|.|..|.*) fn=download-$$.bin;; esac     # never a hidden name, never a path
+      f="$HOME/Downloads/$fn"
+      say "Downloading $(basename "$f")..."
+      if have curl; then
+        if [ -t 2 ]; then curl -fL --proto '=https' --proto-redir '=https' --progress-bar -o "$f" "$what" || die "download failed"; else curl -fsSL --proto '=https' --proto-redir '=https' -o "$f" "$what" || die "download failed"; fi
+      else wget -q --secure-protocol=auto -O "$f" "$what" || die "download failed"; fi
+      what="$f";;
+  esac
+  case "$what" in
+    *.AppImage|*.appimage) install_appimage "$what";;
+    *.deb)
+      [ -f "$what" ] || die "$what not found"
+      path=$(readlink -f "$what")
+      case $path in *[\'\"\\$\`]*|*"
+"*) die "that file name has quotes or special characters in it; rename the file (letters, numbers, dots and dashes) and try again.";; esac
+      pkg=$(inbox dpkg-deb -f "$path" Package) || die "that file is not a valid .deb package"
+      case $pkg in -*|*[!a-z0-9.+_-]*|'') die "that .deb has an unusual package name; not installing it.";; esac
+      say "Installing $pkg..."
+      apt_in_box install -y "'$path'" || { tail -8 "$STATE/install.log" >&2; die "installing $what failed (details above)."; }
+      export_pkg_apps "$pkg"; say "Done. $pkg is in your launcher.";;
+    *)
+      case $what in -*|*[!a-z0-9.+_:=-]*|'') die "'$what' is not a package name (lowercase letters, numbers and . + - _ only).";; esac
+      say "Installing $what..."
+      apt_in_box install -y "'$what'" || { tail -8 "$STATE/install.log" >&2; die "could not install '$what'. Check the name, or look around with: carpatic-compat shell"; }
+      export_pkg_apps "$what"; say "Done. $what is installed.";;
+  esac
+}
+
+install_appimage() {
+  src="$1"; [ -f "$src" ] || die "$src not found"
+  mkdir -p "$APPIMG" "$APPS"
+  base=$(basename "$src"); dest="$APPIMG/$base"
+  [ "$(readlink -f "$src")" = "$(readlink -f "$dest")" ] || cp "$src" "$dest"
+  chmod +x "$dest"
+  id=$(printf '%s' "${base%.*}" | tr 'A-Z _' 'a-z--' | sed 's/-x86-64.*//; s/[^a-z0-9._-]//g')
+  # read the app's own name, icon and categories without starting it
+  tmp=$(mktemp -d "$STATE/ai.XXXXXX")
+  # distrobox re-parses its arguments, so hand the box a small script file instead of a quoted one-liner
+  cat > "$tmp/extract.sh" <<X
+cd "$tmp" || exit 0
+x() { APPIMAGE_EXTRACT_AND_RUN=1 "$dest" --appimage-extract "\$1" >/dev/null 2>&1; }
+for g in '*.desktop' '.DirIcon' '*.png' '*.svg'; do x "\$g"; done
+# top-level entries are often symlinks into usr/...: extract what they point to
+for l in squashfs-root/*.desktop squashfs-root/*.png squashfs-root/*.svg squashfs-root/.DirIcon; do
+  [ -L "\$l" ] && t=\$(readlink "\$l") && x "\$t" && case "\$t" in */*) ;; *) x "\$(readlink -f "\$l" | sed 's|.*/squashfs-root/||')";; esac
+done
+for g in 'usr/share/icons/hicolor/256x256/apps/*' 'usr/share/icons/hicolor/128x128/apps/*' 'usr/share/icons/hicolor/scalable/apps/*'; do x "\$g"; done
+exit 0
+X
+  inbox sh "$tmp/extract.sh"
+  df=$(ls "$tmp"/squashfs-root/*.desktop 2>/dev/null | head -1)
+  nm=$(sed -n 's/^Name=//p' "$df" 2>/dev/null | head -1); [ -n "$nm" ] || nm="${base%.*}"
+  cats=$(sed -n 's/^Categories=//p' "$df" 2>/dev/null | head -1); [ -n "$cats" ] || cats="Utility;"
+  icon=""
+  ic=$(sed -n 's/^Icon=//p' "$df" 2>/dev/null | head -1)
+  for c in "$tmp/squashfs-root/$ic.png" "$tmp/squashfs-root/$ic.svg" "$tmp/squashfs-root/usr/share/icons/hicolor/256x256/apps/$ic.png" "$tmp/squashfs-root/usr/share/icons/hicolor/128x128/apps/$ic.png" "$tmp/squashfs-root/usr/share/icons/hicolor/scalable/apps/$ic.svg" "$tmp/squashfs-root/.DirIcon"; do [ -f "$c" ] && icon="$c" && break; done
+  if [ -n "$icon" ]; then
+    ext=png; case "$icon" in *.svg) ext=svg;; esac
+    mkdir -p "$HOME/.local/share/icons/carpatic-compat"; cp -L "$icon" "$HOME/.local/share/icons/carpatic-compat/$id.$ext"
+    icon="$HOME/.local/share/icons/carpatic-compat/$id.$ext"
+  else icon="application-x-executable"; fi
+  rm -rf "${tmp:?}"
+  cat > "$APPS/carpatic-appimage-$id.desktop" <<D
+[Desktop Entry]
+Type=Application
+Name=$nm
+Comment=AppImage (runs in the compatibility box)
+Exec=$SELF run env APPIMAGE_EXTRACT_AND_RUN=1 $dest %U
+Icon=$icon
+Terminal=false
+Categories=$cats
+X-Carpatic-Compat=appimage:$base
+D
+  update_desktop_db
+  say "Done. $nm is in your launcher."
+}
+
+cmd_wrap() {
+  [ $# -ge 1 ] || die "wrap which program? Example: carpatic-compat wrap ~/tools/vendor-cli vendor"
+  case "$1" in */*) target=$(readlink -f "$1");; *) target="$1";; esac
+  name="${2:-$(basename "$1")}"
+  case $name in ''|.*|*[!A-Za-z0-9._+-]*) die "'$name' is not a usable command name (letters, numbers, . _ + - only; no slashes or spaces).";; esac
+  qt=$(printf '%s' "$target" | sed "s/'/'\\\\''/g")     # single-quote the target so spaces and quotes in the path stay data
+  mkdir -p "$BIN"
+  printf '#!/bin/sh\n# created by carpatic-compat wrap\nexec %s run '"'%s'"' "$@"\n' "$SELF" "$qt" > "$BIN/$name"
+  chmod +x "$BIN/$name"
+  say "Done. Type '$name' in any terminal; it runs inside the compatibility box."
+}
+
+cmd_remove() {
+  [ $# -ge 1 ] || die "remove what?"
+  n="$1"
+  case $n in -*|.*|*[!A-Za-z0-9.+_:=-]*) die "'$n' is not a package or app name (letters, numbers and . + - _ only).";; esac
+  for f in "$APPS"/carpatic-appimage-*.desktop; do
+    [ -f "$f" ] || continue
+    b=$(sed -n 's/^X-Carpatic-Compat=appimage://p' "$f")
+    if [ "$b" = "$n" ] || [ "${b%.*}" = "$n" ] || [ "$(basename "$f" .desktop)" = "carpatic-appimage-$n" ]; then
+      rm -f "$f"; [ -n "$b" ] && rm -f "${APPIMG:?}/$b"
+      update_desktop_db; say "Removed $n."; return 0
+    fi
+  done
+  box_exists || die "$n is not installed here."
+  files=$(inbox sh -c "dpkg -L '$n' 2>/dev/null")
+  [ -n "$files" ] || die "$n is not installed here."
+  for d in $(printf '%s\n' "$files" | grep '^/usr/share/applications/.*\.desktop$'); do
+    inbox distrobox-export --app "$(basename "$d" .desktop)" --delete >/dev/null 2>&1
+  done
+  for b in $(printf '%s\n' "$files" | grep -E '^/usr/(s?bin|games)/[^/]+$'); do
+    inbox distrobox-export --bin "$b" --export-path "$BIN" --delete >/dev/null 2>&1
+  done
+  apt_in_box remove -y --purge "'$n'" || { tail -5 "$STATE/install.log" >&2; die "could not remove $n."; }
+  update_desktop_db; say "Removed $n."
+}
+
+cmd_list() {
+  found=0
+  for f in "$APPS"/*.desktop; do
+    [ -f "$f" ] || continue
+    if grep -q "X-Carpatic-Compat\|distrobox-enter.*$NAME\|distrobox.*$NAME" "$f" 2>/dev/null; then
+      printf '  app   %s\n' "$(sed -n 's/^Name=//p' "$f" | head -1)"; found=1
+    fi
+  done
+  for f in "$BIN"/*; do
+    [ -f "$f" ] && grep -q "carpatic-compat\|distrobox.*$NAME" "$f" 2>/dev/null && { printf '  tool  %s\n' "$(basename "$f")"; found=1; }
+  done
+  [ "$found" = 1 ] || say "Nothing installed yet. Try: carpatic-compat install <package>"
+  return 0
+}
+
+cmd_update() {
+  say "Updating the compatibility box..."
+  apt_in_box upgrade -y || { tail -5 "$STATE/install.log" >&2; die "update failed."; }
+  say "Up to date."
+}
+
+cmd_status() {
+  if ! have podman || ! have distrobox; then say "Compatibility box: not set up yet (it prepares itself the first time you use it)."; return 1; fi
+  if box_exists; then say "Compatibility box: ready ($NAME)"; return 0; fi
+  say "Compatibility box: tools installed, box not created yet (it is created on first use)."; return 1
+}
+
+cmd_reset() {
+  have distrobox || die "nothing to reset."
+  distrobox rm --force "$NAME" >/dev/null 2>&1
+  for f in "$APPS"/*.desktop; do [ -f "$f" ] && grep -q "distrobox.*$NAME" "$f" && rm -f "$f"; done
+  for f in "$BIN"/*; do [ -f "$f" ] && grep -q "distrobox.*$NAME\|carpatic-compat wrap" "$f" 2>/dev/null && rm -f "$f"; done
+  update_desktop_db; say "Compatibility box deleted. Your files were not touched."
+}
+
+[ $# -ge 1 ] || { usage; exit 0; }
+c="$1"; shift
+case "$c" in
+  --system-setup) system_setup "$@";;
+  -h|--help|help) usage;;
+  run|shell|install|wrap|remove|list|update|status|setup|reset)
+    ensure_runtime
+    case "$c" in
+      run)     [ $# -ge 1 ] || die "run what? Example: carpatic-compat run ./vendor-tool --help"; inbox "$@";;
+      shell)   ensure_box; exec distrobox enter "$NAME";;
+      install) cmd_install "$@";;
+      wrap)    cmd_wrap "$@";;
+      remove)  cmd_remove "$@";;
+      list)    cmd_list;;
+      update)  cmd_update;;
+      status)  cmd_status;;
+      setup)   ensure_box;;
+      reset)   cmd_reset;;
+    esac;;
+  *) err "unknown command '$c'"; usage >&2; exit 2;;
+esac

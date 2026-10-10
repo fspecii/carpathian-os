@@ -1,0 +1,13 @@
+#!/bin/sh
+# carpatic-mail [mailto:...] : the default mail client (Alpine 2.26, a small terminal mail program: IMAP/SMTP, Gmail with an app password).
+# First run writes a friendly ~/.pinerc (no greeting, mouse on, colour on) and opens the Setup screen so a newcomer can add an account.
+RC=$HOME/.pinerc
+if [ ! -f "$RC" ]; then
+  cat > "$RC" <<'EOT'
+# Carpatic defaults for Alpine mail (edit freely; Setup is the S key in the main menu)
+last-version-used=Alpine 2.26
+feature-list=enable-mouse-in-xterm,enable-8bit-esmtp-negotiation,quell-flowed-text,auto-open-next-unread,suppress-initial-keymenu-hint
+use-only-domain-name=yes
+EOT
+fi
+case "${1:-}" in mailto:*) exec alpine "$1" ;; *) exec alpine ;; esac

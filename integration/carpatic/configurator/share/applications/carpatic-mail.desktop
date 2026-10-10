@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Mail
+GenericName=Email
+Comment=Read and send email (IMAP, SMTP, Gmail with an app password). Opens in a terminal window.
+Exec=carpatic-term -e carpatic-mail %u
+Icon=mail-unread
+Terminal=false
+Categories=Network;Email;
+MimeType=x-scheme-handler/mailto;message/rfc822;
+Keywords=mail;email;gmail;imap;outlook;
+StartupWMClass=st-256color

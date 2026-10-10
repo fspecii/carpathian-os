@@ -1,0 +1,257 @@
+--- a/dwm.c
++++ b/dwm.c
+@@ -170,6 +170,7 @@
+ 	unsigned int tagset[2];
+ 	int showbar;
+ 	int topbar;
++	int isalt;                 /* CARPATIC: barwin is an external dock (tint2) */
+ 	Client *clients;
+ 	Client *sel;
+ 	Client *stack;
+@@ -245,6 +246,11 @@
+ static void grabkeys(void);
+ static void incnmaster(const Arg *arg);
+ static int isaltbar(Window win, XWindowAttributes *wa);
++static int isdock2(Window win);
++static void managedock2(Window win, XWindowAttributes *wa);
++static int removedock2(Window win);
++#define NDOCK2 8
++static struct { Window w; Monitor *m; long l, r, t, b; } docks2[NDOCK2];
+ static int istransientforbar(Window win);
+ static int isdescprocess(pid_t p, pid_t c);
+ static void killclient(const Arg *arg);
+@@ -1016,8 +1022,17 @@
+ 			restack(c->mon);
+ 		}
+ 	} else if (cme->message_type == netatom[NetActiveWindow]) {
+-		if (c != selmon->sel && !c->isurgent)
+-			seturgent(c, 1);
++		/* CARPATIC: taskbars (tint2) activate windows this way: show its tags and focus it */
++		if (c != selmon->sel) {
++			Monitor *cm = c->mon;
++			if (cm != selmon) { unfocus(selmon->sel, 0); selmon = cm; }
++			if (!ISVISIBLE(c)) {
++				cm->tagset[cm->seltags] = c->tags & TAGMASK;
++				arrange(cm);
++			}
++			focus(c);
++			restack(cm);
++		}
+ 	} else if (cme->message_type == netatom[NetWMDesktop]) {
+ 		/* Handle external desktop/workspace change requests */
+ 		long desktop = cme->data.l[0];
+@@ -1226,7 +1241,22 @@
+ 	m->bh = bh;
+ 	m->lt[0] = &layouts[0];
+ 	m->lt[1] = &layouts[1 % LENGTH(layouts)];
+-	copystr(m->ltsymbol, sizeof m->ltsymbol, layouts[0].symbol);
++	{	/* CARPATIC: default layout from ~/.config/carpatic/dwm-deflayout ("float" starts floating) */
++		const char *xc = getenv("XDG_CONFIG_HOME"), *hm = getenv("HOME");
++		char pth[PATH_MAX], w[16] = "";
++		FILE *lf;
++		if (xc && *xc) snprintf(pth, sizeof pth, "%s/carpatic/dwm-deflayout", xc);
++		else if (hm) snprintf(pth, sizeof pth, "%s/.config/carpatic/dwm-deflayout", hm);
++		else pth[0] = 0;
++		if (pth[0] && (lf = fopen(pth, "r"))) {
++			if (fscanf(lf, "%15s", w) == 1 && !strcmp(w, "float")) {
++				m->lt[0] = &layouts[1 % LENGTH(layouts)];
++				m->lt[1] = &layouts[0];
++			}
++			fclose(lf);
++		}
++	}
++	copystr(m->ltsymbol, sizeof m->ltsymbol, m->lt[0]->symbol);
+ 	m->pertag = ecalloc(1, sizeof(Pertag));
+ 	m->pertag->curtag = m->pertag->prevtag = 1;
+ 
+@@ -1252,6 +1282,8 @@
+ 	XDestroyWindowEvent *ev = &e->xdestroywindow;
+ 
+ 	untrackoverridewindow(ev->window);
++	if (removedock2(ev->window))
++		return;
+ 	if ((c = wintoclient(ev->window)))
+ 		unmanage(c, 1);
+ 	else if ((c = swallowingclient(ev->window)))
+@@ -1311,7 +1343,7 @@
+ 	unsigned int i, occ = 0, urg = 0;
+ 	Client *c;
+ 
+-	if (!m->showbar)
++	if (!m->showbar || m->isalt)
+ 		return;
+ 
+ 	/* draw status first so it can be overdrawn by tags later */
+@@ -2474,6 +2506,12 @@
+ 	if (!(m = recttomon(wa->x, wa->y, wa->width, wa->height)))
+ 		return;
+ 
++	/* CARPATIC: retire the built-in bar window when an external dock takes over */
++	if (m->barwin && m->barwin != win && !m->isalt) {
++		XDestroyWindow(dpy, m->barwin);
++		m->barwin = 0;
++	}
++	m->isalt = 1;
+ 	changed = updatealtbar(m, win, wa);
+ 
+ 	if (changed)
+@@ -2487,11 +2525,74 @@
+ 		scantray();
+ }
+ 
++/* CARPATIC: secondary docks (tint2 panel_window_name = "carpatic-dock*"): not a bar, they only reserve space via _NET_WM_STRUT_PARTIAL */
++int
++isdock2(Window win)
++{
++	char *name = NULL;
++	int r = 0;
++	if (getwinatomprop(win, netatom[NetWMWindowType]) != netatom[NetWMWindowTypeDock])
++		return 0;
++	if (XFetchName(dpy, win, &name) && name) {
++		r = strncmp(name, "carpatic-dock", 13) == 0;
++		XFree(name);
++	}
++	return r;
++}
++
++void
++managedock2(Window win, XWindowAttributes *wa)
++{
++	Monitor *m = recttomon(wa->x, wa->y, wa->width, wa->height);
++	Atom a = XInternAtom(dpy, "_NET_WM_STRUT_PARTIAL", False), t;
++	unsigned char *d = NULL;
++	unsigned long n, after;
++	int f, i;
++	long *v;
++	if (!m) return;
++	for (i = 0; i < NDOCK2 && docks2[i].w && docks2[i].w != win; i++);
++	if (i == NDOCK2) return;
++	docks2[i].w = win; docks2[i].m = m;
++	docks2[i].l = docks2[i].r = docks2[i].t = docks2[i].b = 0;
++	if (XGetWindowProperty(dpy, win, a, 0, 12, False, XA_CARDINAL, &t, &f, &n, &after, &d) == Success && d && n >= 4) {
++		v = (long *)d;
++		docks2[i].l = v[0]; docks2[i].r = v[1]; docks2[i].t = v[2]; docks2[i].b = v[3];
++	}
++	if (d) XFree(d);
++	XSelectInput(dpy, win, StructureNotifyMask);
++	XMapWindow(dpy, win);
++	XRaiseWindow(dpy, win);
++	updatebarpos(m);
++	arrange(m);
++}
++
++int
++removedock2(Window win)
++{
++	int i;
++	for (i = 0; i < NDOCK2; i++)
++		if (docks2[i].w == win) {
++			Monitor *m = docks2[i].m;
++			docks2[i].w = 0;
++			if (m) {
++				updatebarpos(m);
++				if (m->barwin && !m->isalt)
++					XMoveResizeWindow(dpy, m->barwin, m->wx, m->by, m->ww, bh);
++				arrange(m);
++			}
++			return 1;
++		}
++	return 0;
++}
++
+ int
+ isaltbar(Window win, XWindowAttributes *wa)
+ {
+ 	Atom wtype;
+ 
++	if (isdock2(win))
++		return 0;
++
+ 	/* CARPATIC: stalonetray is a dock-type window but must not replace the built-in bar */
+ 	if (wmclasscontains(win, "stalonetray", ""))
+ 		return 0;
+@@ -2570,6 +2671,8 @@
+ 	}
+ 	if (isaltbar(ev->window, &wa))
+ 		managealtbar(ev->window, &wa);
++	else if (isdock2(ev->window))
++		managedock2(ev->window, &wa);
+ 	else if (!wintoclient(ev->window))
+ 		manage(ev->window, &wa);
+ }
+@@ -4707,7 +4810,27 @@
+ 	sh = DisplayHeight(dpy, screen);
+ 	root = RootWindow(dpy, screen);
+ 	drw = drw_create(dpy, screen, root, sw, sh);
+-	if (!drw_fontset_create(drw, fonts, LENGTH(fonts)))
++	{	/* CARPATIC: bar font from ~/.config/carpatic/dwm-font (fontconfig pattern), read at startup */
++		static char cfont[256];
++		static const char *cfonts[2];
++		const char *xc = getenv("XDG_CONFIG_HOME"), *hm = getenv("HOME");
++		char pth[PATH_MAX];
++		FILE *ff;
++		cfont[0] = 0;
++		if (xc && *xc) snprintf(pth, sizeof pth, "%s/carpatic/dwm-font", xc);
++		else if (hm) snprintf(pth, sizeof pth, "%s/.config/carpatic/dwm-font", hm);
++		else pth[0] = 0;
++		if (pth[0] && (ff = fopen(pth, "r"))) {
++			if (fgets(cfont, sizeof cfont, ff)) cfont[strcspn(cfont, "\r\n")] = 0;
++			fclose(ff);
++		}
++		if (cfont[0] && LENGTH(fonts) >= 2) {
++			cfonts[0] = cfont; cfonts[1] = fonts[1];
++			if (!drw_fontset_create(drw, cfonts, 2))
++				drw_fontset_create(drw, fonts, LENGTH(fonts));
++		}
++	}
++	if (!drw->fonts && !drw_fontset_create(drw, fonts, LENGTH(fonts)))
+ 		die("no fonts could be loaded.");
+ 	lrpad = drw->fonts->h;
+ 	bh = drw->fonts->h + 2; /* CARPATIC: built-in dwm bar (was: external Quickshell panel) */
+@@ -5359,9 +5482,19 @@
+ 
+ 	m->barwin = 0;
+ 	m->by = 0;
+-	m->bh = 0;
+-	updatebarpos(m);
+-	arrange(m);
++	if (m->isalt) {	/* CARPATIC: fall back to the built-in bar */
++		m->isalt = 0;
++		bh = drw->fonts->h + 2;
++		m->bh = bh;
++		updatebarpos(m);
++		updatebars();
++		arrange(m);
++		drawbar(m);
++	} else {
++		m->bh = 0;
++		updatebarpos(m);
++		arrange(m);
++	}
+ 	updateclientlist();
+ }
+ 
+@@ -5389,6 +5522,8 @@
+ 	XUnmapEvent *ev = &e->xunmap;
+ 
+ 	untrackoverridewindow(ev->window);
++	if (removedock2(ev->window))
++		return;
+ 	if ((c = wintoclient(ev->window))) {
+ 		if (ev->send_event)
+ 			setclientstate(c, WithdrawnState);
+@@ -5496,6 +5631,14 @@
+ {
+ 	m->wy = m->my;
+ 	m->wh = m->mh;
++	{	/* CARPATIC: space reserved by secondary docks */
++		long l = 0, r = 0, b = 0; int i;
++		for (i = 0; i < NDOCK2; i++)
++			if (docks2[i].w && docks2[i].m == m) { l += docks2[i].l; r += docks2[i].r; b += docks2[i].b; }
++		m->wx = m->mx + l;
++		m->ww = m->mw - l - r;
++		m->wh -= b;
++	}
+ 	if (m->showbar) {
+ 		m->wh -= m->bh;
+ 		m->by = m->topbar ? m->wy : m->wy + m->wh;

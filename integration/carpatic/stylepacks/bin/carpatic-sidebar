@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+"""carpatic-sidebar : the quick-settings + notification sidebar of the Kylin style pack (Super+A, clock click).
+
+Original GTK3 code (MIT). Geometry from the UKUI design spec (LinPad themes/kylin/DESIGN-SPEC.md sections 6 and 7): 396 px wide, radius 12, 8 px from the
+panel and the screen edge, 4-column toggle grid with 80x72 tiles (radius 8, 24 px icons), 56 px slider rows, notification cards radius 8 below.
+The spec has two surfaces (quick settings from the tray, notification centre on the right edge); here they are one column so one key opens both.
+Only controls that work on this machine are shown: Wi-Fi / Bluetooth tiles need nmcli / rfkill hardware, sliders need wpctl / brightnessctl.
+Esc or a click outside closes; calling it again closes it."""
+import json, os, signal, subprocess, shutil, sys, time
+
+sys.path.insert(0, "/usr/local/lib/carpatic"); sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+from carpatic_stylekit import *  # noqa: E402,F401,F403
+
+def run_out(*cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=3).stdout.strip()
+    except Exception:
+        return ""
+
+def have(c):
+    return shutil.which(c) is not None
+
+def dunst_history():
+    """list of {app, summary, body, age_s} from `dunstctl history` (newest first)"""
+    try:
+        d = json.loads(run_out("dunstctl", "history") or "{}")["data"][0]
+    except Exception:
+        return []
+    up = float(open("/proc/uptime").read().split()[0]) if os.path.exists("/proc/uptime") else 0
+    out = []
+    for n in d:
+        g = lambda k: (n.get(k) or {}).get("data", "")
+        ts = g("timestamp") or 0
+        out.append({"app": g("appname"), "summary": g("summary"), "body": g("body"), "age": max(0, up - ts / 1e6) if up and ts else 0})
+    return out
+
+def ago(s):
+    s = int(s)
+    return "just now" if s < 60 else f"{s // 60} min ago" if s < 3600 else f"{s // 3600} h ago"
+
+def toggle_mode():
+    """Dark/light for the style pack in use: kylin-light <-> kylin-dark, zen-light <-> zen-dark, carpatic <-> carpatic-light"""
+    t = read_kv(os.path.join(CFG, "settings.conf")).get("THEME", "carpatic")
+    pairs = {"kylin-light": "kylin-dark", "kylin-dark": "kylin-light", "zen-light": "zen-dark", "zen-dark": "zen-light", "carpatic": "carpatic-light", "carpatic-light": "carpatic"}
+    subprocess.Popen(["carpatic-theme", "set", pairs.get(t, "carpatic-light" if theme_colors(t).get("mode") == "dark" else "carpatic")], start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def css(p):
+    return f"""
+window.sb {{ background: {p['surface']}; border: 1px solid {p['line']}; border-radius: 12px; color: {p['fg']}; }}
+.sb .hdr {{ color: {p['muted']}; font-weight: bold; }}
+.sb .sub {{ color: {p['muted']}; font-size: 90%; }}
+.sb button.tile {{ background: {p['base']}; border: 0; border-radius: 8px; box-shadow: none; padding: 0; color: {p['fg']}; }}
+.sb button.tile:hover {{ background: {p['hover']}; }}
+.sb button.tile.on {{ background: {p['accent']}; color: {p['accent_fg']}; }}
+.sb button.link {{ background: transparent; border: 0; box-shadow: none; color: {p['accent']}; padding: 2px 8px; }}
+.sb button.link:hover {{ background: {p['hover']}; border-radius: 6px; }}
+.sb .card {{ background: {p['base']}; border: 1px solid {p['line']}; border-radius: 8px; }}
+.sb .title {{ font-weight: bold; }}
+.sb scale trough {{ background: {p['line']}; border-radius: 999px; min-height: 16px; }}
+.sb scale highlight {{ background: {p['accent']}; border-radius: 999px; }}
+.sb scale slider {{ background: {p['accent_fg']}; border: 1px solid {p['accent']}; min-width: 14px; min-height: 14px; margin: -2px; border-radius: 999px; }}
+.sb scrolledwindow, .sb viewport {{ background: transparent; }}
+.sb scrolledwindow, .sb scrolledwindow undershoot, .sb scrolledwindow overshoot {{ border: 0; box-shadow: none; background-image: none; }}
+"""
+
+def main():
+    import gi
+    gi.require_version("Gtk", "3.0"); gi.require_version("Gdk", "3.0")
+    from gi.repository import Gtk, Gdk, GLib, Pango
+    import cairo
+    rtd = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+    pidfile = os.path.join(rtd, "carpatic-sidebar.pid")
+    try:
+        old = int(open(pidfile).read().strip()); os.kill(old, 0)
+        if "carpatic-sidebar" in open(f"/proc/{old}/cmdline").read():
+            os.kill(old, signal.SIGTERM); return 0
+    except (OSError, ValueError):
+        pass
+    open(pidfile, "w").write(str(os.getpid()))
+    P = palette(theme_colors())
+    prof = read_kv(os.path.join(CFG, "profile.env")); panel_h = int(prof.get("BAR_BOTTOM", "48") or 48)
+    disp = Gdk.Display.get_default(); seat = disp.get_default_seat()
+    _, px, py = seat.get_pointer().get_position(); mon = disp.get_monitor_at_point(px, py); geo = mon.get_geometry() if mon else None
+    if geo is None or geo.width <= 0:
+        geo = Gdk.Rectangle(); geo.x, geo.y, geo.width, geo.height = 0, 0, 1280, 800
+    W = 396; H = min(640, geo.height - panel_h - 16); gap = 8
+    X, Y = geo.x + geo.width - W - gap, geo.y + geo.height - panel_h - gap - H
+    win = Gtk.Window(type=Gtk.WindowType.POPUP); win.get_style_context().add_class("sb"); win.set_size_request(W, H); win.set_default_size(W, H)
+    prov = Gtk.CssProvider(); prov.load_from_data(css(P).encode())
+    Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), prov, Gtk.STYLE_PROVIDER_PRIORITY_USER)
+    done = []
+
+    def close(*_):
+        if done: return
+        done.append(1)
+        try: seat.ungrab()
+        except Exception: pass
+        Gtk.main_quit()
+
+    def act(*cmd, keep=False):
+        subprocess.Popen(list(cmd), start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if not keep: close()
+
+    root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12); root.set_margin_start(16); root.set_margin_end(16); root.set_margin_top(16); root.set_margin_bottom(12)
+    win.add(root)
+
+    # ---- toggle grid: 4 columns, tiles 80x72
+    tiles = []
+    paused = run_out("dunstctl", "is-paused") == "true" if have("dunstctl") else False
+    dark = P["mode"] == "dark"
+    if have("nmcli") and "wifi" in run_out("nmcli", "-t", "-f", "TYPE", "device"):
+        on = run_out("nmcli", "radio", "wifi") == "enabled"
+        tiles.append(("network-wireless-symbolic", "Wi-Fi", on, lambda a: subprocess.run(["nmcli", "radio", "wifi", "on" if a else "off"])))
+    if have("rfkill") and "bluetooth" in run_out("rfkill", "list", "bluetooth").lower():
+        on = "Soft blocked: no" in run_out("rfkill", "list", "bluetooth")
+        tiles.append(("bluetooth-symbolic", "Bluetooth", on, lambda a: subprocess.run(["rfkill", "unblock" if a else "block", "bluetooth"])))
+    tiles.append(("weather-clear-night-symbolic", "Dark mode", dark, lambda a: toggle_mode()))
+    if have("dunstctl"):
+        tiles.append(("notifications-disabled-symbolic", "Do not disturb", paused, lambda a: subprocess.run(["dunstctl", "set-paused", "true" if a else "false"])))
+    actions = [("camera-photo-symbolic", "Screenshot", ("carpatic-screenshot",)), ("system-lock-screen-symbolic", "Lock", ("carpatic-lock",)),
+               ("preferences-system-symbolic", "Settings", ("carpatic-settings",)), ("utilities-system-monitor-symbolic", "Monitor", ("xfce4-taskmanager",))]
+    grid = Gtk.Grid(column_spacing=12, row_spacing=12); grid.set_halign(Gtk.Align.START)
+    n = 0
+
+    def tile(icon, label, on, cb, is_toggle):
+        b = Gtk.Button(); b.get_style_context().add_class("tile"); b.set_size_request(80, 72); b.set_can_focus(False)
+        if on: b.get_style_context().add_class("on")
+        v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4); v.set_valign(Gtk.Align.CENTER)
+        im = Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR); im.set_pixel_size(24); v.pack_start(im, False, False, 0)
+        l = Gtk.Label(label=label); l.set_ellipsize(Pango.EllipsizeMode.END); l.set_max_width_chars(10); l.get_style_context().add_class("sub" if not on else "title"); v.pack_start(l, False, False, 0)
+        b.add(v)
+        if is_toggle:
+            def clicked(w):
+                st = not w.get_style_context().has_class("on")
+                (w.get_style_context().add_class if st else w.get_style_context().remove_class)("on"); cb(st)
+            b.connect("clicked", clicked)
+        else:
+            b.connect("clicked", lambda *_: cb())
+        return b
+    for icon, label, on, cb in tiles:
+        grid.attach(tile(icon, label, on, cb, True), n % 4, n // 4, 1, 1); n += 1
+    for icon, label, cmd in actions:
+        if have(cmd[0]):
+            grid.attach(tile(icon, label, False, lambda cmd=cmd: act(*cmd), False), n % 4, n // 4, 1, 1); n += 1
+    root.pack_start(grid, False, False, 0)
+
+    # ---- sliders (only when the tool exists)
+    def slider(icon, value, cb):
+        row = Gtk.Box(spacing=12); row.set_size_request(-1, 40)
+        im = Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.LARGE_TOOLBAR); im.set_pixel_size(24); row.pack_start(im, False, False, 0)
+        sc = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1); sc.set_value(value); sc.set_draw_value(False); sc.set_hexpand(True)
+        sc.connect("value-changed", lambda s: cb(int(s.get_value()))); row.pack_start(sc, True, True, 0)
+        return row
+    if have("wpctl"):
+        out = run_out("wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@").split()
+        if len(out) >= 2:
+            root.pack_start(slider("audio-volume-high-symbolic", float(out[1]) * 100, lambda v: subprocess.run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{v}%"])), False, False, 0)
+    if have("brightnessctl"):
+        m = run_out("brightnessctl", "-m").split(",")
+        if len(m) >= 4 and m[3].rstrip("%").isdigit():
+            root.pack_start(slider("display-brightness-symbolic", float(m[3].rstrip("%")), lambda v: subprocess.run(["brightnessctl", "-q", "set", f"{max(v, 5)}%"])), False, False, 0)
+
+    # ---- notifications
+    head = Gtk.Box(); h = Gtk.Label(label="Notifications", xalign=0); h.get_style_context().add_class("hdr"); head.pack_start(h, True, True, 0)
+    clr = Gtk.Button(label="Clear all"); clr.get_style_context().add_class("link"); clr.set_can_focus(False)
+    clr.connect("clicked", lambda *_: (subprocess.run(["dunstctl", "history-clear"]), close())); head.pack_end(clr, False, False, 0)
+    root.pack_start(head, False, False, 0)
+    sw = Gtk.ScrolledWindow(); sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC); sw.set_vexpand(True)
+    col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8); sw.add(col); root.pack_start(sw, True, True, 0)
+    hist = dunst_history() if have("dunstctl") else []
+    for it in hist[:30]:
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2); card.get_style_context().add_class("card")
+        card.set_margin_start(1); card.set_margin_end(1)
+        for w_ in (card,):
+            w_.set_border_width(12)
+        top = Gtk.Label(label=f"{it['app'] or 'Notification'}   {ago(it['age'])}" if it["age"] else (it["app"] or "Notification"), xalign=0); top.get_style_context().add_class("sub"); card.pack_start(top, False, False, 0)
+        t = Gtk.Label(label=it["summary"], xalign=0); t.get_style_context().add_class("title"); t.set_ellipsize(Pango.EllipsizeMode.END); t.set_lines(2); card.pack_start(t, False, False, 0)
+        if it["body"]:
+            b = Gtk.Label(label=it["body"], xalign=0); b.set_line_wrap(True); b.set_lines(2); b.set_ellipsize(Pango.EllipsizeMode.END); b.set_max_width_chars(44); card.pack_start(b, False, False, 0)
+        col.pack_start(card, False, False, 0)
+    if not hist:
+        e = Gtk.Label(label="No new notifications", xalign=0.5); e.get_style_context().add_class("sub"); e.set_margin_top(24); col.pack_start(e, False, False, 0)
+        clr.set_sensitive(False)
+
+    def on_key(w, e):
+        if e.keyval == Gdk.KEY_Escape: close(); return True
+        return False
+    def on_button(w, e):
+        if not (X <= e.x_root <= X + W and Y <= e.y_root <= Y + H): close()
+        return False
+    win.connect("key-press-event", on_key); win.connect("button-press-event", on_button); win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+    win.connect("destroy", close)
+    GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, lambda: (close(), False)[1])
+    snap = os.environ.get("CARPATIC_SNAPSHOT")
+    if snap:  # development / docs: offscreen PNG on a headless broadway display
+        off = Gtk.OffscreenWindow(); off.set_decorated(False); off.get_style_context().add_class("sb"); off.set_default_size(W, H); off.set_size_request(W, H)
+        win.remove(root); off.add(root); off.show_all()
+        def save():
+            pb = off.get_pixbuf(); print("snapshot", pb.get_width(), pb.get_height(), "grid", grid.get_allocated_width(), "tiles", [c.get_allocated_width() for c in grid.get_children()][:5]); pb.savev(snap, "png", [], []); Gtk.main_quit(); return False
+        GLib.timeout_add(600, save); Gtk.main(); return 0
+    win.move(X, Y); win.show_all()
+    r = 12; s = cairo.ImageSurface(cairo.FORMAT_A1, W, H); c = cairo.Context(s)
+    c.new_sub_path(); c.arc(W - r, r, r, -1.5708, 0); c.arc(W - r, H - r, r, 0, 1.5708); c.arc(r, H - r, r, 1.5708, 3.1416); c.arc(r, r, r, 3.1416, 4.7124); c.close_path(); c.fill()
+    win.shape_combine_region(Gdk.cairo_region_create_from_surface(s)); win.move(X, Y)
+
+    def grab():
+        if seat.grab(win.get_window(), Gdk.SeatCapabilities.ALL, True, None, None, None) != Gdk.GrabStatus.SUCCESS:
+            GLib.timeout_add(50, lambda: grab() and False)
+        return False
+    GLib.idle_add(grab)
+    try:
+        Gtk.main()
+    finally:
+        try: os.unlink(pidfile)
+        except OSError: pass
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

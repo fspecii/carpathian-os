@@ -1,0 +1,25 @@
+#!/bin/sh
+# carpatic-userdirs [home]: the folders every newcomer expects (Desktop, Documents, Downloads, Music, Pictures, Videos), the XDG
+# user-dirs file that tells Firefox and Thunar where they are, and Files sidebar bookmarks. Idempotent and cheap: it only creates what is
+# missing and never touches an existing bookmarks file or user-dirs file. Called by carpatic-session at every login.
+H=${1:-$HOME}
+[ -d "$H" ] || exit 0
+for d in Desktop Documents Downloads Music Pictures Videos; do mkdir -p "$H/$d"; done
+c=$H/.config
+mkdir -p "$c"
+if [ ! -f "$c/user-dirs.dirs" ]; then
+  cat >"$c/user-dirs.dirs" <<'D'
+XDG_DESKTOP_DIR="$HOME/Desktop"
+XDG_DOCUMENTS_DIR="$HOME/Documents"
+XDG_DOWNLOAD_DIR="$HOME/Downloads"
+XDG_MUSIC_DIR="$HOME/Music"
+XDG_PICTURES_DIR="$HOME/Pictures"
+XDG_VIDEOS_DIR="$HOME/Videos"
+D
+  echo en_US >"$c/user-dirs.locale"
+fi
+if [ ! -f "$c/gtk-3.0/bookmarks" ]; then
+  mkdir -p "$c/gtk-3.0"
+  for d in Documents Downloads Music Pictures Videos; do printf 'file://%s/%s %s\n' "$H" "$d" "$d"; done >"$c/gtk-3.0/bookmarks"
+fi
+exit 0

@@ -1,0 +1,49 @@
+# Carpatic store catalog: Media
+# Each [[app]]: id (unique), name, description, source (apk|flatpak|ai|compat), pkg (apk package or Flathub app id),
+# icon (icon-theme name), newcomer (good for newcomers), optional: size_mb, note, detail (long text), exec (launch cmd), term (run in a terminal), launch="none" (daemon, no Open button)
+[category]
+id = "media"
+name = "Media"
+icon = "applications-multimedia"
+order = 4
+blurb = "Music, video and creative tools"
+
+[[app]]
+id = "vlc"
+name = "VLC"
+pkg = "vlc"
+source = "apk"
+icon = "vlc"
+newcomer = true
+size_mb = 60
+description = "Plays almost any audio or video file."
+
+[[app]]
+id = "mpv"
+name = "mpv"
+pkg = "mpv"
+source = "apk"
+icon = "mpv"
+newcomer = false
+size_mb = 10
+description = "Minimal, powerful video player."
+
+[[app]]
+id = "spotify"
+name = "Spotify"
+pkg = "com.spotify.Client"
+source = "flatpak"
+icon = "spotify"
+newcomer = true
+size_mb = 10
+description = "Stream music and podcasts (Flatpak, downloads the app on install)."
+
+[[app]]
+id = "strawberry"
+name = "Strawberry"
+pkg = "strawberry"
+source = "apk"
+icon = "strawberry"
+newcomer = false
+size_mb = 40
+description = "Music player for your local collection."

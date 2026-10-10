@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Carpatic Reminders GUI and stable local JSON command interface."""
+import argparse
+import json
+import os
+from pathlib import Path
+import sys
+
+HERE = Path(__file__).resolve().parent
+for location in (HERE.parent / 'lib', Path('/usr/local/lib/carpatic-reminders')):
+    sys.path.insert(0, str(location))
+from carpatic_reminders.store import Store, StoreError, validate_fields
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--date', help='Filter day / default new due date: YYYY-MM-DD')
+    parser.add_argument('--new', action='store_true', help='Open a new reminder editor')
+    sub = parser.add_subparsers(dest='command')
+    sub.add_parser('notify-service', help='Run the opt-in local due notification service (no GTK)')
+    listing = sub.add_parser('list', help='Print reminder records as a JSON array')
+    listing.add_argument('--date', dest='list_date')
+    listing.add_argument('--pending', action='store_true')
+    add = sub.add_parser('add', help='Create a reminder and print its JSON record')
+    add.add_argument('title')
+    add.add_argument('--notes', default='')
+    add.add_argument('--due-date')
+    add.add_argument('--due-time')
+    edit = sub.add_parser('edit', help='Edit fields and print the JSON record')
+    edit.add_argument('id')
+    edit.add_argument('--title')
+    edit.add_argument('--notes')
+    edit.add_argument('--due-date', help='Empty string clears the date and time')
+    edit.add_argument('--due-time', help='Empty string clears the time')
+    done = sub.add_parser('complete', help='Complete or reopen a reminder')
+    done.add_argument('id')
+    done.add_argument('--reopen', action='store_true')
+    delete = sub.add_parser('delete', help='Delete a reminder')
+    delete.add_argument('id')
+    args = parser.parse_args()
+    try:
+        if args.date:
+            validate_fields('date query', due_date=args.date)
+        store = Store()
+        if args.command == 'notify-service':
+            from carpatic_reminders.service import run
+            return run()
+        if args.command == 'list':
+            result = store.list(args.list_date or args.date, args.pending)
+        elif args.command == 'add':
+            result = store.add(args.title, args.notes, args.due_date, args.due_time)
+        elif args.command == 'edit':
+            changes = {key: getattr(args, key) for key in ('title', 'notes', 'due_date', 'due_time')
+                       if getattr(args, key) is not None}
+            for key in ('due_date', 'due_time'):
+                if changes.get(key) == '': changes[key] = None
+            if 'due_date' in changes and changes['due_date'] is None: changes['due_time'] = None
+            result = store.update(args.id, **changes)
+        elif args.command == 'complete':
+            result = store.update(args.id, completed=not args.reopen)
+        elif args.command == 'delete':
+            store.delete(args.id)
+            result = {'deleted': args.id}
+        else:
+            from carpatic_reminders.app import run
+            return run(args.date, args.new)
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
+    except (StoreError, OSError) as error:
+        print(str(error), file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

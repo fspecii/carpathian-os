@@ -1,0 +1,98 @@
+#!/bin/bash
+# carpatic-greeter-anim: the installer greeter. The mountain logo rises row by row (about 1.8 s), the ember sun comes up last, then a bright band
+# drifts over the peaks in a seamless 4 s loop until Return is pressed. Pure bash + awk, 16 indexed ANSI colours (the console palette decides the
+# look), 30 frames per second, no forks per frame, no terminaltexteffects. Inspired by Omarchy's ttfx colorshift greeter (MIT, see NOTICE).
+#
+# Usage: carpatic-greeter-anim [--logo FILE] [--tagline TEXT] [--hint TEXT] [--dump DIR [--size COLSxROWS]]
+#   --dump DIR     write every frame of the screen as DIR/NNNN.ansi and exit (no tty needed; used by tests and the contact sheets)
+# Environment: CARPATIC_NO_ANIM=1 (or a reduced-motion setting, or TERM=dumb/no tty) draws the final screen once and waits for Return.
+#              CARPATIC_FPS (default 30), CARPATIC_LIB (where logo-frames.awk and ttylib.sh live).
+# Exit status: 0 after Return (or EOF on the tty). The terminal is always put back (stty sane, attributes reset, cursor shown) on any exit.
+# Behaviour: re-measures the terminal on every resize (SIGWINCH) and once a second (a Linux VT can grow after boot), redraws centred.
+set -u
+SELF=$(readlink -f "${BASH_SOURCE[0]}")
+LIB=${CARPATIC_LIB:-$(dirname "$SELF")/../lib}
+[[ -r $LIB/ttylib.sh ]] || LIB=/usr/local/share/carpatic/motion
+# shellcheck source=../lib/ttylib.sh
+source "$LIB/ttylib.sh"
+LOGO=${CARPATIC_LOGO:-$(dirname "$SELF")/../../installer/wizard/logo.txt}
+TAGLINE="Linux, with a view."; HINT="Press Enter to install Carpatic"
+DUMP=""; SIZE=""
+while (($#)); do case $1 in
+  --logo) LOGO=$2; shift ;; --tagline) TAGLINE=$2; shift ;; --hint) HINT=$2; shift ;;
+  --dump) DUMP=$2; shift ;; --size) SIZE=$2; shift ;;
+  -h|--help) sed -n '2,12p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  *) echo "carpatic-greeter-anim: unknown option $1" >&2; exit 2 ;; esac; shift; done
+[[ -r $LOGO ]] || { echo "carpatic-greeter-anim: logo file not found: $LOGO" >&2; exit 1; }
+FPS=${CARPATIC_FPS:-30}
+LOGO_H=$(wc -l <"$LOGO"); LOGO_W=$(awk '{ if (length > m) m = length } END { print m + 0 }' "$LOGO")
+
+reduced() {   # no motion: the user turned it off (Settings), or the environment cannot show it
+  [[ ${CARPATIC_NO_ANIM:-} == 1 ]] && return 0
+  [[ ${TERM:-dumb} == dumb ]] && return 0
+  local f=${CARPATIC_CONFIG:-$HOME/.config/carpatic}
+  grep -qs '^MOTION="reduced"' "$f/settings.conf" && return 0
+  [[ -e $f/reduced-motion ]] && return 0
+  grep -qw carpatic.reduced-motion /proc/cmdline 2>/dev/null && return 0
+  return 1
+}
+
+# layout for the current size: sets TOP, LEFT, and prints the static text (tagline, hint) which never animates
+layout() {
+  TOP=$(( (TTL_ROWS - (LOGO_H + 4)) / 2 )); (( TOP < 0 )) && TOP=0
+  LEFT=$(( (TTL_COLS - LOGO_W) / 2 )); (( LEFT < 0 )) && LEFT=0
+  local tp=$(( (TTL_COLS - ${#TAGLINE}) / 2 )) hp=$(( (TTL_COLS - ${#HINT}) / 2 ))
+  (( tp < 0 )) && tp=0; (( hp < 0 )) && hp=0
+  STATIC=$(printf '\033[%d;%dH%s\033[%d;%dH\033[2m%s\033[0m' $((TOP + LOGO_H + 2)) $((tp + 1)) "$TAGLINE" $((TOP + LOGO_H + 4)) $((hp + 1)) "$HINT")
+}
+ttl_awk
+gen() { # MODE -> FRAMES array
+  mapfile -d $'\036' -t FRAMES < <($AWK -v LOGO="$LOGO" -v TOP="$TOP" -v LEFT="$LEFT" -v FPS="$FPS" -v MODE="$1" -f "$LIB/logo-frames.awk")
+}
+
+if [[ -n $DUMP ]]; then
+  mkdir -p "$DUMP"; TTL_COLS=${SIZE%x*}; TTL_ROWS=${SIZE#*x}; [[ -n $SIZE ]] || { TTL_COLS=100; TTL_ROWS=30; }
+  layout; n=0
+  for m in rise shift; do
+    gen $m
+    for f in "${FRAMES[@]}"; do printf '\033[0m\033[H\033[2J%s%s' "$STATIC" "$f" > "$DUMP/$(printf %04d $n).ansi"; n=$((n + 1)); done
+  done
+  echo "$n frames in $DUMP"; exit 0
+fi
+
+# ---- interactive ----
+if [[ ! -t 0 && ! -r /dev/tty ]]; then exit 0; fi            # nothing to draw on
+ttl_open
+draw_static() { printf '\033[0m\033[H\033[2J%s' "$STATIC" >/dev/tty; }
+if reduced; then
+  layout; draw_static; gen final; printf '%s' "${FRAMES[0]}" >/dev/tty
+  while ttl_key 0.1 || true; do [[ ${TTL_KEY:-} == "" || ${TTL_KEY:-} == eof ]] && break; done
+  printf '\033[0m\033[H\033[2J' >/dev/tty; ttl_close; exit 0
+fi
+STEP=$(( 1000000 / FPS ))
+ttl_size; layout; draw_static; gen rise; RISE=("${FRAMES[@]}")
+# the colour-shift loop is generated while the entrance plays (matters with busybox awk, which needs 1.5 s for it): started now, read when the rise ends
+LOOPFILE=$(mktemp "${TMPDIR:-/tmp}/carpatic-greeter.XXXXXX"); LOOP=()
+$AWK -v LOGO="$LOGO" -v TOP="$TOP" -v LEFT="$LEFT" -v FPS="$FPS" -v MODE=shift -f "$LIB/logo-frames.awk" > "$LOOPFILE" &
+LOOPPID=$!
+load_loop() { [[ -n ${LOOPPID:-} ]] && wait "$LOOPPID" 2>/dev/null; LOOPPID=; mapfile -d $'\036' -t LOOP < "$LOOPFILE"; }
+trap 'ttl_close; rm -f "$LOOPFILE"' EXIT
+mode=rise; i=0; next=${EPOCHREALTIME/./}; lastsize=$SECONDS
+while :; do
+  if (( TTL_RESIZED )) || (( SECONDS != lastsize )); then
+    old="$TTL_ROWS x $TTL_COLS"; ttl_size; lastsize=$SECONDS; TTL_RESIZED=0
+    if [[ "$TTL_ROWS x $TTL_COLS" != "$old" ]]; then      # resize: new layout, new frames, clean screen; the entrance is not replayed
+      layout; draw_static; gen shift; LOOP=("${FRAMES[@]}"); [[ -n ${LOOPPID:-} ]] && { wait "$LOOPPID" 2>/dev/null; LOOPPID=; }
+      mode=loop; i=0
+    fi
+  fi
+  if [[ $mode == rise ]]; then printf '%s' "${RISE[i]}" >/dev/tty; (( ++i >= ${#RISE[@]} )) && { mode=loop; i=0; load_loop; next=${EPOCHREALTIME/./}; }
+  else printf '%s' "${LOOP[i]}" >/dev/tty; i=$(( (i + 1) % ${#LOOP[@]} )); fi
+  next=$(( next + STEP )); nowt=${EPOCHREALTIME/./}; wait_us=$(( next - nowt ))
+  if (( wait_us < 0 )); then next=$nowt; wait_us=0; fi              # fell behind: skip ahead instead of bursting
+  printf -v w '0.%06d' "$wait_us"; (( wait_us >= 1000000 )) && w=1   # no fork per frame
+  if ttl_key "$w" && [[ $TTL_KEY == "" || $TTL_KEY == eof ]]; then break; fi
+done
+printf '\033[0m\033[H\033[2J' >/dev/tty
+ttl_close
+exit 0

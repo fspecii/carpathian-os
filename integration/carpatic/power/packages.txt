@@ -1,0 +1,20 @@
+# Packages needed by carpatic-power (Alpine 3.24; all in main or community, checked against the v3.24 APKINDEX)
+elogind
+elogind-openrc
+polkit-elogind
+acpid
+acpid-openrc
+dbus
+upower
+tlp
+tlp-openrc
+zram-init
+zram-init-openrc
+brightnessctl
+util-linux
+util-linux-misc
+e2fsprogs
+btrfs-progs
+slock
+libnotify
+powertop

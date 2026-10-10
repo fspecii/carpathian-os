@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+"""carpatic-store: one place for apk system apps and Flatpak apps."""
+import argparse
+import signal
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+import json
+import os
+import re
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"))
+sys.path.insert(0, "/usr/local/lib/carpatic-store")
+import carpatic_store as cs  # noqa: E402
+
+TTY = sys.stdout.isatty()
+DONE_FILE = os.path.expanduser("~/.config/carpatic/store-firstrun-done")
+
+
+def say(msg=""):
+    print(msg, flush=True)
+
+
+def src_label(a):
+    return {"flatpak": "Flathub", "ai": "AI tool", "compat": "Compat box"}.get(a["source"], "Built in")
+
+
+def row(a, st):
+    mark = "[x]" if st.installed(a) else "[ ]"
+    star = "*" if a.get("newcomer") else " "
+    return f'{mark} {a["id"]:<16} {a["name"]:<22} {src_label(a):<8}{star} {a["description"][:60]}'
+
+
+def progress_printer():
+    last = {"pct": False}
+    def cb(line):
+        is_prog = bool(re.search(r"\d+%", line))
+        if TTY:
+            if is_prog:
+                sys.stdout.write("\r  " + line.strip()[:76].ljust(76)); sys.stdout.flush(); last["pct"] = True
+                return
+            if last["pct"]:
+                sys.stdout.write("\n"); last["pct"] = False
+            say("  " + line.strip()[:100])
+        else:
+            if not is_prog or "100%" in line:
+                say("  " + line.strip()[:120])
+    return cb
+
+
+def cmd_list(a, cat, st):
+    if a.installed:
+        apps = [x for x in cat.apps.values() if st.installed(x)]
+        if not apps:
+            say("Nothing installed yet. Browse the store to find something you like: carpatic-store bundles")
+        for x in apps:
+            say(row(x, st))
+        return 0
+    if a.json:
+        say(json.dumps([dict(x, installed=st.installed(x)) for x in cat.apps.values()], indent=1)); return 0
+    for c in cat.categories:
+        if a.category and a.category.lower() not in (c["id"], c["name"].lower()):
+            continue
+        say(f'\n{c["name"]}  ({c.get("blurb", "")})')
+        for i in c["apps"]:
+            say("  " + row(cat.apps[i], st))
+    say("\n[x] installed   * Good start (a safe first pick)")
+    return 0
+
+
+def cmd_search(a, cat, st):
+    res = cat.search(a.query)
+    if a.all:
+        res += [r for r in cs.search_remote(a.query, lambda t: print(t, file=sys.stderr)) if r["pkg"] not in {x["pkg"] for x in res}]
+    if not res:
+        say(f"Nothing found for '{a.query}'. Try --all to search all of Alpine and Flathub."); return 1
+    for r in res:
+        say(row(r, st).replace(f'{r["id"]:<16}', f'{r["id"][:16]:<16}'))
+    return 0
+
+
+def cmd_info(a, cat, st):
+    x = cat.resolve(a.app)
+    say(f'{x["name"]}  ({x["id"]})')
+    say(f'  {x["description"]}')
+    say(f'  Source:    {src_label(x)} ({x["pkg"]})')
+    if x["category"]:
+        say(f'  Category:  {x["category"]}')
+    if x.get("size_mb"):
+        say(f'  Download:  ~{x["size_mb"]} MB')
+    say(f'  Installed: {"yes" if st.installed(x) else "no"}')
+    if x.get("note"):
+        say(f'  Note:      {x["note"]}')
+    return 0
+
+
+def targets(a, cat):
+    out = []
+    for ref in a.apps:
+        b = cat.bundle(ref)
+        if b:
+            out += [cat.resolve(i) for i in b["apps"]]
+        else:
+            out.append(cat.resolve(ref))
+    seen, uniq = set(), []
+    for x in out:
+        if x["id"] not in seen:
+            seen.add(x["id"]); uniq.append(x)
+    return uniq
+
+
+def cmd_install(a, cat, st, apps=None):
+    apps = apps if apps is not None else targets(a, cat)
+    todo = [x for x in apps if not st.installed(x)]
+    for x in apps:
+        if x not in todo:
+            say(f'{x["name"]} is already installed.')
+    if not todo:
+        return 0
+    mb = sum(x.get("size_mb", 0) for x in todo)
+    say(f'Will install {len(todo)} app{"" if len(todo) == 1 else "s"}, about {mb} MB download: ' + ", ".join(x["name"] for x in todo))
+    if getattr(a, "dry_run", False):
+        return 0
+    if not a.yes and sys.stdin.isatty():
+        if input("Continue? [Y/n] ").strip().lower() not in ("", "y", "yes"):
+            say("Cancelled."); return 1
+    failed = []
+    for n, x in enumerate(todo, 1):
+        say(f'[{n}/{len(todo)}] Installing {x["name"]} ({src_label(x)})...')
+        try:
+            cs.install(x, progress_printer())
+            say(f'  OK: {x["name"]} installed.')
+        except cs.StoreError as e:
+            say(f"  ERROR: {e}"); failed.append(x["name"])
+    st.refresh()
+    if failed:
+        say(f'\n{len(failed)} failed: {", ".join(failed)}'); return 1
+    return pull_bundle_models(a, cat)
+
+
+def pull_bundle_models(a, cat):
+    """Bundles may list first models to download; warn about size first."""
+    want = []
+    for ref in getattr(a, "apps", []) or []:
+        b = cat.bundle(ref)
+        if b:
+            want += [m for m in b.get("models", []) if m not in want]
+    if not want:
+        return 0
+    import carpatic_ai
+    info = {m["id"]: m for m in carpatic_ai.models()}
+    mb = sum(info[m]["size_mb"] for m in want if m in info)
+    say(f"\nFirst model download: {', '.join(want)} (about {mb} MB). Free disk space: {carpatic_ai.free_mb()} MB.")
+    if not a.yes and sys.stdin.isatty() and input("Download now? [Y/n] ").strip().lower() not in ("", "y", "yes"):
+        say("Skipped. Later: carpatic-ai models pull " + want[0]); return 0
+    rc = 0
+    for m in want:
+        try:
+            carpatic_ai.pull_model(m, progress_printer())
+            say(f"  OK: model {m} ready. Try: carpatic-ai models run {m}")
+        except cs.StoreError as e:
+            say(f"  ERROR: {e}"); rc = 1
+    return rc
+
+
+def cmd_remove(a, cat, st):
+    rc = 0
+    for ref in a.apps:
+        x = cat.resolve(ref)
+        if not st.installed(x):
+            say(f'{x["name"]} is not installed.'); continue
+        if not a.yes and sys.stdin.isatty() and input(f'Remove {x["name"]}? [y/N] ').strip().lower() not in ("y", "yes"):
+            continue
+        say(f'Removing {x["name"]}...')
+        try:
+            cs.remove(x, progress_printer()); say("  OK.")
+        except cs.StoreError as e:
+            say(f"  ERROR: {e}"); rc = 1
+    return rc
+
+
+def cmd_update(a, cat, st):
+    if a.check:
+        cs.run(cs.priv_prefix() + ["apk", "update"], None) if cs.is_root() else None
+        apk, fp = cs.pending_updates()
+        say(f"System updates: {len(apk)} {' '.join(apk[:10])}")
+        say(f"Flatpak updates: {len(fp)} {' '.join(fp[:10])}")
+        return 0
+    say("Updating system packages and Flatpak apps...")
+    try:
+        cs.update_all(progress_printer())
+    except cs.StoreError as e:
+        say(f"ERROR: {e}"); return 1
+    say("You are up to date."); return 0
+
+
+def cmd_bundles(a, cat, st):
+    for b in cat.bundles:
+        names = [cat.apps[i]["name"] for i in b["apps"] if i in cat.apps]
+        say(f'{b["id"]:<10} {b["name"]}: {b["description"]}')
+        say(f'           {", ".join(names)}')
+    say("\nInstall one with: carpatic-store install <bundle>")
+    return 0
+
+
+def cmd_firstrun(a, cat, st):
+    chosen = None
+    if a.bundles or a.apps_opt:
+        chosen = []
+        for bid in filter(None, (a.bundles or "").split(",")):
+            b = cat.bundle(bid)
+            if not b:
+                say(f"Unknown bundle '{bid}'. See: carpatic-store bundles"); return 2
+            chosen += [cat.resolve(i) for i in b["apps"]]
+        chosen += [cat.resolve(i) for i in filter(None, (a.apps_opt or "").split(","))]
+    elif a.yes:
+        chosen = [cat.resolve(i) for b in cat.bundles if b.get("default") for i in b["apps"]]
+    elif (a.gui or (not a.tui and os.environ.get("DISPLAY"))) and not os.environ.get("CARPATIC_NO_GUI"):
+        gui = os.path.join(os.path.dirname(os.path.realpath(__file__)), "carpatic-store-gui")
+        if not os.path.exists(gui):
+            gui = "/usr/local/bin/carpatic-store-gui"
+        os.execv(sys.executable, [sys.executable, gui, "--firstrun"])
+    else:
+        chosen = tui_picker(cat, st)
+        if chosen is None:
+            say("Skipped. You can run 'carpatic-store firstrun' any time."); mark_done(); return 0
+    mark_done()
+    seen, uniq = set(), []
+    for x in chosen:
+        if x["id"] not in seen:
+            seen.add(x["id"]); uniq.append(x)
+    if a.print:
+        say("\n".join(x["id"] for x in uniq)); return 0
+    if not uniq:
+        say("Nothing selected."); return 0
+    return cmd_install(a, cat, st, apps=uniq)
+
+
+def mark_done():
+    try:
+        os.makedirs(os.path.dirname(DONE_FILE), exist_ok=True)
+        open(DONE_FILE, "w").write("done\n")
+    except OSError:
+        pass
+
+
+def tui_picker(cat, st):
+    """Text checklist. Items are bundles (default ones pre-checked). Returns app list or None."""
+    items = [(b, b.get("default", False)) for b in cat.bundles]
+    state = [d for _, d in items]
+    while True:
+        say("\nPick what to install (type a number to toggle, Enter to install, q to skip):\n")
+        for i, (b, _) in enumerate(items):
+            mb = sum(cat.apps[x].get("size_mb", 0) for x in b["apps"] if x in cat.apps and not st.installed(cat.apps[x]))
+            say(f'  {i + 1}. [{"x" if state[i] else " "}] {b["name"]:<16} ~{mb} MB  {b["description"]}')
+        s = input("> ").strip().lower()
+        if s == "q":
+            return None
+        if s == "":
+            apps = [cat.resolve(x) for (b, _), on in zip(items, state) if on for x in b["apps"]]
+            return apps
+        for tok in s.replace(",", " ").split():
+            if tok.isdigit() and 1 <= int(tok) <= len(items):
+                state[int(tok) - 1] = not state[int(tok) - 1]
+
+
+def cmd_doctor(a, cat, st):
+    bad = 0
+    for name, ok, d in cs.doctor():
+        say(f'{"OK  " if ok else "FAIL"} {name}: {d}'); bad += not ok
+    return 1 if bad else 0
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="carpatic-store", description="Install apps from Alpine (apk) and Flathub (Flatpak) in one place.")
+    ap.add_argument("-y", "--yes", action="store_true", help="never ask questions (for scripts and tests)")
+    sub = ap.add_subparsers(dest="cmd")
+    p = sub.add_parser("list", help="list catalog apps"); p.add_argument("category", nargs="?"); p.add_argument("--installed", action="store_true"); p.add_argument("--json", action="store_true")
+    p = sub.add_parser("search", help="search the catalog"); p.add_argument("query"); p.add_argument("--all", action="store_true", help="also search all of Alpine and Flathub")
+    p = sub.add_parser("info", help="show details"); p.add_argument("app")
+    p = sub.add_parser("install", help="install apps or bundles"); p.add_argument("apps", nargs="+"); p.add_argument("--dry-run", action="store_true")
+    p = sub.add_parser("remove", help="remove apps"); p.add_argument("apps", nargs="+")
+    p = sub.add_parser("update", help="update everything"); p.add_argument("--check", action="store_true")
+    sub.add_parser("bundles", help="list bundles")
+    p = sub.add_parser("firstrun", help="first-login app picker")
+    p.add_argument("--tui", action="store_true"); p.add_argument("--gui", action="store_true")
+    p.add_argument("--bundles", help="comma list, no questions"); p.add_argument("--apps", dest="apps_opt", help="comma list of app ids, no questions")
+    p.add_argument("--print", action="store_true", help="only print the selected app ids"); p.add_argument("--dry-run", action="store_true")
+    sub.add_parser("doctor", help="check Flatpak setup")
+    # allow -y after the subcommand
+    argv = sys.argv[1:]
+    if "-y" in argv or "--yes" in argv:
+        argv = [x for x in argv if x not in ("-y", "--yes")]
+        argv = ["-y"] + argv
+    a = ap.parse_args(argv)
+    if not a.cmd:
+        ap.print_help(); return 0
+    if a.cmd == "firstrun" and a.dry_run is None:
+        pass
+    try:
+        cat = cs.Catalog()
+        st = cs.State()
+        return {"list": cmd_list, "search": cmd_search, "info": cmd_info, "install": cmd_install, "remove": cmd_remove,
+                "update": cmd_update, "bundles": cmd_bundles, "firstrun": cmd_firstrun, "doctor": cmd_doctor}[a.cmd](a, cat, st)
+    except cs.StoreError as e:
+        print(f"Error: {e}", file=sys.stderr); return 1
+    except (KeyboardInterrupt, EOFError):
+        print("\nCancelled.", file=sys.stderr); return 130
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,92 @@
+#!/bin/sh
+# carpatic-touchpad: touchpad settings for the Carpatic desktop (libinput through xinput). Used by Carpatic System > Touchpad.
+#
+#   carpatic-touchpad status                      current values (what the X server really uses)
+#   carpatic-touchpad set <key> <value>           save and apply. Keys:
+#       tap            on|off     tap to click. Default OFF (some touchpads send phantom taps that select text while you scroll)
+#       tap-drag       on|off     tap, then tap-and-hold to drag. Default OFF
+#       natural        on|off     natural scrolling (content follows the fingers, like a phone/Mac). Default ON
+#       typing-guard   on|off     ignore the pad while typing. Default ON
+#       scroll         two-finger|edge   how to scroll. Default two-finger
+#       speed          -1.0 .. 1.0   pointer speed. Default 0
+#       gestures       on|off     three-finger swipes (see carpatic-gestures). Default on
+#   carpatic-touchpad reset                       back to the defaults
+#   carpatic-touchpad watch                       re-apply whenever a pad is plugged in (session helper)
+#   carpatic-touchpad apply                       apply the saved values (the session calls this at login and when a pad is plugged in)
+#
+# Saved in ~/.config/carpatic/touchpad.env. License: MIT. POSIX sh.
+set -u
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}/carpatic"; ENV="$CFG/touchpad.env"
+mkdir -p "$CFG"; [ -f "$ENV" ] || : > "$ENV"
+say() { printf '%s\n' "$*"; }
+die() { printf 'carpatic-touchpad: %s\n' "$*" >&2; exit 1; }
+get() { v=$(sed -n "s/^$1=//p" "$ENV" | tail -1 | tr -d '"'); [ -n "$v" ] && echo "$v" || default_of "$1"; }
+put() { grep -v "^$1=" "$ENV" > "$ENV.new" 2>/dev/null; printf '%s="%s"\n' "$1" "$2" >> "$ENV.new"; mv "$ENV.new" "$ENV"; }
+style() { sed -n 's/^PROFILE=//p' "$CFG/profile.env" 2>/dev/null | tail -1 | tr -d '"'; }
+default_of() { case "$1" in
+  TAP|TAP_DRAG) echo off;; NATURAL|TYPING_GUARD) echo on;; SCROLL) echo two-finger;; SPEED) echo 0;;
+  GESTURES) echo on;; esac; }   # workspaces are a core feature: swipes are on by default wherever a touchpad exists
+
+pads() { # ids of touchpad devices known to X
+  [ -n "${DISPLAY:-}" ] || return 0
+  command -v xinput >/dev/null 2>&1 || return 0
+  for id in $(xinput list --id-only 2>/dev/null); do
+    xinput list-props "$id" 2>/dev/null | grep -q "libinput Tapping Enabled (" && echo "$id"
+  done
+}
+prop() { # prop <id> <name> <values...>
+  id=$1; name=$2; shift 2; xinput set-prop "$id" "libinput $name" "$@" 2>/dev/null
+}
+b() { [ "$1" = on ] && echo 1 || echo 0; }
+read_prop() { xinput list-props "$1" 2>/dev/null | sed -n "s/.*libinput $2 ([0-9]*):[[:space:]]*//p" | head -1; }
+
+apply() {
+  for id in $(pads); do
+    prop "$id" "Tapping Enabled" "$(b "$(get TAP)")"
+    prop "$id" "Tapping Drag Enabled" "$(b "$(get TAP_DRAG)")"
+    prop "$id" "Tapping Drag Lock Enabled" 0
+    prop "$id" "Natural Scrolling Enabled" "$(b "$(get NATURAL)")"
+    prop "$id" "Disable While Typing Enabled" "$(b "$(get TYPING_GUARD)")"
+    if [ "$(get SCROLL)" = edge ]; then prop "$id" "Scroll Method Enabled" 0 1 0; else prop "$id" "Scroll Method Enabled" 1 0 0; fi
+    prop "$id" "Accel Speed" "$(get SPEED)"
+  done
+  if command -v carpatic-gestures >/dev/null 2>&1; then
+    if [ "$(get GESTURES)" = on ] && [ -n "$(pads)" ]; then carpatic-gestures start; else carpatic-gestures stop; fi
+  fi
+  return 0
+}
+
+CMD=${1:-status}; [ $# -gt 0 ] && shift
+case "$CMD" in
+  status)
+    ids=$(pads)
+    if [ -z "$ids" ]; then say "No touchpad found. (Saved settings: tap=$(get TAP) tap-drag=$(get TAP_DRAG) natural=$(get NATURAL) typing-guard=$(get TYPING_GUARD) scroll=$(get SCROLL) speed=$(get SPEED) gestures=$(get GESTURES))"; exit 0; fi
+    id=$(echo "$ids" | head -1)
+    t=$(read_prop "$id" "Tapping Enabled"); d=$(read_prop "$id" "Tapping Drag Enabled"); n=$(read_prop "$id" "Natural Scrolling Enabled")
+    w=$(read_prop "$id" "Disable While Typing Enabled"); s=$(read_prop "$id" "Scroll Method Enabled"); a=$(read_prop "$id" "Accel Speed")
+    onoff() { [ "$1" = 1 ] && echo on || echo off; }
+    printf 'tap            %s\ntap-drag       %s\nnatural        %s\ntyping-guard   %s\n' "$(onoff "$t")" "$(onoff "$d")" "$(onoff "$n")" "$(onoff "$w")"
+    case "$s" in "1, 0, 0") sc=two-finger;; "0, 1, 0") sc=edge;; *) sc=$s;; esac
+    printf 'scroll         %s\nspeed          %s\ngestures       %s\n' "$sc" "$a" "$(get GESTURES)";;
+  set)
+    k=${1:-}; v=${2:-}; [ -n "$k" ] && [ -n "$v" ] || die "usage: carpatic-touchpad set <tap|tap-drag|natural|typing-guard|scroll|speed|gestures> <value>"
+    case "$k" in
+      tap|tap-drag|natural|typing-guard|gestures) case "$v" in on|off) :;; *) die "'$k' takes on or off";; esac
+        put "$(printf '%s' "$k" | tr 'a-z-' 'A-Z_')" "$v";;
+      scroll) case "$v" in two-finger|edge) put SCROLL "$v";; *) die "scroll takes two-finger or edge";; esac;;
+      speed) case "$v" in -1|-1.0|0|1|1.0|-0.*|0.*) put SPEED "$v";; *) die "speed is a number from -1.0 to 1.0";; esac;;
+      *) die "unknown setting '$k'";;
+    esac
+    apply
+    ;;
+  reset) : > "$ENV"; apply;;
+  watch) # session helper: re-apply when a touchpad is plugged in (USB/Bluetooth pads, docks)
+    command -v xinput >/dev/null 2>&1 || exit 0
+    xinput test-xi2 --root 2>/dev/null | while read -r line; do
+      case "$line" in *HierarchyChanged*) sleep 1; apply;; esac
+    done;;
+  apply) apply;;
+  -h|--help|help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//';;
+  *) die "unknown command '$CMD' (try: carpatic-touchpad help)";;
+esac
+exit 0

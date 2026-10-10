@@ -1,0 +1,20 @@
+unbind SUPER a
+unbind SUPER n
+unbind SUPER d
+unbind SUPER l
+unbind SUPER e
+{ mod="ALT",        key="Tab",    desc="Switch window",        func="spawn", exec=["carpatic-switch"] },
+{ mod="ALT",        key="F4",     desc="Close window",         func="killclient" },
+{ mod="SUPER",      key="e",      desc="File manager",         func="spawn", exec=["thunar"] },
+{ mod="SUPER",      key="d",      desc="Show desktop (tag 9; press again to return)", func="showdesktop" },
+{ mod="SUPER",      key="l",      desc="Lock screen",          func="spawn", exec=["carpatic-lock"] },
+{ mod="SUPER",      key="r",      desc="Run...",               func="spawn", exec=["carpatic-launch", "run"] },
+{ mod="SUPER",      key="Left",   desc="Snap left",            func="spawn", exec=["carpatic-snap", "left"] },
+{ mod="SUPER",      key="Right",  desc="Snap right",           func="spawn", exec=["carpatic-snap", "right"] },
+{ mod="SUPER",      key="Up",     desc="Maximize",             func="spawn", exec=["carpatic-snap", "max"] },
+{ mod="SUPER",      key="Down",   desc="Restore size",         func="spawn", exec=["carpatic-snap", "restore"] },
+{ mod="CTRL SHIFT", key="Escape", desc="Task manager",         func="spawn", exec=["xfce4-taskmanager"] },
+{ mod="SUPER",      key="t",      desc="Auto-tiling on or off (this workspace)", func="togglelayout" },
+{ mod="SUPER", key="a", desc="Quick settings", func="spawn", exec=["carpatic-flyout", "quick"] },
+{ mod="SUPER", key="n", desc="Calendar and notifications", func="spawn", exec=["carpatic-flyout", "calendar"] },
+{ mod="SUPER",      key="Tab",    desc="Workspace overview", func="spawn", exec=["carpatic-overview"] },

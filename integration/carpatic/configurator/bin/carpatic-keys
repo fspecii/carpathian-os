@@ -1,0 +1,13 @@
+#!/bin/sh
+# Shows the active hotkeys (from the generated hotkeys.toml) in a searchable list.
+# the searchable cheat sheet from the geek tools reads the live profile (carpatic-cheatsheet); this is the fallback without it
+if command -v carpatic-cheatsheet >/dev/null 2>&1 && [ "${1:-}" != --print ]; then exec carpatic-cheatsheet show; fi
+f=$HOME/.config/dwm-titus/hotkeys.toml
+[ -r "$f" ] || f=$HOME/.local/share/dwm-titus/config/hotkeys.toml
+list=$(awk '/mod="/ && /key="/ { m=$0; k=$0; d=$0
+  sub(/.*mod="/,"",m); sub(/".*/,"",m); sub(/.*key="/,"",k); sub(/".*/,"",k)
+  if (d ~ /desc="/) { sub(/.*desc="/,"",d); sub(/".*/,"",d) } else d=""
+  gsub(/ /,"+",m); if (m!="") m=m "+"; printf "%-22s %s\n", m k, d }' "$f")
+[ "$1" = --print ] && { printf '%s\n' "$list"; exit; }
+CUR=${CARPATIC_STATE:-$HOME/.local/state/carpatic}/current
+printf '%s\n' "$list" | rofi -dmenu -i -p keys -theme "$CUR/rofi/windows.rasi" 2>/dev/null

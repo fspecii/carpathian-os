@@ -1,0 +1,38 @@
+# Carpatic theme/icon/cursor/font packs. Fields:
+# id|category|name|kind|source|ref|sha256|installed theme dirs (space separated)|approx MB|licence|download MB
+# kind: apk (source = apk packages, installed with `doas apk add` in a terminal (user types the password); the ISO ships only what packages.txt lists)
+#       tar-icons | tar-gtk | deb-gtk | deb-icons | github-icons (downloads are pinned and sha256-verified, installed into ~/.local/share, no root)
+# Pins taken from / cross-checked against LinPad's themes/guest/MANIFEST.md (tarball sha256 identical).
+papirus|icons|Papirus|apk|papirus-icon-theme|-|-|Papirus Papirus-Dark Papirus-Light|41|GPL-3.0|0
+adwaita-icons|icons|Adwaita|apk|adwaita-icon-theme|-|-|Adwaita|9|LGPL-3.0 / CC-BY-SA-3.0|0
+breeze-icons|icons|Breeze|apk|breeze-icons|-|-|breeze breeze-dark|47|LGPL-3.0|0
+numix-circle|icons|Numix Circle|apk|numix-icon-theme numix-icon-theme-circle|-|-|Numix Numix-Circle|40|GPL-3.0|0
+faenza|icons|Faenza|apk|faenza-icon-theme|-|-|Faenza Faenza-Dark|20|GPL-3.0|0
+paper-icons|icons|Paper|apk|paper-icon-theme|-|-|Paper|30|CC-BY-SA-4.0|0
+tela-circle|icons|Tela Circle|github-icons|vinceliuice/Tela-circle-icon-theme|2026-07-07|0a8aee6e95f19ff96cc497d804c75e2af4271a5e6472c55891fb8ac5b099b59b|Tela-circle Tela-circle-dark Tela-circle-light|83|GPL-3.0|3.7
+qogir|icons|Qogir|github-icons|vinceliuice/Qogir-icon-theme|2025-02-15|b0d07cad5601e0341a53a62df0ed111823b75fc38741d435486620a59fb239ee|Qogir Qogir-Dark Qogir-Light|102|GPL-3.0|9.1
+colloid|icons|Colloid|github-icons|vinceliuice/Colloid-icon-theme|2026-08-10|367c3ce3ab85721e41ca9aa4fccd1761ec236d1b8cd7daf65f5e9ec88c1a8a15|Colloid Colloid-Dark Colloid-Light|90|GPL-3.0|5.8
+kora|icons|Kora|github-icons|bikass/kora|v2.0.6|159bdb7a09409a12e54a71136ec8889c51b0bf7c145c8b20e3509dc1e90089bd|kora kora-pgrey|45|GPL-3.0|6.1
+candy|icons|Candy|github-icons|EliverLara/candy-icons|83512fbcadcb7e1015ebbe1729a1894946b021be|1de25126c50da4edf4b49623993c1ca5f626d5be1020e5bd1b1c683cd724721b|candy-icons|8|GPL-3.0|2.2
+yaru-icons|icons|Yaru|deb-icons|https://archive.ubuntu.com/ubuntu/pool/main/y/yaru-theme/yaru-theme-icon_24.04.2-0ubuntu1_all.deb|24.04.2-0ubuntu1|16d957e51d9699105551d50f47fb788e33d91f706ae7cdfcb3e36386c2d8a138|Yaru Yaru-dark|94|CC-BY-SA-4.0 / GPL-3.0|26.9
+whitesur-gtk|gtk|WhiteSur (macOS-like)|tar-gtk|https://raw.githubusercontent.com/vinceliuice/WhiteSur-gtk-theme/2026-09-10/release/WhiteSur-Light.tar.xz https://raw.githubusercontent.com/vinceliuice/WhiteSur-gtk-theme/2026-09-10/release/WhiteSur-Dark.tar.xz|2026-09-10|2635570e218afab2d34b0663287054f7b995b9f7f810e97410dcad389987d5ba 98ac7545ec5290b718875fdfbdd7f0f6b88126103d1eec259ec9fbf80be7b75f|WhiteSur-Light WhiteSur-Dark|7|MIT|0.4
+yaru-gtk|gtk|Yaru (Ubuntu-like)|deb-gtk|https://archive.ubuntu.com/ubuntu/pool/main/y/yaru-theme/yaru-theme-gtk_24.04.2-0ubuntu1_all.deb|24.04.2-0ubuntu1|a9d263006997e4f45c0bd35273e0046a67720f7529ba812cd3a17088166e18de|Yaru Yaru-dark|5|GPL-3.0 / CC-BY-SA-4.0|0.7
+numix-gtk|gtk|Numix|apk|numix-themes-gtk3|-|-|Numix|1|GPL-3.0|0
+paper-gtk|gtk|Paper|apk|paper-gtk-theme|-|-|Paper|1|GPL-3.0|0
+breeze-gtk|gtk|Breeze|apk|breeze-gtk|-|-|Breeze Breeze-Dark|1|LGPL-2.1|0
+capitaine|cursors|Capitaine (macOS-like)|apk|capitaine-cursors|-|-|capitaine-cursors-dark capitaine-cursors|3|LGPL-3.0|0
+breeze-cursors|cursors|Breeze|apk|breeze-cursors|-|-|breeze_cursors|2|LGPL-2.1|0
+font-inter|fonts|Inter|apk|font-inter|-|-|Inter|3|OFL-1.1|0
+font-jetbrains-mono|fonts|JetBrains Mono|apk|font-jetbrains-mono|-|-|JetBrains Mono|3|OFL-1.1|0
+font-noto|fonts|Noto Sans|apk|font-noto|-|-|Noto Sans|2|OFL-1.1|0
+font-cantarell|fonts|Cantarell|apk|font-cantarell|-|-|Cantarell|1|OFL-1.1|0
+font-fira|fonts|Fira Sans / Mono|apk|font-fira|-|-|Fira Sans|8|OFL-1.1|0
+font-roboto|fonts|Roboto|apk|font-roboto font-roboto-mono|-|-|Roboto|4|Apache-2.0|0
+font-hack|fonts|Hack|apk|font-hack|-|-|Hack|1|MIT|0
+font-source-sans|fonts|Source Sans 3|apk|font-source-sans font-adobe-source-code-pro|-|-|Source Sans 3|4|OFL-1.1|0
+font-opensans|fonts|Open Sans|apk|font-opensans|-|-|Open Sans|2|Apache-2.0|0
+font-lato|fonts|Lato|apk|font-lato|-|-|Lato|3|OFL-1.1|0
+font-doto|fonts|Doto (dot-matrix display font)|file-font|https://raw.githubusercontent.com/google/fonts/5e8a3ba899557829a76cfdac30fa512bda91d7ca/ofl/doto/Doto%5BROND,wght%5D.ttf|google/fonts@5e8a3ba|6f4fe7d37853b91df3698daa84cde2dbe1c9695d88c986e6510134910337d426|Doto|1|OFL-1.1|0.4
+font-ubuntu|fonts|Ubuntu font (UFL 1.0)|file-font|https://raw.githubusercontent.com/google/fonts/5e8a3ba899557829a76cfdac30fa512bda91d7ca/ufl/ubuntu/Ubuntu-Regular.ttf https://raw.githubusercontent.com/google/fonts/5e8a3ba899557829a76cfdac30fa512bda91d7ca/ufl/ubuntu/Ubuntu-Medium.ttf https://raw.githubusercontent.com/google/fonts/5e8a3ba899557829a76cfdac30fa512bda91d7ca/ufl/ubuntu/Ubuntu-Bold.ttf https://raw.githubusercontent.com/google/fonts/5e8a3ba899557829a76cfdac30fa512bda91d7ca/ufl/ubuntu/Ubuntu-Italic.ttf|google/fonts@5e8a3ba|3128df86a31805618436d0ae5651ba4285d0c9de0a39057d025f64ee33bceb64 3cd952b8b52581e48a8fa95b31c8829c2baa41b635042a69587d57f98092961e 679b5c1e09cab3156bb8ef529735f9382bf31ca7ac737382ab959297f8d82ad4 4ab857e72f781a8967a6e4a9ac8858fbd6b3a9f9782db349d4b62b78ed02860b|Ubuntu|2|Ubuntu Font Licence 1.0|1.4
+font-selawik|fonts|Selawik (Segoe-compatible, OFL)|file-font|https://github.com/microsoft/Selawik/releases/download/1.01/Selawik_Release.zip|1.01|3f62c51e05e3b5a1e6241cf92a371f0be2ea1183aa87b30718bbd40832a8d423|Selawik|1|OFL-1.1|0.5
+fluent-icons|icons|Fluent (Windows 11-like)|github-icons|vinceliuice/Fluent-icon-theme|2026-07-27|24a8aca29a5b652a0e60ff8e5f12b86fe4b9c4c969565fad7c3fa7c1742b3631|Fluent Fluent-light Fluent-dark|43|GPL-3.0|7

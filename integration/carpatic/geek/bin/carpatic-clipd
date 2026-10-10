@@ -1,0 +1,41 @@
+#!/bin/sh
+# carpatic-clipd: remembers what you copied, for `carpatic trigger clipboard` (Super+Alt+Space, Trigger, Clipboard history).
+# Privacy by design: history lives only in memory (a tmpfs folder in $XDG_RUNTIME_DIR, mode 0700), is gone at logout or restart,
+# and is never written to disk. Text only; entries longer than 20 KB are skipped; at most 100 are kept.
+#   carpatic-clipd            run in the foreground (the session starts it)
+#   carpatic-clipd list|clear|paste N
+D=${XDG_RUNTIME_DIR:-/tmp}/carpatic-clipboard-$(id -u)
+MAX=100
+mkdir -p "$D" && chmod 700 "$D"
+list() { ls -1t "$D" 2>/dev/null | head -n $MAX; }
+drop() { [ -n "${1:-}" ] && rm -f -- "${D:?}/${1:?}"; }
+case ${1:-run} in
+  list) for f in $(list); do printf '%s\t%s\n' "$f" "$(head -c 200 "$D/$f" | tr '\n\t' '  ' | sed 's/^ *//')"; done; exit 0 ;;
+  clear) for f in $(list); do drop "$f"; done; exit 0 ;;
+  paste) f=$(list | sed -n "${2:-1}p"); [ -n "$f" ] && xclip -selection clipboard -i < "$D/$f" >/dev/null 2>&1; exit 0 ;;
+  run) ;;
+  *) echo "carpatic-clipd: use run, list, clear or paste N" >&2; exit 2 ;;
+esac
+command -v xclip >/dev/null 2>&1 || { echo "carpatic-clipd: needs xclip (doas apk add xclip)" >&2; exit 3; }
+[ -n "${DISPLAY:-}" ] || { echo "carpatic-clipd: needs the desktop" >&2; exit 3; }
+last=
+save() {
+  t=$(mktemp "$D/.new.XXXXXX") || return
+  # text only on purpose: images and other formats are ignored
+  xclip -selection clipboard -o -t UTF8_STRING > "$t" 2>/dev/null || xclip -selection clipboard -o > "$t" 2>/dev/null || { drop "${t##*/}"; return; }
+  s=$(wc -c < "$t")
+  if [ "$s" -eq 0 ] || [ "$s" -gt 20480 ] || ! grep -q '[^[:space:]]' "$t"; then drop "${t##*/}"; return; fi
+  h=$(cksum < "$t" | cut -d' ' -f1)
+  [ "$h" = "$last" ] && { drop "${t##*/}"; return; }
+  last=$h
+  # same text again: move it to the top instead of duplicating
+  for f in $(list); do cmp -s "$D/$f" "$t" && drop "$f"; done
+  mv "$t" "$D/$(date +%s%N 2>/dev/null || date +%s).txt"
+  for f in $(ls -1t "$D" | tail -n +$((MAX + 1))); do drop "$f"; done
+}
+if command -v carpatic-clipwatch >/dev/null 2>&1; then
+  save
+  while carpatic-clipwatch; do sleep 0.15; save; done
+else
+  while :; do save; sleep 1; done      # fallback without the XFixes helper
+fi

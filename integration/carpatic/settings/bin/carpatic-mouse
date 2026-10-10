@@ -1,0 +1,48 @@
+#!/bin/sh
+# carpatic-mouse: pointer settings (libinput through xinput). Used by Carpatic Settings > Mouse.
+#   carpatic-mouse status                 what the X server uses: speed, accel, natural, left-handed (or "No mouse found")
+#   carpatic-mouse set <key> <value>      save and apply. Keys: speed -1.0..1.0 | accel flat|adaptive | natural on|off | left-handed on|off | middle-emulation on|off
+#   carpatic-mouse reset | apply          (the session calls apply at login)
+# Saved in ~/.config/carpatic/mouse.env. License: MIT. POSIX sh.
+set -u
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}/carpatic"; ENV="$CFG/mouse.env"
+mkdir -p "$CFG"; [ -f "$ENV" ] || : > "$ENV"
+die() { printf 'carpatic-mouse: %s\n' "$*" >&2; exit 1; }
+default_of() { case "$1" in SPEED) echo 0;; ACCEL) echo adaptive;; NATURAL|LEFT_HANDED|MIDDLE) echo off;; esac; }
+get() { v=$(sed -n "s/^$1=//p" "$ENV" | tail -1 | tr -d '"'); [ -n "$v" ] && echo "$v" || default_of "$1"; }
+put() { grep -v "^$1=" "$ENV" > "$ENV.new" 2>/dev/null; printf '%s="%s"\n' "$1" "$2" >> "$ENV.new"; mv "$ENV.new" "$ENV"; }
+mice() { [ -n "${DISPLAY:-}" ] && command -v xinput >/dev/null 2>&1 || return 0
+  for id in $(xinput list --id-only 2>/dev/null); do
+    p=$(xinput list-props "$id" 2>/dev/null) || continue
+    echo "$p" | grep -q "libinput Accel Speed (" && ! echo "$p" | grep -q "libinput Tapping Enabled (" && echo "$id"
+  done; }
+b() { [ "$1" = on ] && echo 1 || echo 0; }
+prop() { id=$1; n=$2; shift 2; xinput set-prop "$id" "libinput $n" "$@" 2>/dev/null; }
+read_prop() { xinput list-props "$1" 2>/dev/null | sed -n "s/.*libinput $2 ([0-9]*):[[:space:]]*//p" | head -1; }
+apply() { for id in $(mice); do
+    prop "$id" "Accel Speed" "$(get SPEED)"
+    if [ "$(get ACCEL)" = flat ]; then prop "$id" "Accel Profile Enabled" 0 1 2>/dev/null || prop "$id" "Accel Profile Enabled" 0 1; else prop "$id" "Accel Profile Enabled" 1 0 2>/dev/null || prop "$id" "Accel Profile Enabled" 1 0; fi
+    prop "$id" "Natural Scrolling Enabled" "$(b "$(get NATURAL)")"
+    prop "$id" "Left Handed Enabled" "$(b "$(get LEFT_HANDED)")"
+    prop "$id" "Middle Emulation Enabled" "$(b "$(get MIDDLE)")"
+  done; }
+CMD=${1:-status}; [ $# -gt 0 ] && shift
+case "$CMD" in
+  status) ids=$(mice)
+    if [ -z "$ids" ]; then echo "No mouse found. (Saved: speed=$(get SPEED) accel=$(get ACCEL) natural=$(get NATURAL) left-handed=$(get LEFT_HANDED) middle-emulation=$(get MIDDLE))"; exit 0; fi
+    id=$(echo "$ids" | head -1); oo() { [ "$1" = 1 ] && echo on || echo off; }
+    printf 'speed          %s\n' "$(read_prop "$id" "Accel Speed")"
+    case "$(read_prop "$id" "Accel Profile Enabled")" in "0, 1"*) a=flat;; *) a=adaptive;; esac; printf 'accel          %s\n' "$a"
+    printf 'natural        %s\nleft-handed    %s\nmiddle-emulation %s\n' "$(oo "$(read_prop "$id" "Natural Scrolling Enabled")")" "$(oo "$(read_prop "$id" "Left Handed Enabled")")" "$(oo "$(read_prop "$id" "Middle Emulation Enabled")")";;
+  set) k=${1:-}; v=${2:-}; [ -n "$k" ] && [ -n "$v" ] || die "usage: carpatic-mouse set <speed|accel|natural|left-handed|middle-emulation> <value>"
+    case "$k" in
+      speed) case "$v" in -1|-1.0|0|1|1.0|-0.*|0.*) put SPEED "$v";; *) die "speed is a number from -1.0 to 1.0";; esac;;
+      accel) case "$v" in flat|adaptive) put ACCEL "$v";; *) die "accel takes flat or adaptive";; esac;;
+      natural|left-handed|middle-emulation) case "$v" in on|off) K=$(printf '%s' "$k" | tr 'a-z-' 'A-Z_'); [ "$K" = MIDDLE_EMULATION ] && K=MIDDLE; put "$K" "$v";; *) die "'$k' takes on or off";; esac;;
+      *) die "unknown setting '$k'";;
+    esac; apply;;
+  reset) : > "$ENV"; apply;;
+  apply) apply;;
+  *) die "unknown command '$CMD' (status, set, reset, apply)";;
+esac
+exit 0

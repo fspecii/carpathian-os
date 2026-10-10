@@ -1,0 +1,15 @@
+# hook point | arguments it gets | when it runs
+theme-set|THEME|after a theme or accent was applied (carpatic theme set, the Settings app, the menu)
+theme-import|THEME|after a theme pack or Omarchy theme was imported
+theme-export|THEME FILE|after a theme pack was made
+wallpaper-set|FILE|after the wallpaper changed (carpatic theme wallpaper, Super+Ctrl+Space)
+profile-set|PROFILE|after the desktop style changed
+font-set|FONT|after fonts or icons changed (carpatic appearance)
+pre-update|-|before carpatic update apply
+post-update|-|after carpatic update apply finished well
+screenshot|FILE|after a screenshot was saved (carpatic trigger screenshot)
+recording-stop|FILE|after a screen recording was saved
+webapp-add|NAME URL|after a web app was added
+dev-install|NAME|after a dev environment was installed
+login|-|at the start of every desktop session
+dotfiles-sync|-|after your settings were pushed to your repository

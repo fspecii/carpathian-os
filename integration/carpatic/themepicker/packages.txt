@@ -1,0 +1,7 @@
+# Carpatic theme picker: runtime packages (Alpine 3.24). One per line; # comments ok. All of them are already in the image for Carpatic Settings.
+python3
+py3-gobject3
+py3-cairo
+gtk+3.0
+feh
+xdotool

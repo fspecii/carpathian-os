@@ -1,0 +1,41 @@
+#!/bin/sh
+# Installed as /etc/apk/commit_hooks.d/carpatic-fixups. apk runs it with "pre-commit" or "post-commit" around every package transaction.
+# Keeps two promises after any `apk add/upgrade/del`:
+#  1. packaging fix-ups that Alpine has not shipped upstream yet (listed in compat/packages/UPSTREAM.md)
+#  2. the "restart to finish updating" marker (see carpatic-update)
+case "${1:-}" in
+  post-commit)
+    # cups-pdf: CUPS only runs a backend as root if its mode is 0700; Alpine ships 0755, so "Save as PDF" silently prints nothing
+    [ -f /usr/lib/cups/backend/cups-pdf ] && chmod 700 /usr/lib/cups/backend/cups-pdf
+    # upstream branding that is not an app for our users ("About Xfce", settings dialogs of Thunar/Mousepad): NoDisplay in the packaged entries, for every user,
+    # again after every apk transaction (an upgrade restores the original file). Mousepad/Thunar keep their own "About" dialogs.
+    d=${CARPATIC_APPS_DIR:-/usr/share/applications}
+    for id in xfce4-about thunar-settings thunar-volman-settings org.xfce.mousepad-settings xfce4-settings-manager xfce4-appfinder exo-preferred-applications; do
+      f=$d/$id.desktop; [ -f "$f" ] || continue
+      grep -q '^NoDisplay=true' "$f" && continue
+      if grep -q '^NoDisplay=' "$f"; then sed -i 's/^NoDisplay=.*/NoDisplay=true/' "$f"; else sed -i '0,/^\[Desktop Entry\]/s//[Desktop Entry]\nNoDisplay=true/' "$f"; fi
+    done
+    # tools a newcomer never needs in "All apps" (the Settings app and the Store cover them; geeks still start them from a terminal or carpatic-menu)
+    for id in rofi rofi-theme-selector tint2 tint2conf kvantummanager htop btop nvim Helix st arandr onboard-settings; do
+      f=$d/$id.desktop; [ -f "$f" ] || continue
+      grep -q '^NoDisplay=true' "$f" && continue
+      if grep -q '^NoDisplay=' "$f"; then sed -i 's/^NoDisplay=.*/NoDisplay=true/' "$f"; else sed -i '0,/^\[Desktop Entry\]/s//[Desktop Entry]\nNoDisplay=true/' "$f"; fi
+    done
+    # plain names for everyday apps, the same words the Welcome screen uses (upstream names stay in their own About dialogs): "id|Name"
+    for pair in "thunar|Files" "org.xfce.mousepad|Text Editor" "org.gnome.eog|Image Viewer" "xarchiver|Archive Manager" "galculator|Calculator" "mpv|Video Player"; do
+      id=${pair%%|*}; name=${pair#*|}; f=$d/$id.desktop; [ -f "$f" ] || continue
+      grep -q "^Name=$name\$" "$f" && continue
+      sed -i "0,/^Name=.*/s//Name=$name/" "$f"
+    done
+    # icons that Carpatic installs by hand (App Store, Compatibility Box) are invisible to GTK until the icon cache is rebuilt: the taskbar, Start menu
+    # and Store showed a grey gear instead. Rebuild only when something in hicolor is newer than the cache (cheap on every other transaction).
+    ic=${CARPATIC_ICON_DIR:-/usr/share/icons/hicolor}
+    if [ -d "$ic" ] && command -v gtk-update-icon-cache >/dev/null 2>&1 && [ -n "$(find "$ic" -newer "$ic/icon-theme.cache" -type f -name '*carpatic*' 2>/dev/null | head -n1)$([ -f "$ic/icon-theme.cache" ] || echo nocache)" ]; then
+      gtk-update-icon-cache -qft "$ic" 2>/dev/null || true
+    fi
+    # Carpatic identity (os-release, issue, motd): an upgrade of alpine-release must not turn the system back into "Alpine Linux"
+    [ -z "${CARPATIC_APPS_DIR:-}" ] && [ -f /usr/libexec/carpatic/brand-os ] && { sh /usr/libexec/carpatic/brand-os || true; }
+    [ -x /usr/local/bin/carpatic-update ] && /usr/local/bin/carpatic-update --mark >/dev/null 2>&1
+    ;;
+esac
+exit 0

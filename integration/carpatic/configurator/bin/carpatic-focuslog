@@ -1,0 +1,6 @@
+#!/bin/sh
+# Keeps an MRU list of focused windows for carpatic-switch.
+H=${XDG_RUNTIME_DIR:-/tmp}/carpatic-focus.$(id -u); : > "$H"
+xprop -spy -root _NET_ACTIVE_WINDOW | while read -r _ _ _ _ w; do
+  case $w in 0x*) w=$(printf '%d' "$w"); grep -v "^$w\$" "$H" > "$H.n"; echo "$w" >> "$H.n"; tail -20 "$H.n" > "$H"; esac
+done

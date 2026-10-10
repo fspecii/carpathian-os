@@ -1,0 +1,46 @@
+#!/bin/sh
+# carpatic-keyboard: keyboard layouts and key repeat for X (setxkbmap, xset). Used by Carpatic Settings > Keyboard.
+#   carpatic-keyboard status                      layouts (comma list), variant, options, repeat delay/rate
+#   carpatic-keyboard layouts <us,de,ro>          set the layouts (first is default); variants as us:intl is not supported here, use set-variant
+#   carpatic-keyboard variants <layout>           list variants of a layout
+#   carpatic-keyboard set-variant <v1,v2,...>     variant per layout ("" for none)
+#   carpatic-keyboard switch-key <alt_shift|win_space|ctrl_space|none>   key that switches layouts
+#   carpatic-keyboard capslock <default|ctrl|escape|none>                  what Caps Lock does
+#   carpatic-keyboard repeat <delay_ms> <rate_per_s>   key repeat
+#   carpatic-keyboard list-layouts                 "code<TAB>name" for every layout
+#   carpatic-keyboard apply                        apply saved settings (the session calls it at login)
+# Saved in ~/.config/carpatic/keyboard.env. License: MIT. POSIX sh.
+set -u
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}/carpatic"; ENV="$CFG/keyboard.env"
+mkdir -p "$CFG"; [ -f "$ENV" ] || : > "$ENV"
+die() { printf 'carpatic-keyboard: %s\n' "$*" >&2; exit 1; }
+get() { sed -n "s/^$1=//p" "$ENV" | tail -1 | tr -d '"'; }
+put() { grep -v "^$1=" "$ENV" > "$ENV.new" 2>/dev/null; printf '%s="%s"\n' "$1" "$2" >> "$ENV.new"; mv "$ENV.new" "$ENV"; }
+RULES=/usr/share/X11/xkb/rules/evdev.lst
+apply() { [ -n "${DISPLAY:-}" ] || return 0; command -v setxkbmap >/dev/null 2>&1 || return 0
+  L=$(get LAYOUTS); V=$(get VARIANTS); O=""
+  case "$(get SWITCH)" in alt_shift|"") [ "$(echo "$L" | tr -cd ,)" ] && O="grp:alt_shift_toggle";; win_space) O="grp:win_space_toggle";; ctrl_space) O="grp:ctrl_space_toggle";; esac
+  case "$(get CAPS)" in ctrl) O="$O,ctrl:nocaps";; escape) O="$O,caps:escape";; none) O="$O,caps:none";; esac
+  O=${O#,}
+  [ -n "$L" ] && { setxkbmap -layout "$L" -variant "$V" -option "" -option "$O" 2>/dev/null || setxkbmap -layout "$L" -option "$O" 2>/dev/null; }
+  if [ -z "$L" ] && [ -n "$O" ]; then setxkbmap -option "" -option "$O" 2>/dev/null; fi
+  d=$(get DELAY); r=$(get RATE); [ -n "$d" ] && [ -n "$r" ] && xset r rate "$d" "$r" 2>/dev/null; return 0; }
+CMD=${1:-status}; [ $# -gt 0 ] && shift
+case "$CMD" in
+  status) q=$( [ -n "${DISPLAY:-}" ] && setxkbmap -query 2>/dev/null )
+    l=$(echo "$q" | sed -n 's/^layout: *//p'); v=$(echo "$q" | sed -n 's/^variant: *//p'); o=$(echo "$q" | sed -n 's/^options: *//p')
+    [ -n "$l" ] || l=$(get LAYOUTS); [ -n "$l" ] || l=us
+    rr=$( [ -n "${DISPLAY:-}" ] && xset q 2>/dev/null | sed -n 's/.*auto repeat delay: *\([0-9]*\) *repeat rate: *\([0-9]*\).*/\1 \2/p')
+    printf 'layouts        %s\nvariants       %s\noptions        %s\nrepeat         %s\n' "$l" "$v" "$o" "${rr:-600 25}";;
+  layouts) [ -n "${1:-}" ] || die "usage: carpatic-keyboard layouts us,de"; case "$1" in *[!a-z0-9_,]*) die "layout codes are lowercase letters, like us,de,ro";; esac
+    put LAYOUTS "$1"; put VARIANTS ""; apply;;
+  set-variant) put VARIANTS "${1:-}"; apply;;
+  switch-key) case "${1:-}" in alt_shift|win_space|ctrl_space|none) put SWITCH "$1"; apply;; *) die "alt_shift|win_space|ctrl_space|none";; esac;;
+  capslock) case "${1:-}" in default|ctrl|escape|none) put CAPS "$1"; apply;; *) die "default|ctrl|escape|none";; esac;;
+  repeat) case "${1:-}${2:-}" in ""|*[!0-9]*) die "usage: carpatic-keyboard repeat <delay_ms> <rate_per_s>";; esac; put DELAY "$1"; put RATE "$2"; apply;;
+  variants) [ -f "$RULES" ] || exit 0; awk -v l="${1:-us}" '/^! variant/{s=1;next} /^!/{s=0} s && $2==l":" {v=$1; $1="";$2=""; sub(/^ +/,""); print v"\t"$0}' "$RULES";;
+  list-layouts) [ -f "$RULES" ] || exit 0; awk '/^! layout/{s=1;next} /^!/{s=0} s && NF {c=$1; $1=""; sub(/^ +/,""); print c"\t"$0}' "$RULES";;
+  apply) apply;;
+  *) die "unknown command '$CMD' (status, layouts, variants, set-variant, switch-key, capslock, repeat, list-layouts, apply)";;
+esac
+exit 0

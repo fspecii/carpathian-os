@@ -1,0 +1,153 @@
+#!/bin/bash
+# carpatic-screensaver: the idle screen. A fullscreen terminal plays one of four original effects on the Carpatic mark and mountains.
+#   carpatic-screensaver start [effect]    start now (fullscreen terminal)          carpatic-screensaver stop     end it
+#   carpatic-screensaver watch             idle watcher (started once per login by the session autostart)
+#   carpatic-screensaver set on|off | timeout MINUTES | effect random|brand|rain|sunrise|stars | battery yes|no
+#   carpatic-screensaver status            one line per setting, plus the effective timeout       carpatic-screensaver run [effect]  (inside the terminal)
+# Any key, mouse movement or other input ends it; the cursor is hidden; the lock screen still engages (see below).
+# Idle wiring: carpatic-idle runs xautolock (lock after CARPATIC_IDLE_MIN minutes, default 10). The screensaver starts earlier (default 3 minutes, always
+# at least one minute before the lock) and ends itself the moment the locker runs, so the lock screen is never hidden behind or revealed on top of it.
+# It does not start on battery (unless you ask for it), in power-saver, with reduced motion, while a window is fullscreen (video, game), or when disabled.
+# Inspired by Omarchy's ttfx screensaver (MIT, see NOTICE); effects, code and look are Carpatic's own. Pure bash + awk, ~20 frames per second.
+SELF=$(readlink -f "${BASH_SOURCE[0]}")
+LIB=${CARPATIC_LIB:-$(dirname "$SELF")/../lib}
+[ -r "$LIB/ttylib.sh" ] || LIB=/usr/local/share/carpatic/motion
+# shellcheck source=../lib/motionconf.sh
+. "$LIB/motionconf.sh"
+LOGO=${CARPATIC_LOGO:-}
+for f in "$LIB/logo.txt" "$(dirname "$SELF")/../../installer/wizard/logo.txt"; do [ -z "$LOGO" ] && [ -r "$f" ] && LOGO=$f; done
+RUN_DIR=${XDG_RUNTIME_DIR:-/tmp}
+PIDFILE=$RUN_DIR/carpatic-screensaver.pid
+EFFECTS="brand rain sunrise stars"
+say() { printf '%s\n' "$*"; }
+die() { printf 'carpatic-screensaver: %s\n' "$*" >&2; exit 1; }
+
+lock_minutes() { local m=${CARPATIC_IDLE_MIN:-10}; case $m in ''|*[!0-9]*) m=10 ;; esac; echo "$m"; }
+timeout_minutes() {   # what the user chose, but never within a minute of the lock
+  local t l; t=$(m_get SCREENSAVER_MIN 3); l=$(lock_minutes)
+  case $t in ''|*[!0-9]*) t=3 ;; esac; [ "$t" -ge 1 ] || t=1
+  [ "$t" -ge "$l" ] && t=$((l > 1 ? l - 1 : 1))
+  echo "$t"
+}
+idle_ms() { if command -v xssstate >/dev/null 2>&1; then xssstate -i; elif command -v xprintidle >/dev/null 2>&1; then xprintidle; else echo 0; fi; }
+have_idle() { command -v xssstate >/dev/null 2>&1 || command -v xprintidle >/dev/null 2>&1; }
+locker_running() { pgrep -x slock >/dev/null 2>&1 || pgrep -x i3lock >/dev/null 2>&1 || pgrep -f carpatic-lock-screen >/dev/null 2>&1; }
+alive() { [ -f "$1" ] && kill -0 "$(cat "$1" 2>/dev/null)" 2>/dev/null; }
+running() { alive "$PIDFILE" || alive "$PIDFILE.run"; }
+fullscreen_active() {
+  command -v xprop >/dev/null 2>&1 || return 1
+  w=$(xprop -root _NET_ACTIVE_WINDOW 2>/dev/null | sed -n 's/.*# *//p'); case $w in 0x*) ;; *) return 1 ;; esac
+  xprop -id "$w" _NET_WM_STATE 2>/dev/null | grep -q FULLSCREEN
+}
+may_start() { # prints the reason it must not start, returns 1; returns 0 when it may
+  [ "$(m_get SCREENSAVER on)" = on ] || { say "turned off"; return 1; }
+  m_reduced && { say "reduced motion is on"; return 1; }
+  if m_on_battery && [ "$(m_get SAVER_ON_BATTERY no)" != yes ]; then say "on battery"; return 1; fi
+  m_power_saver && { say "power saver is on"; return 1; }
+  locker_running && { say "screen is locked"; return 1; }
+  fullscreen_active && { say "a window is fullscreen"; return 1; }
+  return 0
+}
+pick_effect() { local e=${1:-$(m_get SAVER_EFFECT random)}; case $e in random|"") ;; brand|rain|sunrise|stars) echo "$e"; return ;; esac; echo; }
+
+# ---------------------------------------------------------------- start / stop
+cmd_start() {
+  running && return 0
+  [ -n "${DISPLAY:-}" ] || die "no screen to draw on (DISPLAY is not set)"
+  term=${CARPATIC_SAVER_TERM:-st}; command -v "$term" >/dev/null 2>&1 || die "I need the terminal '$term' to draw the screensaver"
+  font=$(cat "$CFG_DIR/saver-font" 2>/dev/null); [ -n "$font" ] || font="JetBrains Mono:size=16"
+  "$term" -c carpatic-screensaver -f "$font" -e "$SELF" run "${1:-}" >/dev/null 2>&1 &
+  echo $! > "$PIDFILE"
+  # a tiling window manager would tile it: ask for fullscreen as soon as the window exists (dwm honours _NET_WM_STATE_FULLSCREEN)
+  if command -v xdotool >/dev/null 2>&1; then
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+      w=$(xdotool search --class carpatic-screensaver 2>/dev/null | head -1)
+      [ -n "$w" ] && { xdotool windowstate --add FULLSCREEN "$w" 2>/dev/null; xdotool windowfocus "$w" 2>/dev/null; break; }
+      sleep 0.1
+    done
+  fi
+}
+cmd_stop() { # by pid file only (a pattern kill could hit an unrelated shell whose command line mentions us)
+  for f in "$PIDFILE" "$PIDFILE.run"; do [ -f "$f" ] && kill "$(cat "$f")" 2>/dev/null; rm -f "$f"; done; return 0
+}
+
+# ---------------------------------------------------------------- watch: the idle timer
+cmd_watch() {
+  have_idle || die "I need xssstate or xprintidle to see when you are idle"
+  if [ -z "${CARPATIC_WATCH_NOLOCK:-}" ]; then      # one watcher per login (pid file, no pattern kill)
+    alive "$PIDFILE.watch" && exit 0
+    echo $$ > "$PIDFILE.watch"; trap 'rm -f "$PIDFILE.watch"' EXIT
+  fi
+  while :; do
+    sleep "${CARPATIC_WATCH_STEP:-5}"
+    running && continue
+    t=$(( $(timeout_minutes) * 60000 )); i=$(idle_ms)
+    [ "${i:-0}" -ge "$t" ] 2>/dev/null || continue
+    may_start >/dev/null || continue
+    cmd_start
+  done
+}
+
+# ---------------------------------------------------------------- run: inside the terminal
+cmd_run() {
+  # shellcheck source=../lib/ttylib.sh
+  . "$LIB/ttylib.sh"
+  eff=$(pick_effect "$1"); echo $$ > "$PIDFILE.run" 2>/dev/null
+  m_theme_colors
+  # the screensaver is always a night scene: a light theme keeps its accent (lightened) but gets the dark Carpatic background and text colours
+  if [ "$M_MODE" = light ]; then M_BG='#11151c'; M_BGDEEP='#0b0e13'; M_FG='#e7ecf3'; M_MUTED='#6b778c'; M_ACCENT=$(m_lighten "$M_ACCENT" 35); fi
+  case ${CARPATIC_SAVER_DEPTH:-} in 24|256|16) depth=$CARPATIC_SAVER_DEPTH ;; *)
+    case ${COLORTERM:-} in truecolor|24bit) depth=24 ;; *) case ${TERM:-} in linux) depth=16 ;; st*|xterm-direct*) depth=24 ;; *) depth=256 ;; esac ;; esac ;; esac
+  ttl_awk; FPS=${CARPATIC_FPS:-$(( AWK_SLOW ? 10 : 20 ))}      # busybox awk is slow: half the frame rate (install mawk for the full 20)
+  ttl_open
+  printf '\033]11;%s\007\033[0m\033[2J\033[?1003h\033[?1006h' "$M_BGDEEP" >/dev/tty        # background colour, clear, mouse reporting (any movement ends it)
+  fin() { printf '\033[?1003l\033[?1006l\033[0m\033[2J' >/dev/tty 2>/dev/null; [ -n "${awkfd:-}" ] && { printf 'Q\n' >&"$awkfd"; exec {awkfd}>&-; }; rm -f "$PIDFILE" "$PIDFILE.run"; ttl_close; }
+  trap 'fin; exit 0' EXIT; trap 'fin; exit 0' INT TERM HUP
+  if m_reduced; then   # reduced motion: one still frame of the mark, any key ends it
+    EFFECTS_ARG=brand; FPS=1
+  fi
+  exec {awkfd}> >($AWK $AWK_OPTS -v ROWS="$TTL_ROWS" -v COLS="$TTL_COLS" -v DEPTH="$depth" -v FPS="$FPS" -v SEED="$RANDOM" -v FIRST="$eff" -v LIFE="${CARPATIC_SAVER_LIFE:-45}" \
+      -v EFFECTS="${EFFECTS_ARG:-$EFFECTS}" -v LOGO="$LOGO" -v ACCENT="$M_ACCENT" -v EMBER="$M_EMBER" -v BG="$M_BG" -v BGDEEP="$M_BGDEEP" -v FG="$M_FG" -v MUTED="$M_MUTED" \
+      -f "$LIB/saver.awk" >/dev/tty 2>>"${CARPATIC_SAVER_LOG:-/dev/null}")
+  start=${EPOCHREALTIME/./}; step=$((1000000 / FPS)); next=$start; ticks=0; lasts=$SECONDS; idle0=0
+  while :; do
+    printf 'T\n' >&"$awkfd"; ticks=$((ticks + 1))
+    if (( TTL_RESIZED )); then TTL_RESIZED=0; ttl_size; printf 'R %d %d\n' "$TTL_ROWS" "$TTL_COLS" >&"$awkfd"; fi
+    next=$((next + step)); nowt=${EPOCHREALTIME/./}; wait_us=$((next - nowt))
+    (( wait_us < 0 )) && { next=$nowt; wait_us=0; }
+    printf -v w '0.%06d' "$wait_us"
+    if ttl_key "$w"; then (( nowt - start > 700000 )) && break; fi                # a short grace period: ignore the key/mouse event that was in flight
+    if (( SECONDS != lasts )); then
+      lasts=$SECONDS
+      locker_running && break                                                       # the lock screen takes over: never fight it
+      if have_idle && (( nowt - start > 2500000 )) && [ "$(idle_ms)" -lt 400 ] 2>/dev/null; then break; fi   # input that did not reach this terminal
+    fi
+    [ -n "${CARPATIC_SAVER_MAXTICKS:-}" ] && (( ticks >= CARPATIC_SAVER_MAXTICKS )) && break
+  done
+  exit 0
+}
+
+cmd_status() {
+  say "screensaver: $(m_get SCREENSAVER on)"
+  say "starts after: $(timeout_minutes) minutes idle (chosen: $(m_get SCREENSAVER_MIN 3); the screen locks after $(lock_minutes))"
+  say "effect: $(m_get SAVER_EFFECT random)"
+  say "on battery: $(m_get SAVER_ON_BATTERY no)"
+  r=$(may_start); say "would start now: $([ -z "$r" ] && echo yes || echo "no ($r)")"
+}
+cmd_set() {
+  case ${1:-} in
+    on|off) m_set SCREENSAVER "$1"; say "Screensaver $1." ;;
+    timeout) case ${2:-} in ''|*[!0-9]*) die "give the minutes as a whole number, for example: carpatic screensaver set timeout 5" ;; esac
+             [ "$2" -ge 1 ] || die "the screensaver needs at least 1 minute"
+             m_set SCREENSAVER_MIN "$2"; say "The screensaver starts after $(timeout_minutes) minutes without input." ;;
+    effect) case ${2:-} in random|brand|rain|sunrise|stars) m_set SAVER_EFFECT "$2"; say "Effect: $2." ;; *) die "effects: random, brand, rain, sunrise, stars" ;; esac ;;
+    battery) case ${2:-} in yes|no) m_set SAVER_ON_BATTERY "$2"; say "On battery: $2." ;; *) die "use: carpatic screensaver set battery yes|no" ;; esac ;;
+    *) die "usage: carpatic-screensaver set on|off | timeout MINUTES | effect NAME | battery yes|no" ;;
+  esac
+}
+case ${1:-status} in
+  start) shift; cmd_start "$@" ;; stop) cmd_stop ;; watch) cmd_watch ;; run) shift; cmd_run "${1:-}" ;;
+  status) cmd_status ;; set) shift; cmd_set "$@" ;;
+  -h|--help|help) sed -n '2,10p' "$SELF" | sed 's/^# \{0,1\}//' ;;
+  *) die "unknown command '$1' (try: start, stop, set, status)" ;;
+esac

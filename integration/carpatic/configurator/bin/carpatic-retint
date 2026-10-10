@@ -1,0 +1,79 @@
+#!/bin/sh
+# carpatic-retint [--only CATS] [--skip CATS] [--sync]
+# Colours the apps outside the desktop shell from the one palette (like Omarchy's "retint apps in parallel" step).
+# Categories (comma/space separated): terminal editors browser qt cli. Default = the user's "Also colour" setting (ALSO, all on).
+#   terminal: kitty, foot, ghostty configs (alacritty, st, xterm and the open terminals are done by carpatic-apply, OSC 4/10/11/12/17/19)
+#   editors:  VS Code / VSCodium / Code - OSS (workbench + semantic tokens), Helix; Neovim is done by the geek hook (carpatic-dev nvim-theme)
+#   browser:  Chromium/Chrome (Preferences colour + optional managed policy file), Firefox (userChrome/userContent + prefs)
+#   qt:       Kvantum theme "Carpatic" recoloured from the palette (+ QT_STYLE_OVERRIDE via env.sh)
+#   cli:      btop, tmux, starship, bat, lazygit, fzf, eza/ls, gum (env.sh)
+# Targets run in parallel; apps that are not installed are still given their files (cheap) except where a config dir would be invented.
+. "$(dirname "$0")/carpatic-lib" 2>/dev/null || . carpatic-lib
+ALL="terminal editors browser qt cli"
+only=""; skip=""; sync=0
+while [ $# -gt 0 ]; do case $1 in --only) only=$(echo "$2" | tr ',' ' '); shift 2;; --skip) skip=$(echo "$2" | tr ',' ' '); shift 2;; --sync) sync=1; shift;; *) die "usage: carpatic-retint [--only cats] [--skip cats] [--sync]";; esac; done
+CATS=$(get_setting ALSO "$ALL"); [ -n "$only" ] && { c=""; for x in $CATS; do case " $only " in *" $x "*) c="$c $x";; esac; done; CATS=$c; }
+for x in $skip; do CATS=$(echo " $CATS " | sed "s/ $x / /"); done
+want() { case " $CATS " in *" $1 "*) return 0;; esac; return 1; }
+
+THEME=$(get_setting THEME carpatic); ACCENT=$(cat "$CUR/accent.effective" 2>/dev/null); [ -n "$ACCENT" ] || ACCENT=$(get_setting ACCENT ""); export ACCENT
+COLORS=$(theme_dir "$THEME" 2>/dev/null)/colors.toml; [ -f "$COLORS" ] || COLORS=$CARPATIC_SHARE/themes/$THEME/colors.toml
+[ -f "$COLORS" ] || die "theme '$THEME' missing"
+T=$CARPATIC_SHARE/templates/apps
+MONOFULL=$(sed -n 's/^MONO_FONT="\(.*\)"/\1/p' "$CFG_DIR/appearance.env" 2>/dev/null); [ -n "$MONOFULL" ] || MONOFULL="JetBrains Mono 10"
+MONO=${MONOFULL% *}; MONO_SZ=${MONOFULL##* }
+R() { carpatic-render "$COLORS" "$1" THEME="$THEME" MONO="$MONO" MONO_SZ="$MONO_SZ"; }
+C=$CUR/apps; mkdir -p "$C"
+ensure_line() { # file line  (idempotent; creates the file)
+  mkdir -p "$(dirname "$1")"; grep -qxF "$2" "$1" 2>/dev/null || printf '%s\n' "$2" >> "$1"; }
+put() { # src dst : install only when changed
+  mkdir -p "$(dirname "$2")"; cmp -s "$1" "$2" 2>/dev/null || cp "$1" "$2"; }
+live=0; [ -n "${DISPLAY:-}${CARPATIC_FORCE_LIVE:-}" ] && [ "${CARPATIC_NO_RELOAD:-0}" != 1 ] && live=1
+
+t_terminal() {
+  R "$T/kitty.conf.tpl" > "$C/kitty.conf"; put "$C/kitty.conf" "$HOME/.config/kitty/current-theme.conf"
+  ensure_line "$HOME/.config/kitty/kitty.conf" "include current-theme.conf"
+  R "$T/foot.ini.tpl" > "$C/foot.ini"; put "$C/foot.ini" "$HOME/.config/foot/carpatic.ini"
+  ensure_line "$HOME/.config/foot/foot.ini" "include=$HOME/.config/foot/carpatic.ini"
+  R "$T/ghostty.conf.tpl" > "$C/ghostty.conf"; put "$C/ghostty.conf" "$HOME/.config/ghostty/carpatic.conf"
+  ensure_line "$HOME/.config/ghostty/config" "config-file = $HOME/.config/ghostty/carpatic.conf"
+  [ "$live" = 1 ] && pkill -USR1 -x kitty 2>/dev/null   # kitty reloads its config on SIGUSR1
+}
+t_cli() {
+  R "$T/btop.theme.tpl" > "$C/btop.theme"; put "$C/btop.theme" "$HOME/.config/btop/themes/carpatic.theme"
+  if [ -f "$HOME/.config/btop/btop.conf" ]; then sed -i 's/^color_theme *=.*/color_theme = "carpatic"/' "$HOME/.config/btop/btop.conf"; grep -q '^color_theme' "$HOME/.config/btop/btop.conf" || echo 'color_theme = "carpatic"' >> "$HOME/.config/btop/btop.conf"
+  else mkdir -p "$HOME/.config/btop"; echo 'color_theme = "carpatic"' > "$HOME/.config/btop/btop.conf"; fi
+  [ "$live" = 1 ] && pkill -USR2 -x btop 2>/dev/null
+  R "$T/tmux.conf.tpl" > "$C/tmux.conf"; put "$C/tmux.conf" "$HOME/.config/tmux/carpatic.conf"
+  TMC=$HOME/.config/tmux/tmux.conf; [ -f "$HOME/.tmux.conf" ] && [ ! -f "$TMC" ] && TMC=$HOME/.tmux.conf
+  ensure_line "$TMC" "source-file -q $HOME/.config/tmux/carpatic.conf"
+  [ "$live" = 1 ] && command -v tmux >/dev/null 2>&1 && tmux has-session 2>/dev/null && tmux source-file "$HOME/.config/tmux/carpatic.conf" 2>/dev/null
+  R "$T/starship.toml.tpl" > "$C/starship.toml"; put "$C/starship.toml" "$CFG_DIR/starship.toml"
+  R "$T/lazygit-theme.yml.tpl" > "$C/lazygit-theme.yml"; put "$C/lazygit-theme.yml" "$CFG_DIR/lazygit-theme.yml"
+  R "$T/bat.tmTheme.tpl" > "$C/bat.tmTheme"
+  if ! cmp -s "$C/bat.tmTheme" "$HOME/.config/bat/themes/carpatic.tmTheme" 2>/dev/null; then put "$C/bat.tmTheme" "$HOME/.config/bat/themes/carpatic.tmTheme"; command -v bat >/dev/null 2>&1 && bat cache --build >/dev/null 2>&1; fi
+  R "$T/env.sh.tpl" > "$C/env.sh"; put "$C/env.sh" "$CFG_DIR/env.sh"
+}
+t_editors() {
+  R "$T/vscode-theme.json.tpl" > "$C/vscode-theme.json"
+  R "$T/helix.toml.tpl" > "$C/helix.toml"; put "$C/helix.toml" "$HOME/.config/helix/themes/carpatic.toml"
+  [ -f "$HOME/.config/helix/config.toml" ] || printf 'theme = "carpatic"\n' > "$HOME/.config/helix/config.toml"
+  grep -q '^theme *=' "$HOME/.config/helix/config.toml" && sed -i 's/^theme *=.*/theme = "carpatic"/' "$HOME/.config/helix/config.toml"
+  carpatic-vscode-theme "$C/vscode-theme.json" "$MODE_TYPE" 2>/dev/null
+}
+t_browser() {
+  R "$T/chromium.theme.tpl" > "$C/chromium.theme"; HEX=$(tr -d ' \n' < "$C/chromium.theme")
+  printf '{"BrowserThemeColor": "%s", "BrowserColorScheme": "%s"}\n' "$HEX" "$MODE_TYPE" > "$CFG_DIR/chromium-policy.json"
+  carpatic-browser-theme "$HEX" "$MODE_TYPE" "$C" 2>/dev/null
+  R "$T/firefox-userChrome.css.tpl" > "$C/userChrome.css"; R "$T/firefox-userContent.css.tpl" > "$C/userContent.css"
+  carpatic-browser-theme --firefox "$C" "$MODE_TYPE" 2>/dev/null
+}
+t_qt() { carpatic-qt-theme "$COLORS" "$C" 2>/dev/null; }
+
+MODE_TYPE=$(sed -n 's/^mode *= *"\(.*\)"/\1/p' "$COLORS" | head -1); [ -n "$MODE_TYPE" ] || MODE_TYPE=dark
+for c in terminal cli editors browser qt; do
+  want $c || continue
+  if [ "$sync" = 1 ]; then "t_$c"; else "t_$c" & fi
+done
+wait
+exit 0

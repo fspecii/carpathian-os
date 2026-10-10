@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=App Store
+GenericName=Software
+Comment=Install apps from Alpine and Flathub
+Exec=carpatic-store-gui
+Icon=carpatic-store
+Terminal=false
+StartupWMClass=carpatic-store-gui
+Categories=System;PackageManager;
+Keywords=apps;install;flatpak;steam;discord;

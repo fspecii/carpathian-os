@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""carpatic-quicklookd: the warm Quick Look window. Started at login; `carpatic-quicklook` starts it on demand if it is not running."""
+import os, sys
+LIB = os.environ.get("CARPATIC_QL_LIB") or next((p for p in ("/usr/local/lib/carpatic/quicklook", "/usr/lib/carpatic/quicklook", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib")) if os.path.isdir(p)), None)
+sys.path.insert(0, LIB)
+os.environ.setdefault("GDK_BACKEND", "x11")
+import ql_daemon
+if not ql_daemon.carpatic_session():
+    print("carpatic-quicklookd only runs inside the Carpatic desktop.", file=sys.stderr); sys.exit(3)
+sys.exit(ql_daemon.main())

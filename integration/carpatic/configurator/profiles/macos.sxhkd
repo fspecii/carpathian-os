@@ -1,0 +1,10 @@
+# macOS profile: Cmd (=Super) text/app shortcuts, emulated by sending the Ctrl equivalent.
+# carpatic-cmd picks Ctrl+Shift+C/V inside terminals so Cmd+C/V copy/paste there too.
+super + {c,v,x,a,z,s,f,t,n,o,p,r,l,b,i,u,k,d,j,y,g}
+	carpatic-cmd {c,v,x,a,z,s,f,t,n,o,p,r,l,b,i,u,k,d,j,y,g}
+super + shift + z
+	carpatic-cmd redo
+super + {Left,Right,BackSpace}
+	carpatic-cmd {home,end,delword}
+super + shift + {bracketleft,bracketright}
+	carpatic-cmd {prevtab,nexttab}

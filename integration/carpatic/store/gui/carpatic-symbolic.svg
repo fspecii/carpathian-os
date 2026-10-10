@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 128 128" role="img" aria-label="Carpatic OS">
+  <circle cx="98" cy="40" r="7" fill="currentColor"/>
+  <polygon points="64,18 108,110 20,110" fill="currentColor" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/>
+  <polygon points="96,66 122,110 68,110" fill="currentColor" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/>
+  <polygon points="34,60 66,110 4,110" fill="currentColor" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/>
+</svg>

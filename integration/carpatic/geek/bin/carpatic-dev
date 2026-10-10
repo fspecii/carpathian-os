@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""carpatic-dev: development environments in one command.
+
+  carpatic-dev list [--plain]           everything you can install, and what is installed
+  carpatic-dev install NAME...          install and check (node python rust go java ruby php c tools mise docker podman
+                                         sqlite postgres mysql redis mongodb neovim helix zed vscodium vscode)
+  carpatic-dev remove NAME... [--purge]
+  carpatic-dev status                   versions of what is installed
+  carpatic-dev db NAME start|stop|logs|url|status     the database containers
+  carpatic-dev nvim-theme               regenerate the Neovim colours from your current theme
+  carpatic-dev names                    names only (for completion)
+Run through: carpatic install dev NAME   (or carpatic dev install NAME)
+"""
+import os
+import signal
+import sys
+
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+here = os.path.dirname(os.path.realpath(__file__))
+for d in (os.path.join(here, "..", "lib"), "/usr/local/lib/carpatic-geek"):
+    sys.path.insert(0, d)
+os.environ["PATH"] = here + ":" + os.environ.get("PATH", "")
+import carpatic_dev as D  # noqa: E402
+
+
+def err(m, code=1):
+    print(f"carpatic dev: {m}", file=sys.stderr)
+    return code
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return 0
+    cmd, rest = argv[0], argv[1:]
+    try:
+        if cmd == "list":
+            plain = "--plain" in rest
+            rows = D.listing()
+            if plain:
+                for i, st, desc, grp, size, title in rows:
+                    print(f"{i}|{st}|{desc}|{title}")
+            else:
+                group = None
+                for i, st, desc, grp, size, title in rows:
+                    if grp != group:
+                        print(f"\n{grp}")
+                        group = grp
+                    mark = "[x]" if st == "installed" else "[ ]"
+                    print(f"  {mark} {i:<9} {title:<20} {desc}")
+        elif cmd == "names":
+            for e in D.envs():
+                print(e["id"])
+        elif cmd == "install":
+            names = [a for a in rest if not a.startswith("--")]
+            if not names:
+                return err("what should I install? For example: carpatic install dev node. See: carpatic dev list", 2)
+            bad = 0
+            for n in names:
+                try:
+                    D.install(n, check="--no-check" not in rest)
+                except D.Usage as e:
+                    print(f"carpatic dev: {e}", file=sys.stderr)
+                    bad = max(bad, 2)
+                except D.Problem as e:
+                    print(f"carpatic dev: {e}", file=sys.stderr)
+                    bad = max(bad, 1)
+            return bad
+        elif cmd == "remove":
+            names = [a for a in rest if not a.startswith("--")]
+            if not names:
+                return err("what should I remove? See: carpatic dev list", 2)
+            for n in names:
+                D.remove(n, purge="--purge" in rest)
+        elif cmd == "status":
+            any_ = False
+            for e in D.envs():
+                if D.installed(e):
+                    any_ = True
+                    extra = D.container_state(e) if e["kind"] == "container" else D.version(e)
+                    print(f"{e['title']:<20} {extra or 'installed'}")
+            if not any_:
+                print("Nothing installed yet. See: carpatic dev list")
+        elif cmd == "db":
+            if len(rest) != 2:
+                return err("use: carpatic dev db postgres start|stop|logs|url|status", 2)
+            return D.container_cmd(rest[0], rest[1])
+        elif cmd == "nvim-theme":
+            D.nvim_theme()
+        else:
+            return err(f"I do not know '{cmd}'. Try: list, install, remove, status, db, nvim-theme.", 2)
+    except D.Usage as e:
+        return err(str(e), 2)
+    except D.Problem as e:
+        return err(str(e))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,8 @@
+#compdef carpatic
+# zsh completion for carpatic
+_carpatic() {
+  local -a words_out
+  words_out=( ${(f)"$(carpatic --complete ${words[2,CURRENT-1]} 2>/dev/null)"} )
+  compadd -a words_out
+}
+_carpatic "$@"

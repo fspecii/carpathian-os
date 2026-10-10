@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+"""carpatic-drivers: detect hardware and install the right drivers/firmware in one step."""
+import argparse
+import signal
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"))
+sys.path.insert(0, "/usr/local/lib/carpatic-store")
+import carpatic_store as cs  # noqa: E402
+import carpatic_drivers as drv  # noqa: E402
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="carpatic-drivers", description="Detect hardware and install drivers.")
+    ap.add_argument("-y", "--yes", action="store_true")
+    sub = ap.add_subparsers(dest="cmd")
+    sub.add_parser("detect", help="show what was found and what is recommended")
+    p = sub.add_parser("install", help="install recommended packages"); p.add_argument("what", nargs="*", help="ids from 'detect' (default: gpu, microcode, wifi-bt)"); p.add_argument("--dry-run", action="store_true")
+    sub.add_parser("json")
+    a = ap.parse_args(sys.argv[1:] if sys.argv[1:] else ["detect"])
+    finds = drv.detect()
+    if a.cmd in ("detect", None):
+        for f in finds:
+            print(f'{f["title"]}\n  status: {f["status"]}   {f["detail"]}')
+            if f["packages"]:
+                print("  packages: " + " ".join(f["packages"]))
+            if f["honest"]:
+                print("  note: " + f["honest"])
+            print()
+        print("Install the recommended set: carpatic-drivers install   (printing/scanning/fingerprint: carpatic-drivers install printing scanning)")
+        return 0
+    if a.cmd == "json":
+        import json
+        print(json.dumps(finds, indent=1)); return 0
+    want = a.what or [f["id"] for f in finds if f["id"].startswith("gpu-") or f["id"] in ("microcode", "wifi-bt")]
+    pk = []
+    for f in finds:
+        if f["id"] in want or any(w == "gpu" and f["id"].startswith("gpu-") for w in want):
+            pk += [p for p in f["packages"] if p not in pk]
+    if not pk:
+        print("Nothing to install."); return 0
+    print("Will install: " + " ".join(pk))
+    if a.dry_run:
+        return 0
+    try:
+        drv.install_packages(pk, lambda l: print("  " + l.strip()[:150], flush=True))
+    except cs.StoreError as e:
+        print(f"Error: {e}", file=sys.stderr); return 1
+    print("Done. A reboot is needed for microcode and new GPU drivers.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

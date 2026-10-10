@@ -1,0 +1,21 @@
+# Quick Look runtime packages (Alpine 3.24). GTK3 + python are already part of the desktop; the rest is what the previews need.
+python3
+py3-gobject3
+py3-cairo
+gtk+3.0
+gtksourceview4
+poppler-glib
+poppler-utils
+mpv
+ffmpeg
+bubblewrap
+file
+libxtst
+librsvg
+libheif
+libavif
+libwebp
+shared-mime-info
+adwaita-icon-theme
+font-inter
+font-jetbrains-mono

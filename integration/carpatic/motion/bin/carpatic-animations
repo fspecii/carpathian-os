@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+import os
+import sys
+from pathlib import Path
+local = Path(__file__).resolve().parent.parent / "lib"
+sys.path.insert(0, str(local if (local / "window_animations.py").exists() else
+                       Path("/usr/local/share/carpatic/motion")))
+from window_animations import main
+sys.exit(main())

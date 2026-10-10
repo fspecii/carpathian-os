@@ -1,0 +1,148 @@
+# Carpatic store catalog: Dev tools
+# Each [[app]]: id (unique), name, description, source (apk|flatpak|ai|compat), pkg (apk package or Flathub app id),
+# icon (icon-theme name), newcomer (good for newcomers), optional: size_mb, note, detail (long text), exec (launch cmd), term (run in a terminal), launch="none" (daemon, no Open button)
+[category]
+id = "devtools"
+name = "Dev"
+icon = "applications-development"
+order = 6
+blurb = "For programmers and tinkerers"
+
+[[app]]
+id = "vscode"
+name = "Visual Studio Code"
+pkg = "com.visualstudio.code"
+source = "flatpak"
+icon = "vscode"
+newcomer = false
+size_mb = 8
+description = "Popular code editor (Flatpak, downloads Microsoft build on install)."
+
+[[app]]
+id = "codium"
+name = "VSCodium"
+pkg = "com.vscodium.codium"
+source = "flatpak"
+icon = "vscodium"
+newcomer = false
+size_mb = 248
+description = "VS Code without Microsoft telemetry."
+
+[[app]]
+id = "neovim"
+name = "Neovim"
+pkg = "neovim"
+source = "apk"
+icon = "nvim"
+newcomer = false
+size_mb = 10
+term = "nvim"
+description = "Modern terminal editor."
+
+[[app]]
+id = "geany"
+name = "Geany"
+pkg = "geany"
+source = "apk"
+icon = "geany"
+newcomer = true
+size_mb = 5
+description = "Small, fast graphical code editor."
+
+[[app]]
+id = "git"
+name = "Git"
+pkg = "git"
+source = "apk"
+icon = "git"
+newcomer = false
+size_mb = 15
+launch = "none"
+description = "Version control."
+
+[[app]]
+id = "docker"
+name = "Docker"
+pkg = "docker"
+source = "apk"
+icon = "docker"
+newcomer = false
+size_mb = 100
+launch = "none"
+description = "Run containers."
+
+[[app]]
+id = "podman"
+name = "Podman"
+pkg = "podman"
+source = "apk"
+icon = "podman"
+newcomer = false
+size_mb = 60
+launch = "none"
+description = "Daemonless containers."
+
+[[app]]
+id = "btop"
+name = "btop"
+pkg = "btop"
+source = "apk"
+icon = "btop"
+newcomer = true
+size_mb = 1
+term = "btop"
+description = "Beautiful system monitor in the terminal."
+
+[[app]]
+id = "helix"
+name = "Helix"
+pkg = "helix"
+source = "apk"
+icon = "helix"
+newcomer = false
+size_mb = 12
+term = "hx"
+description = "Modal terminal editor with language support built in."
+
+[[app]]
+id = "zed"
+name = "Zed"
+pkg = "dev.zed.Zed"
+source = "flatpak"
+icon = "zed"
+newcomer = false
+size_mb = 400
+description = "Fast, modern code editor (Flatpak)."
+
+[[app]]
+id = "lazygit"
+name = "lazygit"
+pkg = "lazygit"
+source = "apk"
+icon = "git"
+newcomer = false
+size_mb = 7
+term = "lazygit"
+description = "Git in the terminal, driven by single keys."
+
+[[app]]
+id = "github-cli"
+name = "GitHub CLI"
+pkg = "github-cli"
+source = "apk"
+icon = "github"
+newcomer = false
+size_mb = 14
+launch = "none"
+description = "gh: pull requests, issues and repositories from the terminal."
+
+[[app]]
+id = "mise"
+name = "mise"
+pkg = "mise"
+source = "apk"
+icon = "utilities-terminal"
+newcomer = false
+size_mb = 10
+launch = "none"
+description = "Switch between versions of Node, Python, Go and more for each project."

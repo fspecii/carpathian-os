@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Keyboard Shortcuts
+Comment=Search every shortcut of your desktop style
+Exec=carpatic-cheatsheet show
+Icon=input-keyboard
+Keywords=keys;keyboard;shortcuts;hotkeys;cheat sheet;help;
+Categories=System;Settings;
+Terminal=false

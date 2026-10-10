@@ -1,0 +1,158 @@
+# Carpatic store catalog: AI & Agents. source = "ai" means a Carpatic recipe in store/ai/tools.toml (pkg = recipe id).
+[category]
+id = "ai"
+name = "AI & Agents"
+icon = "applications-science"
+order = 3
+blurb = "Coding agents, local models and GPU tools, one click each"
+featured = true
+
+[[app]]
+id = "claude-code"
+name = "Claude Code"
+pkg = "claude-code"
+source = "ai"
+icon = "utilities-terminal"
+newcomer = true
+size_mb = 235
+term = "claude"
+description = "Anthropic's coding agent in your terminal. Reads your project, edits files, runs commands."
+detail = "Official native installer. Sign in with your Claude account or use an API key from your own shell; Carpatic never stores keys."
+
+[[app]]
+id = "codex"
+name = "OpenAI Codex CLI"
+pkg = "codex"
+source = "ai"
+icon = "utilities-terminal"
+newcomer = false
+size_mb = 105
+term = "codex"
+description = "OpenAI's open-source coding agent for the terminal (static musl build)."
+
+[[app]]
+id = "gemini-cli"
+tagline = "Google's open-source agent for the terminal, with a free tier"
+name = "Gemini CLI"
+pkg = "gemini-cli"
+source = "ai"
+icon = "utilities-terminal"
+newcomer = false
+size_mb = 100
+term = "gemini"
+description = "Google's open-source agent for the terminal, free tier with a Google login."
+
+[[app]]
+id = "opencode"
+tagline = "Open-source terminal coding agent for many providers and local models"
+name = "OpenCode"
+pkg = "opencode"
+source = "ai"
+icon = "utilities-terminal"
+newcomer = false
+size_mb = 60
+term = "opencode"
+description = "Open-source terminal coding agent that works with many providers and local models."
+
+[[app]]
+id = "goose"
+name = "Goose"
+pkg = "goose"
+source = "ai"
+icon = "utilities-terminal"
+newcomer = false
+size_mb = 42
+term = "goose"
+description = "Block's extensible open-source agent (tools, MCP, local models)."
+
+[[app]]
+id = "aider"
+name = "Aider"
+pkg = "aider"
+source = "ai"
+icon = "utilities-terminal"
+newcomer = false
+size_mb = 80
+term = "aider"
+description = "AI pair programming in your terminal; edits your git repository."
+note = "Brings its own Python 3.12 (about 660 MB on disk)."
+
+[[app]]
+id = "ollama"
+name = "Ollama"
+pkg = "ollama"
+source = "ai"
+icon = "applications-science"
+newcomer = true
+size_mb = 43
+launch = "none"
+description = "Run language models on your own computer. Installs a background service on 127.0.0.1:11434."
+note = "CPU build from Alpine. For GPU speed use llama.cpp with Vulkan."
+
+[[app]]
+id = "llama-cpp"
+tagline = "Fast local inference engine and server with Vulkan GPU support"
+name = "llama.cpp"
+pkg = "llama-cpp"
+source = "ai"
+icon = "applications-science"
+newcomer = false
+size_mb = 80
+launch = "none"
+description = "Fast local inference engine and server (OpenAI-compatible API) with Vulkan GPU support."
+
+[[app]]
+id = "open-webui"
+name = "Open WebUI"
+pkg = "open-webui"
+source = "ai"
+icon = "web-browser"
+newcomer = true
+size_mb = 578
+exec = "sh -c 'carpatic-ai webui start; sleep 20; xdg-open http://127.0.0.1:3000'"
+description = "A ChatGPT-style web app for your local models. Runs in a managed container."
+note = "Needs Ollama. First start takes about 40 seconds."
+
+[[app]]
+id = "jan"
+name = "Jan"
+pkg = "ai.jan.Jan"
+source = "flatpak"
+icon = "ai.jan.Jan"
+newcomer = true
+size_mb = 150
+description = "Friendly desktop app to chat with local or cloud models."
+
+[[app]]
+id = "gpt4all"
+name = "GPT4All"
+pkg = "io.gpt4all.gpt4all"
+source = "flatpak"
+icon = "io.gpt4all.gpt4all"
+newcomer = false
+size_mb = 200
+description = "Chat with local models; simple and private."
+
+[[app]]
+id = "compat-container"
+tagline = "An Ubuntu box for software that cannot run on Alpine"
+name = "Compatibility container"
+pkg = "compat-container"
+source = "ai"
+icon = "utilities-terminal"
+newcomer = false
+size_mb = 400
+term = "carpatic-ai compat enter"
+description = "A managed glibc (Ubuntu) box for software that cannot run on Alpine: CUDA, ROCm, LM Studio and more."
+note = "GPU passthrough for NVIDIA/AMD compute is designed but not yet tested on real hardware."
+
+[[app]]
+id = "lm-studio"
+name = "LM Studio"
+pkg = "ai.lmstudio.lm-studio"
+source = "flatpak"
+icon = "ai.lmstudio.lm-studio"
+newcomer = true
+size_mb = 900
+description = "Polished desktop app to find, download and chat with local models."
+note = "Proprietary software (LM Studio terms). The Flatpak downloads the app itself while installing (about 2.2 GB on disk once unpacked)."

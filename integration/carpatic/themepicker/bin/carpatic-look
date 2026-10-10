@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""carpatic-look [apply|get]: put the window-look settings on the desktop in about 30 ms.
+
+carpatic-apply is the one that writes dwm's themes.toml from settings.conf (about 0.7 s, it regenerates everything). The theme picker moves borders,
+corners and gaps with every arrow press, so it calls this instead: it copies just these settings.conf keys into the keys the configurator's template
+writes in [appearance], and dwm (which watches the file) follows. The next carpatic-apply produces the same lines, so nothing drifts.
+
+  BORDER_WIDTH 0-8 -> border_width      BORDER_ACTIVE #rrggbb -> border_active (empty = the theme accent)
+  CORNER_RADIUS 0-20 -> corner_radius   INNER_GAP / OUTER_GAP 0-100 -> inner_gap / outer_gap
+
+A key that is empty in settings.conf is left alone (the style's default is carpatic-apply's job)."""
+import os, re, sys, subprocess
+here = os.path.dirname(os.path.abspath(__file__))
+for d in (os.path.join(here, "..", "lib"), "/usr/local/lib/carpatic-themepicker"):
+    if os.path.isdir(d): sys.path.insert(0, d)
+import tp_model
+
+HOME = os.path.expanduser("~")
+CFG = os.environ.get("CARPATIC_CONFIG") or os.path.join(HOME, ".config", "carpatic")
+TOML = os.environ.get("CARPATIC_DWM_THEMES") or os.path.join(HOME, ".config", "dwm-titus", "themes.toml")
+KEYS = [("BORDER_WIDTH", "border_width", 0, 8), ("CORNER_RADIUS", "corner_radius", 0, 20), ("INNER_GAP", "inner_gap", 0, 100), ("OUTER_GAP", "outer_gap", 0, 100)]
+
+
+def clamp(v, lo, hi):
+    try: return str(max(lo, min(hi, int(v))))
+    except (TypeError, ValueError): return None
+
+
+def wanted(settings):
+    want = {}
+    for sk, tk, lo, hi in KEYS:
+        v = clamp(settings.get(sk), lo, hi) if settings.get(sk) else None
+        if v is not None: want[tk] = v
+    c = settings.get("BORDER_ACTIVE", "")
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", c): want["border_active"] = '"%s"' % c.lower()
+    return want
+
+
+def patch(text, want):
+    lines = text.split("\n")
+    start = next((i for i, l in enumerate(lines) if l.strip() == "[appearance]"), None)
+    if start is None: return text
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].lstrip().startswith("[")), len(lines))
+    for key, val in want.items():
+        idx = next((i for i in range(start + 1, end) if re.match(r"^\s*%s\s*=" % re.escape(key), lines[i])), None)
+        new = "%s = %s" % (key, val)
+        # keep a trailing comment the template put on the line
+        if idx is not None:
+            m = re.search(r"\s+#.*$", lines[idx])
+            lines[idx] = new + (m.group(0) if m else "")
+        else:
+            lines.insert(start + 1, new); end += 1
+    # border_width replaces the older borderpx: if both exist dwm reads border_width first
+    return "\n".join(lines)
+
+
+def main():
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "apply"
+    want = wanted(tp_model.read_settings(os.path.join(CFG, "settings.conf")))
+    if cmd == "get":
+        print(want); return 0
+    if cmd != "apply":
+        print("usage: carpatic-look [apply|get]", file=sys.stderr); return 2
+    try:
+        with open(TOML) as f: text = f.read()
+    except OSError:
+        print("carpatic-look: dwm's themes.toml does not exist yet (log in to the desktop once)", file=sys.stderr); return 0
+    new = patch(text, want)
+    if new == text: return 0
+    tmp = TOML + ".look.%d" % os.getpid()
+    with open(tmp, "w") as f: f.write(new)
+    os.replace(tmp, TOML)
+    if os.environ.get("CARPATIC_NO_RELOAD") != "1":
+        subprocess.run(["pkill", "-USR1", "-x", "dwm"], stderr=subprocess.DEVNULL)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

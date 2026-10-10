@@ -1,0 +1,22 @@
+#!/bin/sh
+# carpatic-volume up|down|mute|micmute|get : PipeWire (wpctl) volume with on-screen feedback.
+SINK=@DEFAULT_AUDIO_SINK@; SRC=@DEFAULT_AUDIO_SOURCE@
+STEP=${CARPATIC_VOLUME_STEP:-5}
+command -v wpctl >/dev/null 2>&1 || { carpatic-osd volume -1 "No audio" audio-volume-muted-symbolic "PipeWire is not running" ; exit 1; }
+case ${1:-get} in
+  up)      wpctl set-mute $SINK 0 2>/dev/null; wpctl set-volume -l 1.0 $SINK "$STEP%+" ;;
+  down)    wpctl set-volume $SINK "$STEP%-" ;;
+  mute)    wpctl set-mute $SINK toggle ;;
+  micmute) wpctl set-mute $SRC toggle
+           if wpctl get-volume $SRC 2>/dev/null | grep -q MUTED; then carpatic-osd mic -1 "Microphone off" microphone-sensitivity-muted "Muted"
+           else carpatic-osd mic -1 "Microphone on" microphone-sensitivity-high "Live"; fi
+           exit 0 ;;
+  get) ;;
+  *) echo "usage: carpatic-volume up|down|mute|micmute|get" >&2; exit 2 ;;
+esac
+out=$(wpctl get-volume $SINK 2>/dev/null) || { carpatic-osd volume -1 "No sound device" audio-volume-muted-symbolic "Plug in speakers or headphones"; exit 1; }
+pct=$(printf '%s' "$out" | awk '{printf "%d", $2*100+0.5}')
+if printf '%s' "$out" | grep -q MUTED; then icon=audio-volume-muted-symbolic; carpatic-osd volume 0 "Sound muted" $icon "Muted"; [ "${1:-get}" = get ] && echo "$pct muted"; exit 0; fi
+if [ "$pct" -ge 66 ]; then icon=audio-volume-high-symbolic; elif [ "$pct" -ge 33 ]; then icon=audio-volume-medium-symbolic; else icon=audio-volume-low-symbolic; fi
+[ "${1:-get}" = get ] && echo "$pct"
+carpatic-osd volume "$pct" "Volume" $icon "$pct%"

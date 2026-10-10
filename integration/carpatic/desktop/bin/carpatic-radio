@@ -1,0 +1,9 @@
+#!/bin/sh
+# carpatic-radio airplane|wifi|bluetooth : toggle radios (NetworkManager / rfkill) with feedback.
+case ${1:-airplane} in
+  airplane)
+    if nmcli radio wifi 2>/dev/null | grep -q enabled; then nmcli radio all off 2>/dev/null; rfkill block bluetooth 2>/dev/null; carpatic-osd radio -1 "Airplane mode on" network-wireless-disabled "Wi-Fi and Bluetooth are off"
+    else nmcli radio all on 2>/dev/null; rfkill unblock bluetooth 2>/dev/null; carpatic-osd radio -1 "Airplane mode off" network-wireless "Wi-Fi and Bluetooth are on"; fi ;;
+  wifi) if nmcli radio wifi | grep -q enabled; then nmcli radio wifi off; carpatic-osd radio -1 "Wi-Fi off" network-wireless-disabled ""; else nmcli radio wifi on; carpatic-osd radio -1 "Wi-Fi on" network-wireless ""; fi ;;
+  bluetooth) if rfkill list bluetooth 2>/dev/null | grep -q "Soft blocked: yes"; then rfkill unblock bluetooth; carpatic-osd radio -1 "Bluetooth on" bluetooth ""; else rfkill block bluetooth; carpatic-osd radio -1 "Bluetooth off" bluetooth-disabled ""; fi ;;
+esac

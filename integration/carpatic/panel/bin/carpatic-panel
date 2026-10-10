@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"""carpatic-panel run | set KEY VALUE | get [KEY] | options | designs | reload | stop | pin ID | unpin ID | status
+The panel (taskbar, dock, menu bar) with selectable designs. Settings live in ~/.config/carpatic/panel.conf and apply live."""
+import os, sys
+HERE = os.path.dirname(os.path.abspath(__file__))
+for p in ("/usr/local/lib/carpatic-panel", os.path.join(HERE, "..", "lib")):
+    if os.path.isdir(p): sys.path.insert(0, p)
+from carpatic_panel import config, designs, guard
+
+
+def say(*a): print(*a)
+
+
+def main(argv):
+    cmd = argv[1] if len(argv) > 1 else "run"
+    if cmd in ("-h", "--help", "help"): print(__doc__); return 0
+    if cmd == "options":
+        for k, (typ, rng, desc) in designs.OPTIONS.items():
+            vals = "|".join(rng) if typ == "enum" else (f"{rng[0]}..{rng[1]}" if typ == "int" else typ)
+            say(f"{k:14} {vals:60} {desc}")
+        return 0
+    if cmd == "designs":
+        for k, d in designs.DESIGNS.items(): say(f"{k:10} {d['label']}")
+        return 0
+    if cmd == "get":
+        cfg = config.load(); eff = designs.resolve(cfg)
+        if len(argv) > 2: say(eff.get(argv[2], cfg.get(argv[2], ""))); return 0
+        for k in designs.OPTIONS: say(f"{k}={cfg.get(k, 'auto' if k != 'design' else 'windows11')}  (effective: {eff.get(k, '-')})")
+        return 0
+    if cmd == "set":
+        if len(argv) < 4: sys.stderr.write("usage: carpatic-panel set KEY VALUE\n"); return 2
+        try: v = config.set_key(argv[2], " ".join(argv[3:]))
+        except config.ConfigError as e: sys.stderr.write(f"{e}\n"); return 1
+        config.notify_running()
+        if argv[2] in ("design", "position") and os.environ.get("CARPATIC_SESSION") == "1":
+            import shutil, subprocess
+            if shutil.which("carpatic-animations"):
+                subprocess.run(["carpatic-animations", "apply"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        say(f"{argv[2]} = {v}"); return 0
+    if cmd in ("pin", "unpin"):
+        from carpatic_panel import tasks
+        cfg = config.load(); eff = designs.resolve(cfg)
+        pins = [p for p in (cfg.get("pinned") or designs.DEFAULT_PINNED).split(",") if p]
+        if (argv[2] in pins) == (cmd == "pin"): return 0
+        pins = tasks.toggle_pin(pins, argv[2]); config.set_key("pinned", ",".join(pins)); config.notify_running(); return 0
+    if cmd == "reload": return 0 if config.notify_running() else 1
+    if cmd == "status":
+        import json; from carpatic_panel import placement
+        st = placement.read_state()
+        if not st: say("not running"); return 1
+        say(json.dumps(st, indent=1)); return 0
+    if cmd == "stop":
+        import signal
+        pid = config.running_pid()
+        if not pid: say("not running"); return 1
+        try: os.kill(pid, signal.SIGTERM); return 0
+        except OSError: say("not running"); return 1
+    if cmd == "run":
+        guard.require_session("carpatic-panel")
+        # one panel per session, decided BEFORE the slow imports: an exclusive lock on a file in the runtime dir. A panel that is still shutting down
+        # (profile switch: stop, then run) gets a few seconds to let go; a panel that is simply running makes this call a no-op.
+        lock = config.acquire_singleton(wait=6.0)
+        if lock is None: sys.stderr.write("carpatic-panel is already running.\n"); return 0
+        from carpatic_panel import panel_app
+        import signal
+        panel_app.Panel(fake=os.environ.get("CARPATIC_FAKE") == "1").run(); return 0
+    sys.stderr.write(f"carpatic-panel: unknown command '{cmd}'. Try: carpatic-panel --help\n"); return 2
+
+
+raise SystemExit(main(sys.argv))

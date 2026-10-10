@@ -1,0 +1,42 @@
+#!/bin/sh
+# Foreground file desktop adapter for xfdesktop 4.20.1. The session supervisor
+# owns this process; deliberately no global pgrep/pkill or bus-wide --quit.
+# xfdesktop reads the standard XDG desktop directory and its own saved xfconf
+# settings. Startup initializes absent XDG user dirs and seeds only the active
+# Carpatic wallpaper through its wallpaper helper; existing user-dir and icon
+# preferences remain intact. Real drag/drop acceptance belongs to integration.
+# Official CLI: https://docs.xfce.org/xfce/xfdesktop/usage
+set -eu
+fail() { printf 'carpatic-desktop: %s\n' "$*" >&2; exit 1; }
+case ${1:-start} in
+  start) [ "$#" -le 1 ] || fail 'usage: carpatic-desktop [start]' ;;
+  -h|--help|help) printf '%s\n' 'usage: carpatic-desktop [start]' 'Runs the file desktop in the foreground; the Carpatic session owns its lifecycle.'; exit 0 ;;
+  *) fail 'usage: carpatic-desktop [start]' ;;
+esac
+[ "${CARPATIC_SESSION:-0}" = 1 ] || fail 'Run this helper inside a Carpatic session.'
+[ -n "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ] || fail 'A Carpatic X11 display is required (WAYLAND_DISPLAY must be unset).'
+for tool in xfdesktop xdg-user-dir xprop; do
+  command -v "$tool" >/dev/null 2>&1 || fail "Missing $tool. Install the desktop dependencies with: doas apk add xfdesktop xdg-user-dirs xprop"
+done
+# Environment labels alone must not launch a desktop over COSMIC or another WM.
+support=$(xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null) || fail 'Cannot inspect the X11 window manager.'
+wm=$(printf '%s\n' "$support" | sed -n 's/.*window id # \(0x[0-9a-fA-F]*\).*/\1/p')
+[ -n "$wm" ] || fail 'No EWMH window manager is running on this display.'
+name=$(xprop -id "$wm" _NET_WM_NAME 2>/dev/null) || fail 'Cannot identify the X11 window manager.'
+printf '%s\n' "$name" | grep -q '= "Carpatic Rust"$' || fail 'Refusing a display not managed by Carpatic Rust.'
+# Initialize standard folders only when this account has no saved user-dir choices.
+if [ ! -e "${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs" ] && command -v xdg-user-dirs-update >/dev/null 2>&1; then
+  xdg-user-dirs-update || fail 'Cannot initialize standard user directories.'
+fi
+desktop=$(xdg-user-dir DESKTOP) || fail 'Cannot resolve the XDG desktop directory.'
+case $desktop in /*) ;; *) fail 'The XDG desktop directory must be an absolute path.' ;; esac
+[ "$desktop" != "${HOME:-}" ] || fail 'Desktop icons are disabled: the XDG desktop directory points to HOME. Configure a dedicated desktop directory first.'
+mkdir -p "$desktop" || fail "Cannot create the configured desktop directory: $desktop"
+[ -d "$desktop" ] && [ -w "$desktop" ] || fail "The configured desktop directory is not writable: $desktop"
+export GDK_BACKEND=x11
+# Seed the same wallpaper before the first desktop frame; normal painting later
+# discovers the running service on this session bus.
+if command -v carpatic-wallpaper >/dev/null 2>&1; then
+  CARPATIC_DESKTOP_SURFACE=1 carpatic-wallpaper paint || fail 'Cannot apply the Carpatic desktop wallpaper.'
+fi
+exec xfdesktop --disable-wm-check

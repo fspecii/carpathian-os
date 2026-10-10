@@ -1,0 +1,65 @@
+# Bundles: named groups of apps by catalog id. "default" marks pre-checked entries in the first-run picker.
+[[bundle]]
+id = "essentials"
+name = "Essentials"
+description = "Browser, media player, office suite, text editor, calculator, file tools and a password manager."
+default = true
+apps = ["firefox", "vlc", "libreoffice", "evince", "mousepad", "galculator", "eog", "file-roller", "keepassxc", "pavucontrol", "flameshot", "btop"]
+
+[[bundle]]
+id = "gaming"
+name = "Gaming"
+description = "Steam, Proton manager, Lutris and controller support."
+default = false
+apps = ["steam", "protonplus", "lutris", "steam-devices", "gamemode", "mangohud"]
+
+[[bundle]]
+id = "social"
+name = "Chat and social"
+description = "Discord, Telegram and Signal."
+default = false
+apps = ["discord", "telegram", "signal"]
+
+[[bundle]]
+id = "creator"
+name = "Creator"
+description = "Image, video and audio tools."
+default = false
+apps = ["gimp", "obs", "kdenlive", "audacity", "inkscape"]
+
+[[bundle]]
+id = "developer"
+name = "Developer"
+description = "Editor, git, containers."
+default = false
+apps = ["vscode", "git", "neovim", "podman", "geany"]
+
+[[bundle]]
+id = "ai-developer"
+name = "AI Developer"
+description = "Claude Code, Codex, OpenCode, Ollama, llama.cpp and a small coding model."
+default = false
+apps = ["claude-code", "codex", "opencode", "ollama", "llama-cpp"]
+models = ["qwen2.5-coder:1.5b"]
+
+[[bundle]]
+id = "local-ai"
+name = "Local AI"
+description = "Ollama, llama.cpp and Open WebUI with a first small chat model (downloads about 1.3 GB)."
+default = false
+apps = ["ollama", "llama-cpp", "open-webui"]
+models = ["llama3.2:1b"]
+
+[[bundle]]
+id = "ai-harnesses"
+name = "AI Coding Harnesses"
+description = "Every terminal coding agent: Claude Code, Codex, Gemini CLI, OpenCode, Goose, Aider."
+default = false
+apps = ["claude-code", "codex", "gemini-cli", "opencode", "goose", "aider"]
+
+[[bundle]]
+id = "keyboard-toolbox"
+name = "Keyboard toolbox"
+description = "Neovim, Helix, lazygit, btop, mise, the GitHub CLI, screenshot annotation and screen recording."
+default = false
+apps = ["neovim", "helix", "lazygit", "btop", "mise", "github-cli", "satty", "ffmpeg"]

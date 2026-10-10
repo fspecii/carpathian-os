@@ -1,0 +1,300 @@
+# Development environments for `carpatic install dev NAME`.
+# kind: apk (Alpine packages through carpatic-store), store (a store catalog app), container (database in a container), special.
+# Everything here is musl-native (Alpine packages), so nothing needs the glibc compatibility box.
+# verify: a real, small program run after installing (offline). `carpatic dev install` only says "works" when it passes.
+# Add your own: put [[env]] tables in ~/.config/carpatic/devenvs.toml (same fields).
+
+[[env]]
+id = "node"
+title = "Node.js"
+group = "Languages"
+desc = "Node.js, npm, pnpm and yarn"
+kind = "apk"
+packages = ["nodejs", "npm", "pnpm", "yarn"]
+binary = "node"
+version = "node --version"
+size_mb = 95
+verify = '''
+node -e 'console.log(2+2)' | grep -qx 4 && npm --version >/dev/null && pnpm --version >/dev/null
+'''
+
+[[env]]
+id = "python"
+title = "Python"
+group = "Languages"
+desc = "Python 3 with pip, venv, pipx and uv"
+kind = "apk"
+packages = ["python3", "py3-pip", "pipx", "uv", "python3-dev"]
+binary = "python3"
+version = "python3 --version"
+size_mb = 100
+verify = '''
+d=$(mktemp -d) && python3 -m venv "$d/v" && "$d/v/bin/python" -c 'print(6*7)' | grep -qx 42 && uv --version >/dev/null; rc=$?; rm -rf "$d"; exit $rc
+'''
+
+[[env]]
+id = "rust"
+title = "Rust"
+group = "Languages"
+desc = "rustc, cargo, rustfmt, clippy and rust-analyzer"
+kind = "apk"
+packages = ["rust", "cargo", "rustfmt", "rust-clippy", "rust-analyzer"]
+binary = "cargo"
+version = "rustc --version"
+size_mb = 330
+verify = '''
+d=$(mktemp -d) && cd "$d" && cargo new --quiet hello >/dev/null 2>&1 && cd hello && cargo run --quiet 2>/dev/null | grep -q "Hello, world"; rc=$?; cd /; rm -rf "$d"; exit $rc
+'''
+
+[[env]]
+id = "go"
+title = "Go"
+group = "Languages"
+desc = "Go compiler and the gopls language server"
+kind = "apk"
+packages = ["go", "gopls"]
+binary = "go"
+version = "go version"
+size_mb = 250
+verify = '''
+d=$(mktemp -d) && printf 'package main\nimport "fmt"\nfunc main(){ fmt.Println(7*6) }\n' > "$d/m.go" && HOME=$d GOCACHE=$d/c go run "$d/m.go" | grep -qx 42; rc=$?; rm -rf "$d"; exit $rc
+'''
+
+[[env]]
+id = "java"
+title = "Java"
+group = "Languages"
+desc = "OpenJDK 21 and Maven"
+kind = "apk"
+packages = ["openjdk21-jdk", "maven"]
+binary = "javac"
+version = "java -version 2>&1 | head -1"
+size_mb = 400
+verify = '''
+d=$(mktemp -d) && printf 'public class Hello { public static void main(String[] a){ System.out.println(6*7); } }\n' > "$d/Hello.java" && javac -d "$d" "$d/Hello.java" && java -cp "$d" Hello | grep -qx 42; rc=$?; rm -rf "$d"; exit $rc
+'''
+
+[[env]]
+id = "ruby"
+title = "Ruby"
+group = "Languages"
+desc = "Ruby with Bundler and the tools to build gems"
+kind = "apk"
+packages = ["ruby", "ruby-dev", "ruby-bundler", "build-base"]
+binary = "ruby"
+version = "ruby --version"
+size_mb = 190
+verify = '''
+ruby -e 'puts 6*7' | grep -qx 42 && bundle --version >/dev/null
+'''
+
+[[env]]
+id = "php"
+title = "PHP"
+group = "Languages"
+desc = "PHP 8.5 with common extensions and Composer"
+kind = "apk"
+packages = ["php85", "php85-phar", "php85-openssl", "php85-mbstring", "php85-curl", "php85-zip", "php85-xml", "php85-iconv", "composer"]
+binary = "php"
+version = "php -v | head -1"
+size_mb = 60
+link = ["php85:php"]
+verify = '''
+php -r 'echo 6*7, "\n";' | grep -qx 42 && composer --version >/dev/null 2>&1
+'''
+
+[[env]]
+id = "c"
+title = "C and C++"
+group = "Languages"
+desc = "gcc, make, cmake, gdb and pkgconf (builds against musl)"
+kind = "apk"
+packages = ["build-base", "cmake", "gdb", "pkgconf", "samurai"]
+binary = "gcc"
+version = "gcc --version | head -1"
+size_mb = 260
+verify = '''
+d=$(mktemp -d) && printf '#include <stdio.h>\nint main(void){ printf("%%d\\n", 6*7); return 0; }\n' > "$d/h.c" && gcc -o "$d/h" "$d/h.c" && "$d/h" | grep -qx 42; rc=$?; rm -rf "$d"; exit $rc
+'''
+
+[[env]]
+id = "tools"
+title = "Command-line toolbox"
+group = "Tools"
+desc = "git, ripgrep, fd, fzf, jq, bat, eza, direnv, tmux, lazygit and the GitHub CLI"
+kind = "apk"
+packages = ["git", "ripgrep", "fd", "fzf", "jq", "bat", "eza", "direnv", "tmux", "lazygit", "github-cli", "shellcheck"]
+binary = "rg"
+version = "rg --version | head -1"
+size_mb = 130
+verify = '''
+echo '{"a":42}' | jq .a | grep -qx 42 && git --version >/dev/null && rg --version >/dev/null && fzf --version >/dev/null
+'''
+
+[[env]]
+id = "mise"
+title = "mise"
+group = "Tools"
+desc = "Switch between versions of Node, Python, Go and more per project (needs the internet for each version)"
+kind = "apk"
+packages = ["mise"]
+binary = "mise"
+version = "mise --version"
+size_mb = 28
+verify = '''
+mise --version >/dev/null
+'''
+
+[[env]]
+id = "docker"
+title = "Docker"
+group = "Containers"
+desc = "Docker engine and Compose, started at boot, you are added to the docker group (log out and in once)"
+kind = "special"
+packages = ["docker", "docker-cli-compose", "docker-openrc"]
+binary = "docker"
+version = "docker --version"
+size_mb = 140
+verify = '''
+docker --version | grep -qi "docker version" && docker compose version >/dev/null 2>&1 && { rc-service docker status 2>/dev/null | grep -q started; }
+'''
+
+[[env]]
+id = "podman"
+title = "Podman"
+group = "Containers"
+desc = "Rootless containers without a daemon (use podman, or podman-compose for compose files)"
+kind = "special"
+packages = ["podman", "podman-compose", "crun", "fuse-overlayfs", "slirp4netns", "netavark", "aardvark-dns", "passt"]
+binary = "podman"
+version = "podman --version"
+size_mb = 120
+verify = '''
+podman info >/dev/null 2>&1 && grep -q "^$(id -un):" /etc/subuid && { [ "$(id -u)" = 0 ] || podman unshare cat /proc/self/uid_map | awk '$3>=65536{f=1} END{exit !f}'; }
+'''
+
+[[env]]
+id = "sqlite"
+title = "SQLite"
+group = "Databases"
+desc = "The sqlite3 command line"
+kind = "apk"
+packages = ["sqlite"]
+binary = "sqlite3"
+version = "sqlite3 --version"
+size_mb = 2
+verify = '''
+echo 'select 6*7;' | sqlite3 :memory: | grep -qx 42
+'''
+
+[[env]]
+id = "postgres"
+title = "PostgreSQL"
+group = "Databases"
+desc = "PostgreSQL 17 in a container on 127.0.0.1:5432 (user and password: carpatic)"
+kind = "container"
+image = "docker.io/library/postgres:17-alpine"
+port = 5432
+env = ["POSTGRES_USER=carpatic", "POSTGRES_PASSWORD=carpatic", "POSTGRES_DB=carpatic"]
+data = "/var/lib/postgresql/data"
+url = "postgresql://carpatic:carpatic@127.0.0.1:5432/carpatic"
+ready = "pg_isready -U carpatic"
+size_mb = 280
+
+[[env]]
+id = "mysql"
+title = "MariaDB (MySQL)"
+group = "Databases"
+desc = "MariaDB 11 in a container on 127.0.0.1:3306 (user and password: carpatic)"
+kind = "container"
+image = "docker.io/library/mariadb:11"
+port = 3306
+env = ["MARIADB_USER=carpatic", "MARIADB_PASSWORD=carpatic", "MARIADB_ROOT_PASSWORD=carpatic", "MARIADB_DATABASE=carpatic"]
+data = "/var/lib/mysql"
+url = "mysql://carpatic:carpatic@127.0.0.1:3306/carpatic"
+ready = "healthcheck.sh --connect"
+size_mb = 400
+
+[[env]]
+id = "redis"
+title = "Redis (Valkey)"
+group = "Databases"
+desc = "Valkey, the open Redis, in a container on 127.0.0.1:6379"
+kind = "container"
+image = "docker.io/valkey/valkey:8-alpine"
+port = 6379
+env = []
+data = "/data"
+url = "redis://127.0.0.1:6379"
+ready = "valkey-cli ping"
+size_mb = 40
+
+[[env]]
+id = "mongodb"
+title = "MongoDB"
+group = "Databases"
+desc = "MongoDB in a container on 127.0.0.1:27017 (no password, local only)"
+kind = "container"
+image = "docker.io/library/mongo:8"
+port = 27017
+env = []
+data = "/data/db"
+url = "mongodb://127.0.0.1:27017"
+ready = "mongosh --quiet --eval 'db.runCommand({ping:1})'"
+size_mb = 900
+
+[[env]]
+id = "neovim"
+title = "Neovim"
+group = "Editors"
+desc = "Neovim with a fast starter setup (LSP, search, theme that follows Carpatic). No plugins to download."
+kind = "special"
+packages = ["neovim", "ripgrep", "fd", "git", "xclip"]
+binary = "nvim"
+version = "nvim --version | head -1"
+size_mb = 40
+verify = '''
+nvim --headless -u NONE +'lua io.write(6*7)' +q 2>&1 | grep -q 42
+'''
+
+[[env]]
+id = "helix"
+title = "Helix"
+group = "Editors"
+desc = "Modal editor with batteries included"
+kind = "apk"
+packages = ["helix"]
+binary = "hx"
+version = "hx --version"
+size_mb = 12
+verify = '''
+hx --health >/dev/null 2>&1; hx --version >/dev/null
+'''
+
+[[env]]
+id = "zed"
+title = "Zed"
+group = "Editors"
+desc = "Fast graphical editor (Flatpak from Flathub)"
+kind = "store"
+app = "zed"
+binary = "zed"
+size_mb = 400
+
+[[env]]
+id = "vscodium"
+title = "VSCodium"
+group = "Editors"
+desc = "VS Code without Microsoft telemetry (Flatpak)"
+kind = "store"
+app = "codium"
+size_mb = 250
+
+[[env]]
+id = "vscode"
+title = "Visual Studio Code"
+group = "Editors"
+desc = "Microsoft's build (Flatpak)"
+kind = "store"
+app = "vscode"
+size_mb = 400

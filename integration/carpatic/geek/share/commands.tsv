@@ -1,0 +1,202 @@
+# Carpatic command table: one line per `carpatic <area> <verb>`.
+# Format:  area|verb|tool|fixed arguments|completion command|summary
+# '@area|name|summary' lines set the order and the one-line description of an area.
+# verb '*' = anything else is passed through to the tool. The completion command prints candidate words for the next argument.
+# Editing this file is all it takes to add a command; man page and completions are generated/derived from it.
+@area|theme|Colours, wallpapers, theme packs, Omarchy theme import
+@area|wallpaper|Wallpapers: Carpatic scenes, your own pictures, Wallhaven, rotation
+@area|intro|The login animation (mountains rise over your wallpaper)
+@area|screensaver|The idle screen (Carpatic mark, mountains, stars)
+@area|widgets|Desktop widgets: clock, calendar, weather and more (off until you turn them on)
+@area|profile|The desktop you feel at home in (windows, macos, ubuntu, tiling, beginner)
+@area|appearance|Fonts, icons, cursors, scaling
+@area|keys|Keyboard shortcuts of the active profile
+@area|menu|The keyboard menu (Super+Alt+Space)
+@area|store|Apps from Alpine and Flathub
+@area|install|Install apps, AI tools, dev environments, web apps
+@area|remove|Remove what you installed
+@area|dev|Development environments in one command
+@area|webapp|Web apps with their own window and profile
+@area|tui|Terminal apps as launcher entries
+@area|ai|AI tools, local models, GPU
+@area|drivers|Detect hardware and install drivers
+@area|power|Battery, sleep, hibernate, power profiles
+@area|update|System updates
+@area|rollback|Snapshots and rollback (Btrfs installs)
+@area|snapshot|Shortcut for taking and listing snapshots
+@area|compat|Run Ubuntu-only programs in a compatibility box
+@area|hook|Scripts that run on events (theme change, update, screenshot)
+@area|dotfiles|Keep your Carpatic settings in your own git repository
+@area|trigger|Screenshot, screen recording, colour picker, clipboard history, share
+@area|quicklook|Preview any file with Space, like on a Mac
+@area|tour|The one-screen welcome to the keyboard-driven desktop
+@area|system|About this computer
+@default|keys|show
+wallpaper|open|carpatic-wallpapers|||Open the wallpaper browser (Carpatic, My pictures, Wallhaven, Colours)
+wallpaper|list|carpatic-wallpaper|list|printf 'carpatic\nmine\nall\n'|List the pictures (carpatic, mine, all; --json)
+wallpaper|set|carpatic-wallpaper|set||Set the wallpaper from a path, id or title (--fill MODE, --theme, --light, --dark, --monitor NAME)
+wallpaper|fill|carpatic-wallpaper|fill|printf 'fill\nfit\nstretch\ncenter\ntile\n'|How the picture covers the screen
+wallpaper|add|carpatic-wallpaper|add||Add a file, a folder or a wallhaven.cc link to My pictures
+wallpaper|remove|carpatic-wallpaper|remove||Stop listing a folder or file (nothing is deleted)
+wallpaper|next|carpatic-wallpaper|next||Next picture of the rotation collection
+wallpaper|random|carpatic-wallpaper|random||A random picture
+wallpaper|rotate|carpatic-wallpaper|rotate|printf 'on\noff\nstatus\n'|Change the picture on a timer or at login (on --every MIN --collection NAME, off, status)
+wallpaper|collection|carpatic-wallpaper|collection|printf 'list\nnew\nadd\nrm\nshow\n'|Your own lists of pictures for rotation
+wallpaper|wallhaven|carpatic-wallpaper|wallhaven|printf 'search\nget\nkey\n'|Search Wallhaven (safe for work only) or fetch one picture by id
+wallpaper|accent|carpatic-wallpaper|accent||Suggest an accent colour from the wallpaper (--apply uses it)
+wallpaper|pair|carpatic-wallpaper|pair||Different pictures for light and dark mode (pair light A dark B, pair off)
+theme|list|carpatic-theme|list||List installed themes
+theme|current|carpatic-theme|current||Show the theme in use
+theme|set|carpatic-theme|set|@themes|Switch theme (--accent #rrggbb, --wallpaper FILE)
+theme|next|carpatic-themepack|next||Switch to the next theme
+theme|pick|carpatic-theme-picker|show|printf 'theme\nmode\nwallpaper\naccent\nborder\nbordercolor\ncorners\ngaps\nbuttons\nicons\ncursor\nfont\nfontsize\nmono\nstyle\n'|Open the theme picker: arrows change the theme, wallpaper, accent, borders, corners, gaps, icons, fonts
+theme|wallpaper|carpatic-themepack|wallpaper|printf 'next\nset\nlist\n'|Next wallpaper, set one, or list them (next, set FILE, list)
+theme|export|carpatic-themepack|export|@themes|Pack a theme into a shareable .carpatic-theme.tar.gz
+theme|import|carpatic-themepack|import||Install a theme pack or an Omarchy theme directory
+theme|convert|carpatic-themepack|convert||Check an Omarchy theme and print a conversion report
+theme|share|carpatic-themepack|share|@themes|Export a theme and show how to hand it to a friend
+theme|remove|carpatic-themepack|remove||Remove a theme you imported
+theme|packs|carpatic-pack|list||Icon, cursor, GTK and font packs you can add
+profile|list|carpatic-profile|list||List desktop profiles
+profile|current|carpatic-profile|current||Show the profile in use
+profile|set|carpatic-profile|set|@profiles|Switch profile
+appearance|get|carpatic-appearance|get||Show fonts, icons, cursor and scale
+appearance|list|carpatic-appearance|list|printf 'fonts\nicons\ncursors\ngtk\npresets\n'|List fonts, icons, cursors, gtk themes or presets
+appearance|set|carpatic-appearance|set||Change one or more settings: set ui-font Inter ui-size 10
+appearance|preset|carpatic-appearance|preset||Apply a font and look preset
+appearance|reset|carpatic-appearance|reset||Back to the style defaults
+keys|show|carpatic-cheatsheet|show||Searchable keyboard shortcut list (popup)
+keys|list|carpatic-cheatsheet|list||Print the shortcuts of the active profile
+keys|search|carpatic-cheatsheet|search||Print shortcuts that match words
+keys|html|carpatic-cheatsheet|html||Write a printable HTML cheat sheet
+keys|pdf|carpatic-cheatsheet|pdf||Write a printable PDF cheat sheet
+keys|all|carpatic-cheatsheet|all||Write printable sheets (HTML and PDF) for every desktop style: all --out FOLDER
+keys|json|carpatic-cheatsheet|json||The shortcuts as JSON, for scripts
+menu|*|carpatic-menu|||Open the menu (optionally at a place: carpatic menu style)
+store|list|carpatic-store|list||List apps in the catalog
+store|search|carpatic-store|search||Search apps
+store|info|carpatic-store|info||Details about an app
+store|install|carpatic-store|install||Install an app or bundle
+store|remove|carpatic-store|remove||Remove an app
+store|update|carpatic-store|update||Update apps (apk and Flatpak)
+store|bundles|carpatic-store|bundles||List bundles
+store|doctor|carpatic-store|doctor||Check Flatpak setup
+store|gui|carpatic-store-gui|||Open the graphical store
+install|app|carpatic-store|install||Install an app or bundle
+install|ai|carpatic-ai|install||Install AI tools (claude-code, codex, ollama ...)
+install|dev|carpatic-dev|install|carpatic-dev names|Install a development environment (node, python, rust, go ...)
+install|webapp|carpatic-webapp|add||Add a web app: install webapp NAME URL
+install|tui|carpatic-tui|add||Add a terminal app launcher: install tui NAME COMMAND
+remove|app|carpatic-store|remove||Remove an app
+remove|ai|carpatic-ai|remove||Remove AI tools
+remove|dev|carpatic-dev|remove|carpatic-dev names|Remove a development environment
+remove|webapp|carpatic-webapp|remove|carpatic-webapp names|Remove a web app
+remove|tui|carpatic-tui|remove|carpatic-tui names|Remove a terminal app launcher
+dev|list|carpatic-dev|list||List development environments and which are installed
+dev|install|carpatic-dev|install|carpatic-dev names|Install a development environment
+dev|remove|carpatic-dev|remove|carpatic-dev names|Remove a development environment
+dev|status|carpatic-dev|status||Show versions of what is installed
+dev|db|carpatic-dev|db||Database containers: db postgres start|stop|logs|url|status
+dev|nvim-theme|carpatic-dev|nvim-theme||Regenerate the Neovim colours from your theme
+webapp|add|carpatic-webapp|add||Add a web app: add NAME URL [--icon FILE]
+webapp|preset|carpatic-webapp|preset|carpatic-webapp presets|Add a ready-made web app (youtube, github, gmail ...)
+webapp|presets|carpatic-webapp|presets||List the ready-made web apps
+webapp|list|carpatic-webapp|list||List your web apps
+webapp|launch|carpatic-webapp|launch|carpatic-webapp names|Open a web app (or raise its window)
+webapp|remove|carpatic-webapp|remove|carpatic-webapp names|Remove a web app
+webapp|gui|carpatic-webapp|gui||Pick and add web apps from a menu
+tui|add|carpatic-tui|add||Add a terminal app launcher: add NAME COMMAND
+tui|preset|carpatic-tui|preset|carpatic-tui presets|Add a ready-made terminal app (btop, lazygit ...)
+tui|presets|carpatic-tui|presets||List the ready-made terminal apps
+tui|list|carpatic-tui|list||List your terminal app launchers
+tui|launch|carpatic-tui|launch|carpatic-tui names|Open a terminal app (or raise its window)
+tui|remove|carpatic-tui|remove|carpatic-tui names|Remove a terminal app launcher
+ai|status|carpatic-ai|status||What AI tooling is installed
+ai|install|carpatic-ai|install||Install AI tools
+ai|remove|carpatic-ai|remove||Remove AI tools
+ai|update|carpatic-ai|update||Update AI tools
+ai|models|carpatic-ai|models||Local models: list, pull NAME, run NAME, rm NAME
+ai|gpu|carpatic-ai|gpu||GPU compute check
+ai|llama|carpatic-ai|llama||llama.cpp server
+ai|webui|carpatic-ai|webui||Chat web page for local models: start, stop, status, open
+ai|doctor|carpatic-ai|doctor||Check the AI setup
+drivers|detect|carpatic-drivers|detect||Show hardware and recommended drivers
+drivers|install|carpatic-drivers|install||Install recommended drivers
+power|status|carpatic-power|status||Battery, AC, profile, sleep readiness
+power|doctor|carpatic-power|doctor||Explain whether hibernate works
+power|profile|+carpatic-power|profile|printf 'performance\nbalanced\nsaver\nauto\n'|Show or set the power profile
+power|sleep|carpatic-power|sleep|printf 'suspend\nhibernate\nhybrid\n'|Suspend or hibernate
+power|lock|carpatic-power|lock||Lock the screen
+power|hibernate-setup|!carpatic-power|hibernate-setup||Prepare swap and resume for hibernate
+power|battery-limit|!carpatic-power|battery-limit||Stop charging at N percent
+power|brightness|carpatic-power|brightness|printf 'up\ndown\nset\nget\n'|Screen brightness
+update|check|!carpatic-update|check||Count available updates
+update|list|carpatic-update|list||List available updates
+update|apply|carpatic-hook|wrap update -- carpatic-sudo carpatic-update apply||Take a snapshot, then update (runs your pre-update and post-update hooks)
+update|status|carpatic-update|status||Updates waiting, restart needed
+rollback|snapshot|!carpatic-rollback|snapshot||Take a system snapshot
+rollback|list|!carpatic-rollback|list||List snapshots
+rollback|restore|!carpatic-rollback|restore||Go back to a snapshot at the next restart
+rollback|delete|!carpatic-rollback|delete||Delete a snapshot
+rollback|prune|!carpatic-rollback|prune||Keep only the newest automatic snapshots
+snapshot|create|!carpatic-rollback|snapshot||Take a system snapshot
+snapshot|list|!carpatic-rollback|list||List snapshots
+snapshot|restore|!carpatic-rollback|restore||Go back to a snapshot at the next restart
+compat|run|carpatic-compat|run||Run a program inside the compatibility box
+compat|shell|carpatic-compat|shell||Open a terminal in the box
+compat|install|carpatic-compat|install||Install a .deb, AppImage or package in the box
+compat|wrap|carpatic-compat|wrap||Put a command-line program in the box on your PATH
+compat|remove|carpatic-compat|remove||Remove something from the box
+compat|list|carpatic-compat|list||List what you added to the box
+compat|update|carpatic-compat|update||Update the box
+compat|status|carpatic-compat|status||Is the box ready?
+compat|setup|carpatic-compat|setup||Prepare the box
+compat|reset|carpatic-compat|reset||Delete the box (your files stay)
+hook|list|carpatic-hook|list||List hook points and your hooks
+hook|run|carpatic-hook|run|carpatic-hook points|Run a hook by hand
+hook|new|carpatic-hook|new|carpatic-hook points|Create a hook from a template and open it
+hook|edit|carpatic-hook|edit|carpatic-hook points|Edit a hook in your editor
+dotfiles|init|carpatic-dotfiles|init||Start a git repository for ~/.config/carpatic
+dotfiles|status|carpatic-dotfiles|status||What changed since the last sync
+dotfiles|sync|carpatic-dotfiles|sync||Commit changes and push them
+dotfiles|pull|carpatic-dotfiles|pull||Fetch your repository and apply it
+dotfiles|remote|carpatic-dotfiles|remote||Set the repository address
+trigger|screenshot|carpatic-trigger|screenshot|printf 'region\nfull\nwindow\nannotate\n'|Take a screenshot (region, full, window, annotate)
+trigger|record|carpatic-trigger|record|printf 'start\nstop\ntoggle\nstatus\n'|Record the screen
+trigger|colorpicker|carpatic-trigger|colorpicker||Pick a colour from the screen
+trigger|clipboard|carpatic-trigger|clipboard||Clipboard history
+trigger|share|carpatic-trigger|share|printf 'clipboard\nfile\n'|Share the clipboard or a file as one download link on this network
+trigger|nightlight|carpatic-trigger|nightlight|printf 'toggle\non\noff\n'|Night light (needs redshift)
+trigger|idle|carpatic-trigger|idle|printf 'toggle\non\noff\nstatus\n'|Lock the screen when idle
+quicklook|*|carpatic-quicklook|||Preview files without opening an app (Space in Files). Also: --on, --off, --status, --setup
+tour|*|carpatic-tour|||Show the welcome card for the keyboard-driven desktop
+system|info|carpatic-sysinfo|||Show this computer at a glance
+system|doctor|carpatic-sysinfo|doctor||Check that the Carpatic tools are all in place
+system|version|carpatic-sysinfo|version||Show the Carpatic version
+intro|play|carpatic-intro|play||Play the login animation now
+intro|set|carpatic-intro|set|printf 'first-login-only\nevery-login\noff\n'|Choose when it plays: first-login-only, every-login or off
+intro|status|carpatic-intro|status||Show the setting and whether it would play now
+intro|reset|carpatic-intro|reset||Let it play again at the next login
+screensaver|start|carpatic-screensaver|start|printf 'brand\nrain\nsunrise\nstars\n'|Start the screensaver now (optionally one effect)
+screensaver|stop|carpatic-screensaver|stop||End the screensaver
+screensaver|status|carpatic-screensaver|status||Show the settings and whether it would start now
+screensaver|set|carpatic-screensaver|set|printf 'on\noff\ntimeout\neffect\nbattery\n'|Turn it on or off, or: set timeout 5, set effect rain, set battery yes
+widgets|enable|carpatic-widgets|enable||Turn widgets on (they are off by default)
+widgets|disable|carpatic-widgets|disable||Turn widgets off completely; nothing keeps running
+widgets|status|carpatic-widgets|status||Say whether widgets are on and which ones are on the desktop
+widgets|list|carpatic-widgets|list||Every widget you can add, and which ones are on
+widgets|add|carpatic-widgets|add|carpatic-widgets ids off|Put a widget on the desktop: add weather L
+widgets|remove|carpatic-widgets|remove|carpatic-widgets ids on|Take a widget off the desktop
+widgets|size|carpatic-widgets|size||Resize a widget: size clock L
+widgets|move|carpatic-widgets|move||Place a widget on the grid: move clock 4 0
+widgets|edit|carpatic-widgets|edit||Drag, resize, add and remove widgets
+widgets|peek|carpatic-widgets|peek||Show the widgets above your windows until you press a key
+widgets|look|carpatic-widgets|look|printf 'auto\nmacos\nwindows\nubuntu\ntiling\nnothing\n'|Card style (auto follows your theme)
+widgets|clock|carpatic-widgets|clock|printf 'analog\ndigital\ndots\n'|Clock face
+widgets|weather|carpatic-widgets|weather|printf 'city\nlocate\nunits\noff\n'|Weather place: weather city Bucharest
+widgets|todo|carpatic-widgets|todo|printf 'add\nlist\ndone\nclear\n'|The to-do list: todo add Buy bread
+widgets|note|carpatic-widgets|note||Show or set the sticky note
+widgets|arrange|carpatic-widgets|arrange||Pack the widgets tightly, no gaps
+widgets|monitor|carpatic-widgets|monitor||Which screen shows the widgets: monitor primary, monitor 1
+widgets|reset|carpatic-widgets|reset||Back to the default arrangement
+widgets|doctor|carpatic-widgets|doctor||Check what this computer can do for widgets

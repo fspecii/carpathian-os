@@ -1,0 +1,4 @@
+# Optional capture tools. Not in the default list because they are large; the menu offers to install them when you first use them.
+ffmpeg
+satty
+redshift

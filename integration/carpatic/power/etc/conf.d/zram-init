@@ -1,0 +1,9 @@
+# Carpatic: compressed swap in RAM, higher priority than the disk swap used for hibernation.
+load_on_start=yes
+unload_on_stop=yes
+num_devices=1
+type0=swap
+flag0=100
+size0=$(( $(awk '/^MemTotal:/ {print int($2/1024/2)}' /proc/meminfo) ))
+algo0=zstd
+maxs0=1

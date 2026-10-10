@@ -1,0 +1,20 @@
+#!/bin/sh
+# carpatic-configure profile=windows theme=nord [accent=#rrggbb] [wallpaper=FILE] [store=yes|no] [buttons=windows|macos|gnome|...]   (window buttons default to the profile's style)
+# Non-interactive version of the Welcome wizard (same effect as clicking through it). Also writes the first-run flag.
+. "$(dirname "$0")/carpatic-lib" 2>/dev/null || . carpatic-lib
+profile=""; theme=""; accent=""; wall=""; store=no; buttons=""
+for kv in "$@"; do
+  case $kv in
+    profile=*) profile=${kv#*=} ;; theme=*) theme=${kv#*=} ;; accent=*) accent=${kv#*=} ;;
+    wallpaper=*) wall=${kv#*=} ;; store=*) store=${kv#*=} ;; buttons=*) buttons=${kv#*=} ;;
+    *) die "unknown answer '$kv'" ;;
+  esac
+done
+[ -n "$profile" ] && { [ -f "$CARPATIC_SHARE/profiles/$profile.conf" ] || die "unknown profile $profile"; [ "$(get_setting PROFILE "")" = "$profile" ] || for k in WINDOW_BUTTONS BUTTONS_SIDE BUTTONS_SHOWN TITLE_ALIGN; do set_setting $k ""; done; set_setting PROFILE "$profile"; }
+[ -n "$buttons" ] && set_setting WINDOW_BUTTONS "$buttons"
+[ -n "$theme" ] && { [ -f "$(theme_dir "$theme")/colors.toml" ] || die "unknown theme $theme"; set_setting THEME "$theme"; }
+set_setting ACCENT "$accent"; set_setting WALLPAPER "$wall"
+: > "$CFG_DIR/welcome-done"
+carpatic-apply --restart
+[ "$store" = yes ] && command -v carpatic-store >/dev/null && carpatic-store firstrun
+exit 0

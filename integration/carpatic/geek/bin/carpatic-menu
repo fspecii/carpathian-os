@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""carpatic-menu: the keyboard menu (Super+Alt+Space). Type to search, Enter opens, Esc goes back.
+
+  carpatic-menu [place]        open the menu, optionally inside a place: style, style.theme, trigger.screenshot, system ...
+  carpatic-menu --list         print the menu tree for this computer
+  carpatic-menu --check        test the menu files (yours included) and say what is wrong
+  carpatic-menu --dry-run      show what would run instead of running it
+"""
+import os
+import signal
+import subprocess
+import sys
+
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+here = os.path.dirname(os.path.realpath(__file__))
+os.environ["PATH"] = here + ":" + os.environ.get("PATH", "")
+for d in (os.path.join(here, "..", "lib"), "/usr/local/lib/carpatic-geek"):
+    sys.path.insert(0, d)
+import carpatic_menu as m  # noqa: E402
+
+
+def usage():
+    print(__doc__.strip())
+
+
+def main(argv):
+    dry = False
+    route = None
+    mode = "show"
+    for a in argv:
+        if a in ("-h", "--help", "help"):
+            usage()
+            return 0
+        elif a == "--list":
+            mode = "list"
+        elif a == "--check":
+            mode = "check"
+        elif a == "--dry-run":
+            dry = True
+        elif a.startswith("-"):
+            print(f"carpatic-menu: I do not know the option {a}. See: carpatic-menu --help", file=sys.stderr)
+            return 2
+        else:
+            route = a
+    errors = []
+    root = m.load_tree(errors=errors)
+    if mode == "list":
+        print("\n".join(m.dump(root)))
+        return 0
+    if mode == "check":
+        problems = list(errors) + m.check_tree(root)
+        for cid, word in m.action_commands(root):
+            if word and not word.startswith(("$", "~")) and not m.have(word):
+                print(f"note: {cid} uses '{word}', which is not installed on this computer (it is hidden or will say so)")
+        for p in problems:
+            print("problem:", p)
+        print("Menu files: " + ", ".join(m.menu_files()))
+        print("Menu OK." if not problems else f"{len(problems)} problem(s) found.")
+        return 0 if not problems else 1
+    for e in errors:
+        print(f"carpatic-menu: could not read {e}", file=sys.stderr)
+    backend_name = os.environ.get("CARPATIC_MENU_BACKEND", "rofi")
+    if backend_name == "script":
+        backend = m.ScriptBackend(os.environ.get("CARPATIC_MENU_SCRIPT"))
+        dry = dry or os.environ.get("CARPATIC_MENU_DRYRUN") == "1"
+    else:
+        if not m.have("rofi"):
+            print("carpatic-menu: the menu needs rofi, which is not installed. Install it with: doas apk add rofi", file=sys.stderr)
+            return 3
+        if not os.environ.get("DISPLAY"):
+            print("carpatic-menu: the menu opens on the desktop. Start it from the desktop (Super+Alt+Space), "
+                  "or use 'carpatic-menu --list' in a terminal.", file=sys.stderr)
+            return 3
+        # Super+Alt+Space again closes the open menu (the whole menu, not just one level)
+        pidf = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), f"carpatic-menu-{os.getuid()}.pid")
+        try:
+            other = int(open(pidf).read().strip())
+            if other != os.getpid() and os.path.exists(f"/proc/{other}") and "carpatic-menu" in open(f"/proc/{other}/cmdline").read():
+                os.kill(other, signal.SIGTERM)
+                return 0
+        except (OSError, ValueError):
+            pass
+        with open(pidf, "w") as f:
+            f.write(str(os.getpid()))
+
+        def _stop(*_):
+            subprocess.run(["pkill", "-x", "rofi"], stderr=subprocess.DEVNULL)
+            try:
+                os.unlink(pidf)
+            except OSError:
+                pass
+            os._exit(0)
+        signal.signal(signal.SIGTERM, _stop)
+        backend = m.RofiBackend()
+    try:
+        return m.navigate(root, route, backend, dry)
+    finally:
+        if backend_name != "script":
+            try:
+                os.unlink(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), f"carpatic-menu-{os.getuid()}.pid"))
+            except OSError:
+                pass
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,18 @@
+#!/bin/sh
+# carpatic-brightness up|down|kbd-up|kbd-down : screen / keyboard backlight with on-screen feedback.
+command -v brightnessctl >/dev/null 2>&1 || exit 1
+case ${1:-} in
+  up|down)
+    if command -v carpatic-power >/dev/null 2>&1; then carpatic-power brightness "$1" >/dev/null 2>&1
+    else brightnessctl -q set "5%$([ "$1" = up ] && echo + || echo -)" ; fi
+    pct=$(brightnessctl -m 2>/dev/null | awk -F, 'NR==1{gsub("%","",$4); print $4}')
+    [ -n "$pct" ] || { carpatic-osd brightness -1 "No screen backlight" display-brightness "This display cannot be dimmed here"; exit 0; }
+    carpatic-osd brightness "$pct" "Brightness" display-brightness-symbolic "$pct%" ;;
+  kbd-up|kbd-down)
+    d=$(brightnessctl --list 2>/dev/null | sed -n "s/^Device '\(.*kbd_backlight.*\)' .*/\1/p" | head -1)
+    [ -n "$d" ] || { carpatic-osd kbd -1 "No keyboard light" keyboard-brightness "This keyboard has no backlight"; exit 0; }
+    brightnessctl -q -d "$d" set "10%$([ "$1" = kbd-up ] && echo + || echo -)"
+    pct=$(brightnessctl -d "$d" -m | awk -F, 'NR==1{gsub("%","",$4); print $4}')
+    carpatic-osd kbd "$pct" "Keyboard light" keyboard-brightness-symbolic "$pct%" ;;
+  *) echo "usage: carpatic-brightness up|down|kbd-up|kbd-down" >&2; exit 2 ;;
+esac

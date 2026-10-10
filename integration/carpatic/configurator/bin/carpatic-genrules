@@ -1,0 +1,19 @@
+#!/bin/sh
+# carpatic-genrules DEFAULT_RULES.toml > window-rules.toml : adds Carpatic apps, dialogs and small tools as floating (dwm itself floats transient and dialog-type windows and centres every new window); terminals, Files and editors tile.
+# Rules are inserted first: dwm's TOML reader stops reading the array at some comment/blank lines, so appending is unsafe.
+awk '
+{print}
+/^rules *= *\[/ {
+  print "  { title=\"Carpatic\",          isfloating=1, alwaysontop=1 },"
+  print "  { class=\"Xfce4-taskmanager\", isfloating=1 },"
+  print "  { class=\"Rofi\",              isfloating=1, alwaysontop=1 },"
+  print "  { class=\"arpatic\",           isfloating=1 },"   # every Carpatic app: Settings, Welcome, store, Quick Look, theme picker, widgets, overview (classes Carpatic-* / carpatic-*)
+  print "  { class=\"Nm-connection-editor\", isfloating=1 },"
+  print "  { class=\"Pavucontrol\",        isfloating=1 },"
+  print "  { class=\"Blueman\",            isfloating=1 },"
+  print "  { class=\"Polkit\",             isfloating=1, alwaysontop=1 },"
+  print "  { class=\"Gcr-prompter\",       isfloating=1, alwaysontop=1 },"
+  print "  { class=\"Gnome-calculator\",   isfloating=1 },"
+  print "  { class=\"Galculator\",         isfloating=1 },"
+  print "  { class=\"Xfce4-appfinder\",    isfloating=1 },"
+}' "$1"

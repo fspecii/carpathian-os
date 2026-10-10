@@ -1,0 +1,40 @@
+#!/bin/sh
+# carpatic-login-mode status | autologin [USER] | greeter [USER]     (root)
+#   autologin : tty1 logs USER in automatically and starts the desktop (encrypted installs: the disk passphrase is the gate)
+#   greeter   : lightdm + themed GTK greeter asks for the password (unencrypted installs)
+# Takes effect at the next boot. State file: /etc/carpatic/login-mode.
+set -eu
+MODE_FILE=/etc/carpatic/login-mode
+SHARE=/usr/local/share/carpatic
+user_default() { awk -F: '$3>=1000 && $3<60000 {print $1; exit}' /etc/passwd; }
+cmd=${1:-status}; U=${2:-$(user_default)}
+[ "$cmd" = status ] && { cat "$MODE_FILE" 2>/dev/null || echo autologin; exit 0; }
+[ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 1; }
+[ -n "$U" ] || { echo "no user" >&2; exit 1; }
+mkdir -p /etc/carpatic
+case $cmd in
+  autologin)
+    mkdir -p /usr/local/sbin
+    printf '#!/bin/sh\nexec /bin/login -f %s\n' "$U" > /usr/local/sbin/carpatic-autologin; chmod 755 /usr/local/sbin/carpatic-autologin
+    sed -i "s|^tty1::.*|tty1::respawn:/sbin/getty -n -l /usr/local/sbin/carpatic-autologin 38400 tty1|" /etc/inittab
+    rc-update del lightdm default >/dev/null 2>&1 || true
+    ;;
+  greeter)
+    command -v lightdm >/dev/null || { echo "lightdm is not installed (apk add lightdm lightdm-gtk-greeter adw-gtk3)" >&2; exit 1; }
+    sed -i "s|^tty1::.*|tty1::respawn:/sbin/getty 38400 tty1|" /etc/inittab
+    mkdir -p /etc/lightdm/lightdm.conf.d /usr/share/xsessions
+    cp "$SHARE/lightdm/50-carpatic.conf" /etc/lightdm/lightdm.conf.d/50-carpatic.conf
+    cp "$SHARE/lightdm/lightdm-gtk-greeter.conf" /etc/lightdm/lightdm-gtk-greeter.conf
+    cp "$SHARE/lightdm/xsession-carpatic.desktop" /usr/share/xsessions/carpatic.desktop
+    # greeter look: the lightdm user's GTK css pulls the Carpatic tokens
+    gh=$(getent passwd lightdm | cut -d: -f6); [ -n "$gh" ] || gh=/var/lib/lightdm
+    mkdir -p "$gh/.config/gtk-3.0"
+    cp "$SHARE/lightdm/colors-dark.css" "$gh/.config/gtk-3.0/colors-dark.css"
+    cp "$SHARE/lightdm/greeter-gtk.css" "$gh/.config/gtk-3.0/gtk.css"
+    chown -R lightdm:lightdm "$gh/.config" 2>/dev/null || true
+    rc-update add lightdm default >/dev/null 2>&1
+    ;;
+  *) echo "usage: carpatic-login-mode status|autologin [USER]|greeter [USER]" >&2; exit 2 ;;
+esac
+echo "$cmd" > "$MODE_FILE"
+echo "login mode: $cmd (user $U); effective after reboot"

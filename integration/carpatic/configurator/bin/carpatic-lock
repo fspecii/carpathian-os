@@ -1,0 +1,4 @@
+#!/bin/sh
+# carpatic-lock : the one entry point for locking (hotkey, power menu, idle timer, sleep hook).
+if command -v carpatic-lock-screen >/dev/null 2>&1; then exec carpatic-lock-screen; fi
+exec slock

@@ -1,0 +1,17 @@
+#!/bin/sh
+# carpatic-webmail PROVIDER [mailto:...] : open a webmail provider (gmail | outlook | icloud) as an app window.
+# Uses a Chromium-family browser in --app mode when there is one, else the default browser. Nothing to install, nothing runs in the background.
+p=${1:-gmail}; m=${2:-}
+case $p in
+  outlook) url=https://outlook.live.com/mail/ ;;
+  icloud)  url=https://www.icloud.com/mail/ ;;
+  *)       url=https://mail.google.com/mail/ ;;
+esac
+if [ -n "$m" ] && [ "$p" = gmail ]; then
+  enc=$(printf '%s' "$m" | sed -e 's/%/%25/g' -e 's/&/%26/g' -e 's/?/%3F/g' -e 's/=/%3D/g' -e 's/ /%20/g')
+  url="https://mail.google.com/mail/?extsrc=mailto&url=$enc"
+fi
+for b in chromium chromium-browser google-chrome-stable brave-browser; do
+  command -v "$b" >/dev/null 2>&1 && exec "$b" --app="$url" --class=carpatic-webmail
+done
+exec xdg-open "$url"

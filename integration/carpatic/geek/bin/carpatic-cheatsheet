@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""carpatic-cheatsheet: the keyboard shortcuts of your profile, read from the live hotkeys (never hand-written).
+
+  carpatic keys show                  searchable popup (Super+K in the tiling style, Super+F1 everywhere). Enter tries the shortcut.
+  carpatic keys list [--profile P]    print them, grouped
+  carpatic keys search WORDS...       print only the shortcuts that match
+  carpatic keys html [--profile P] [--out FILE] [--open]   printable web page
+  carpatic keys pdf  [--profile P] [--out FILE]            printable A4 sheet (needs the settings app's graphics libraries)
+  carpatic keys json [--profile P]    for scripts
+  carpatic keys all --out DIR         html and pdf for every profile
+Profiles: windows, macos, ubuntu, tiling, beginner. Without --profile you get the one you use.
+"""
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+here = os.path.dirname(os.path.realpath(__file__))
+for d in (os.path.join(here, "..", "lib"), "/usr/local/lib/carpatic-geek"):
+    sys.path.insert(0, d)
+import carpatic_keys as K  # noqa: E402
+import carpatic_menu as M  # noqa: E402
+
+
+def die(msg, code=1):
+    print(f"carpatic keys: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def opts(args):
+    o = {"profile": None, "out": None, "open": False, "words": []}
+    it = iter(args)
+    for a in it:
+        if a == "--profile":
+            o["profile"] = next(it, None)
+        elif a.startswith("--profile="):
+            o["profile"] = a.split("=", 1)[1]
+        elif a == "--out":
+            o["out"] = next(it, None)
+        elif a == "--open":
+            o["open"] = True
+        elif a.startswith("--"):
+            die(f"I do not know the option {a}. See: carpatic keys --help", 2)
+        else:
+            o["words"].append(a)
+    if o["profile"] and o["profile"] not in K.profiles():
+        die(f"I do not know the profile '{o['profile']}'. Choose one of: {', '.join(K.profiles())}.", 2)
+    return o
+
+
+def brand_svg():
+    for p in (os.path.join(here, "..", "..", "design", "brand", "carpatic-mark-light.svg"),
+              "/usr/local/share/carpatic/brand/carpatic-mark-light.svg", "/usr/share/carpatic/brand/carpatic-mark-light.svg"):
+        if os.path.exists(p):
+            s = open(p).read()
+            s = re.sub(r"<\?xml[^>]*\?>", "", s)
+            return s
+    return ""
+
+
+def show_popup():
+    if not M.have("rofi") or not os.environ.get("DISPLAY"):
+        die("the popup needs the desktop. In a terminal use: carpatic keys list", 3)
+    if subprocess.run(["pkill", "-x", "rofi"], stderr=subprocess.DEVNULL).returncode == 0:
+        return 0
+    profile, binds = K.load()
+    rows = K.search_rows(profile, binds)
+    sup = K.SUPER_NAME.get(profile, "Super")
+    theme = M.write_theme()
+    colors = M.read_colors()
+    width = max(len(c) for c, _ in rows)
+    import html as h
+    lines = []
+    for chord, b in rows:
+        pad = " " * (width - len(chord))
+        lines.append(f"<span font_family='JetBrains Mono' weight='bold'>{h.escape(chord)}{pad}</span>   {h.escape(b.desc)}"
+                     f"   <span size='small' alpha='55%'>{h.escape(b.group)}</span>")
+    cmd = ["rofi", "-dmenu", "-i", "-no-custom", "-markup-rows", "-p", "Keys", "-format", "i", "-theme", theme,
+           "-mesg", f"{K.PROFILE_LABEL.get(profile, profile)}.  Enter tries the shortcut.  Esc closes.",
+           "-theme-str", "window { width: 760px; } element-icon { size: 0; } listview { lines: 14; }",
+           "-theme-str", "configuration { show-icons: false; }"]
+    res = subprocess.run(cmd, input="\n".join(lines) + "\n", capture_output=True, text=True)
+    if res.returncode != 0:
+        return 0
+    try:
+        b = rows[int(res.stdout.strip())][1]
+    except (ValueError, IndexError):
+        return 0
+    if b.tryable() and M.have("xdotool"):
+        subprocess.Popen(["sh", "-c", f"sleep 0.25; xdotool key {b.xdotool_chord()}"], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return 0
+
+
+def write_html(profile, binds, out):
+    with open(out, "w") as f:
+        f.write(K.html_doc(profile, binds, brand_svg()))
+
+
+def main(argv):
+    if not argv or argv[0] in ("show", "popup"):
+        if argv:
+            argv = argv[1:]
+        return show_popup()
+    cmd, rest = argv[0], argv[1:]
+    if cmd in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return 0
+    o = opts(rest)
+    if cmd == "all":
+        out = o["out"] or "."
+        os.makedirs(out, exist_ok=True)
+        for p in K.profiles():
+            profile, binds = K.load(p)
+            write_html(profile, binds, os.path.join(out, f"keys-{p}.html"))
+            try:
+                K.pdf_doc(profile, binds, os.path.join(out, f"keys-{p}.pdf"))
+            except ImportError:
+                print("carpatic keys: PDF needs python3-cairo and PangoCairo; wrote HTML only.", file=sys.stderr)
+            print(os.path.join(out, f"keys-{p}.{{html,pdf}}"))
+        return 0
+    profile, binds = K.load(o["profile"])
+    if cmd == "list":
+        print("\n".join(K.text_lines(profile, binds)))
+    elif cmd == "search":
+        if not o["words"]:
+            die("tell me what to look for, for example: carpatic keys search screenshot", 2)
+        words = [w.lower() for w in o["words"]]
+        hits = [(c, b) for c, b in K.search_rows(profile, binds) if all(w in (c + " " + b.desc + " " + b.group).lower() for w in words)]
+        if not hits:
+            print(f"No shortcut matches '{' '.join(o['words'])}'.")
+            return 1
+        w = max(len(c) for c, _ in hits)
+        for c, b in hits:
+            print(f"{c:<{w}}  {b.desc}   ({b.group})")
+    elif cmd == "json":
+        print(json.dumps([{"profile": profile, "keys": b.chord(K.SUPER_NAME.get(profile, 'Super')), "description": b.desc, "group": b.group,
+                           "mods": b.mods, "key": b.key} for b in binds], indent=1))
+    elif cmd == "html":
+        out = o["out"] or os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "carpatic", f"keys-{profile}.html")
+        os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+        write_html(profile, binds, out)
+        print(out)
+        if o["open"]:
+            opener = shutil.which("xdg-open") or shutil.which("firefox")
+            if opener:
+                subprocess.Popen([opener, out], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    elif cmd == "pdf":
+        out = o["out"] or os.path.expanduser(f"~/Documents/carpatic-keys-{profile}.pdf")
+        os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+        try:
+            pages = K.pdf_doc(profile, binds, out)
+        except ImportError:
+            die("making a PDF needs the graphics libraries of the settings app (py3-cairo, py3-gobject3, pango). "
+                "Use 'carpatic keys html' and print the page from your browser instead.", 3)
+        print(f"{out} ({pages} page{'s' if pages != 1 else ''})")
+    else:
+        die(f"I do not know '{cmd}'. Try: show, list, search, html, pdf, json, all.", 2)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

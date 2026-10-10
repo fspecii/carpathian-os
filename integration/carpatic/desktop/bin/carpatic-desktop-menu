@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+"""Desktop context menu, opened by the WM at the pointer's root coordinates."""
+import os
+import subprocess
+import sys
+
+os.environ.setdefault("GDK_BACKEND", "x11")
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, Gdk
+
+def main():
+    x, y = (int(value) for value in sys.argv[1:3])
+    menu = Gtk.Menu()
+    # GTK creates a separate popup window around the menu. Give that window
+    # an alpha visual too: a rounded menu painted into an RGB parent leaves
+    # opaque square corners outside its border.
+    popup = menu.get_toplevel()
+    screen = menu.get_screen()
+    rgba = screen.get_rgba_visual()
+    if rgba is not None:
+        menu.set_visual(rgba)
+        popup.set_visual(rgba)
+    popup.get_style_context().add_class("carpatic-desktop-menu")
+    css = Gtk.CssProvider()
+    css.load_from_data(b"window.carpatic-desktop-menu { background-color: transparent; background-image: none; box-shadow: none; }")
+    popup.get_style_context().add_provider(css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    rows = [
+        ("Open terminal", ["carpatic-term"]),
+        ("Open files", ["thunar"]),
+        None,
+        ("Desktop settings", ["carpatic-settings"]),
+        ("Workspace overview", ["carpatic-overview"]),
+        ("Toggle tiling", ["carpatic-layout", "toggle"]),
+        None,
+        ("Lock screen", ["carpatic-lock"]),
+        ("Power options", ["carpatic-powermenu"]),
+    ]
+    def activate(_item, command):
+        menu.popdown()
+        subprocess.Popen(command, start_new_session=True)
+
+    for row in rows:
+        if row is None:
+            item = Gtk.SeparatorMenuItem()
+        else:
+            label, command = row
+            item = Gtk.MenuItem(label=label)
+            item.connect("activate", activate, command)
+        menu.append(item)
+    menu.connect("deactivate", lambda *_args: Gtk.main_quit())
+    menu.show_all()
+    root = Gdk.Screen.get_default().get_root_window()
+    rectangle = Gdk.Rectangle()
+    rectangle.x, rectangle.y, rectangle.width, rectangle.height = x, y, 1, 1
+    menu.popup_at_rect(root, rectangle, Gdk.Gravity.NORTH_WEST, Gdk.Gravity.NORTH_WEST, None)
+    Gtk.main()
+
+if __name__ == "__main__":
+    main()

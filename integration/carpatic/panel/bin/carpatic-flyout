@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""carpatic-flyout quick|calendar|start [--look win|mac|ubuntu|kylin] : taskbar flyouts (quick settings, calendar + notifications, Start menu).
+Calling the same mode again closes it. Only runs inside a Carpatic session (CARPATIC_SESSION=1 or CARPATIC_FORCE=1)."""
+import os, sys, argparse
+HERE = os.path.dirname(os.path.abspath(__file__))
+for p in ("/usr/local/lib/carpatic-panel", os.path.join(HERE, "..", "lib")):
+    if os.path.isdir(p): sys.path.insert(0, p)
+from carpatic_panel import guard
+ap = argparse.ArgumentParser(prog="carpatic-flyout")
+ap.add_argument("mode", choices=("quick", "calendar", "start"))
+ap.add_argument("--look", choices=("win", "mac", "ubuntu", "kylin", "launchpad", "twopane"))
+ap.add_argument("--fake", action="store_true", help="demo data (screenshots, tests)")
+ap.add_argument("--anchor"); ap.add_argument("--edge", choices=("bottom", "top", "left", "right"))
+ap.add_argument("--mode-theme", choices=("dark", "light")); ap.add_argument("--no-slide", action="store_true")
+ap.add_argument("--align", choices=("auto", "center", "left")); ap.add_argument("--pane"); ap.add_argument("--shot", help="write a PNG of the screen after opening, then quit (tests)")
+args = ap.parse_args()
+guard.require_session("carpatic-flyout")
+from carpatic_panel import app_flyout
+raise SystemExit(app_flyout.main(args))

@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""carpatic-tui: terminal apps as launcher entries (a small terminal window, found in the launcher like any app).
+
+  carpatic-tui add NAME COMMAND [--icon NAME]
+  carpatic-tui preset NAME            add a ready-made one and install its package if needed
+  carpatic-tui presets [--plain]
+  carpatic-tui list [--plain]
+  carpatic-tui launch NAME            open it (or raise its window)
+  carpatic-tui remove NAME
+"""
+import os
+import shutil
+import signal
+import subprocess
+import sys
+
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+here = os.path.dirname(os.path.realpath(__file__))
+for d in (os.path.join(here, "..", "lib"), "/usr/local/lib/carpatic-geek"):
+    sys.path.insert(0, d)
+os.environ["PATH"] = here + ":" + os.environ.get("PATH", "")
+import carpatic_apps as A  # noqa: E402
+
+
+def err(m, code=1):
+    print(f"carpatic tui: {m}", file=sys.stderr)
+    return code
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return 0
+    cmd, rest = argv[0], argv[1:]
+    plain = "--plain" in rest
+    rest = [a for a in rest if a != "--plain"]
+    try:
+        if cmd == "add":
+            icon = None
+            pos = []
+            it = iter(rest)
+            for a in it:
+                if a == "--icon":
+                    icon = next(it, None)
+                else:
+                    pos.append(a)
+            if len(pos) < 2:
+                return err("give a name and the command, for example: carpatic tui add Top htop", 2)
+            A.tui_add(pos[0], " ".join(pos[1:]), icon)
+        elif cmd == "preset":
+            if len(rest) != 1:
+                return err("which one? See: carpatic tui presets", 2)
+            m = next((p for p in A.presets("tui") if A.slug(p[0]) == A.slug(rest[0])), None)
+            if not m:
+                return err(f"I do not know a ready-made terminal app called '{rest[0]}'. See: carpatic tui presets", 2)
+            name, command, pkg = m[0], m[1], m[2]
+            if not shutil.which(command.split()[0]):
+                print(f"{name} needs the package {pkg}. Installing it...")
+                r = subprocess.run(["carpatic-store", "-y", "install", f"apk:{pkg}"])
+                if r.returncode != 0 or not shutil.which(command.split()[0]):
+                    return err(f"could not install {pkg}. Try: carpatic install app apk:{pkg}")
+            A.tui_add(name, command)
+        elif cmd == "presets":
+            for p in A.presets("tui"):
+                print(f"{p[0]}|{p[3]}" if plain else f"{p[0]:<20} {p[3]}")
+        elif cmd == "list":
+            es = A.load_entries("tui")
+            if not es and not plain:
+                print("No terminal apps yet. Add one: carpatic tui preset btop")
+            for e in es:
+                print(f"{e['name']}|{e['command']}" if plain else f"{e['name']:<20} {e['command']}")
+        elif cmd == "names":
+            for e in A.load_entries("tui"):
+                print(e["slug"])
+        elif cmd == "launch":
+            if len(rest) != 1:
+                return err("which one? See: carpatic tui list", 2)
+            e = A.find_entry("tui", rest[0])
+            if not e:
+                return err(f"you have no terminal app called '{rest[0]}'. See: carpatic tui list")
+            c = A.launch("tui", e, dry=os.environ.get("CARPATIC_DRY") == "1")
+            if os.environ.get("CARPATIC_DRY") == "1":
+                print(" ".join(c))
+        elif cmd == "remove":
+            if len(rest) != 1:
+                return err("which one? See: carpatic tui list", 2)
+            A.remove("tui", rest[0])
+        else:
+            return err(f"I do not know '{cmd}'. Try: add, preset, presets, list, launch, remove.", 2)
+    except A.Problem as e:
+        return err(str(e))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

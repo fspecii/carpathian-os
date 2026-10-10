@@ -1,0 +1,2 @@
+event=ac_adapter.*|battery.*
+action=/usr/bin/carpatic-power auto --async

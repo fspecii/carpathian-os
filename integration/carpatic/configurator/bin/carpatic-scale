@@ -1,0 +1,104 @@
+#!/bin/sh
+# carpatic-scale: how big should the desktop be on this screen?
+#
+#   carpatic-scale policy W H [MMW MMH]   the scale in percent for a screen of W x H pixels (and MMW x MMH millimetres when known)
+#   carpatic-scale detect                 the policy applied to the main screen as xrandr reports it right now
+#   carpatic-scale effective              what the desktop uses: the SCALE setting when it is a number, else detect (SCALE=auto, the default)
+#   carpatic-scale sync                   re-apply the desktop when the wanted scale changed (login, new screen); prints the new percent
+#   carpatic-scale env                    shell exports for Qt
+#   carpatic-scale status                 one line for people: "Auto: 150% (3840x2160, 600 x 340 mm, 163 dpi)"
+#
+# The policy (docs/DESIGN-SYSTEM.md, "Scale"): with a real size, work from the pixel density and pick the nearest comfortable step.
+#   dpi < 105 -> 100%    105-130 -> 125%    130-160 -> 150%    160-190 -> 175%    190-300 -> 200%    300-380 -> 250%    380+ -> 300%
+#   24" 1080p (92 dpi) = 100%   27" 1440p (109 dpi) = 125%   32" 4K (138) = 150%   27" 4K (163) = 175%   14" 1080p laptop (157) = 150%
+#   15.6" 4K (282) = 200%
+# Without a trustworthy size (virtual machines, projectors, EDID with 0 mm or nonsense): from the width alone, assuming a typical 24-27" screen
+#   width < 2200 -> 100%    < 2800 -> 125%    < 3400 -> 150%    < 4400 (4K) -> 200%    < 6000 (5K/6K) -> 250%    else 300%
+# The logical screen (pixels / scale) never drops under 1280 x 720: a 13" 1080p laptop gets 150% not 175%, a 1366x768 laptop stays at 100%.
+# Never below 100% (a small screen is not made smaller), never above 300%.
+# Override: SCALE=100..300 in settings.conf (Settings > Displays > Scale). License: MIT. POSIX sh + awk.
+set -u
+
+policy() { # W H [MMW MMH] -> percent
+  awk -v w="${1:-0}" -v h="${2:-0}" -v mw="${3:-0}" -v mh="${4:-0}" 'BEGIN{
+    w+=0; h+=0; mw+=0; mh+=0
+    if (w < 1) { print 100; exit }
+    dpi = 0
+    if (mw > 0 && mh > 0) {
+      dx = w / (mw / 25.4); dy = h / (mh / 25.4)
+      # EDID that reports a made-up size (1x1 cm, 16:9 placeholders, a virtual 96 dpi) is not a measurement: only trust 40..600 dpi
+      # and horizontal/vertical density that agree within 15%
+      if (dx >= 40 && dx <= 600 && dy >= 40 && dy <= 600 && dx / dy < 1.15 && dy / dx < 1.15) dpi = (dx + dy) / 2
+    }
+    if (dpi > 0) {
+      s = 100
+      if (dpi >= 105) s = 125
+      if (dpi >= 130) s = 150
+      if (dpi >= 160) s = 175
+      if (dpi >= 190) s = 200
+      if (dpi >= 300) s = 250
+      if (dpi >= 380) s = 300
+    } else {
+      s = 100
+      if (w >= 2200) s = 125
+      if (w >= 2800) s = 150
+      if (w >= 3400) s = 200
+      if (w >= 4400) s = 250
+      if (w >= 6000) s = 300
+    }
+    # never scale the screen below a 1280 x 720 working area: step down until the logical size still fits
+    while (s > 100 && (w * 100 / s < 1279 || (h > 0 && h * 100 / s < 719))) s = (s > 250) ? 250 : (s > 200 ? 200 : (s > 175 ? 175 : (s > 150 ? 150 : (s > 125 ? 125 : 100))))
+    print s }'
+}
+
+XR=${CARPATIC_XRANDR:-xrandr}
+# main screen from "xrandr --query": prints  W H MMW MMH  (the primary output, else the first connected one with a mode)
+main_screen() {
+  vm=0; grep -q '^flags.* hypervisor' /proc/cpuinfo 2>/dev/null && vm=1
+  $XR --query 2>/dev/null | awk -v vm="$vm" '
+    / connected/ { if ($3 == "primary") { g = $4; pri = 1 } else { g = $3; pri = 0 }
+      if (g ~ /^[0-9]+x[0-9]+\+/) {
+        split(g, a, /[x+]/); mmw = 0; mmh = 0
+        for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+mm$/) { if (!mmw) mmw = $i + 0; else if (!mmh) mmh = $i + 0 }
+        # virtual displays invent a size (QEMU: always ~100 dpi): in a VM, or on an output called Virtual*, the size is not a measurement
+        if ($1 ~ /^Virtual/ || (vm && mmw > 0 && a[1] * 25.4 / mmw > 98 && a[1] * 25.4 / mmw < 102.5)) { mmw = 0; mmh = 0 }
+        if (pri) { printf "%s %s %s %s\n", a[1], a[2], mmw, mmh; found = 1; exit }
+        if (!first) first = a[1] " " a[2] " " mmw " " mmh } }
+    END { if (!found && first) print first }'
+}
+
+detect() { s=$(main_screen); [ -n "$s" ] || { echo 100; return; }; set -- $s; policy "$1" "$2" "$3" "$4"; }
+
+setting() { # SCALE from settings.conf ("" when unset)
+  f=${CARPATIC_CONFIG:-$HOME/.config/carpatic}/settings.conf
+  sed -n 's/^SCALE="\(.*\)"$/\1/p' "$f" 2>/dev/null | tail -1
+}
+
+effective() {
+  v=$(setting)
+  case $v in
+    ''|auto) detect;;
+    *[!0-9]*) detect;;
+    *) if [ "$v" -lt 100 ]; then echo 100; elif [ "$v" -gt 300 ]; then echo 300; else echo "$v"; fi;;
+  esac
+}
+
+applied() { sed -n 's/^SCALE="\(.*\)"$/\1/p' "${CARPATIC_CONFIG:-$HOME/.config/carpatic}/appearance.env" 2>/dev/null | tail -1; }
+
+case "${1:-status}" in
+  sync) # session start and screen changes: when the scale the policy wants differs from what the desktop was last set up with, apply it (live)
+    want=$(effective); [ "$want" = "$(applied)" ] && exit 0
+    command -v carpatic-apply >/dev/null 2>&1 || exit 0
+    carpatic-apply >/dev/null 2>&1; echo "$want";;
+  env) # shell exports for programs that read the environment instead of Xft.dpi (Qt): eval "$(carpatic-scale env)"
+    awk -v s="$(effective)" 'BEGIN{ printf "export QT_AUTO_SCREEN_SCALE_FACTOR=0 QT_SCALE_FACTOR=%.2f QT_FONT_DPI=96 GDK_SCALE=1\n", s/100 }';;
+  policy) shift; policy "$@";;
+  detect) detect;;
+  effective) effective;;
+  status)
+    s=$(main_screen); v=$(setting); [ -n "$v" ] || v=auto
+    if [ -n "$s" ]; then set -- $s; geo="$1x$2"; [ "$3" -gt 0 ] && geo="$geo, $3 x $4 mm"; else geo="no screen found"; fi
+    case $v in auto|*[!0-9]*) echo "Auto: $(effective)% ($geo)";; *) echo "Manual: $(effective)% ($geo)";; esac;;
+  -h|--help|help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//';;
+  *) echo "carpatic-scale: unknown command '$1' (try: carpatic-scale help)" >&2; exit 1;;
+esac

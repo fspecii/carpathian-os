@@ -1,0 +1,72 @@
+#!/bin/sh
+# carpatic-appearance get | list <fonts|icons|cursors|gtk|presets> | set KEY VALUE [KEY VALUE ...] | preset <name> | reset
+# carpatic-appearance look zen|compact|default      (window-look presets: gaps, borders, corners)
+# KEYs (window look): border-active border-inactive (#rrggbb) border-width 0-8 border-highlight 0-6 corners 0-20 gaps 0-100 inner-gap outer-gap smart-gaps 0|1 drag-tiled float|place workspaces 1-9 workspace-names "Web,Code,..."
+# KEYs: window-buttons buttons-side buttons-shown title-align ui-font ui-size mono-font mono-size gtk icons cursor cursor-size hinting rgba lcdfilter antialias scale (auto | 100-300 percent; auto picks it from the screen: carpatic-scale)
+# VALUE "default" clears the override (the style's default applies). Applies live (carpatic-apply) unless --no-apply is the last arg.
+. "$(dirname "$0")/carpatic-lib" 2>/dev/null || . carpatic-lib
+key_of() { case $1 in
+  ui-font) echo UI_FONT;; ui-size) echo UI_SIZE;; mono-font) echo MONO_FONT;; mono-size) echo MONO_SIZE;;
+  gtk) echo GTK_THEME;; icons) echo ICON_THEME;; cursor) echo CURSOR_THEME;; cursor-size) echo CURSOR_SIZE;;
+  window-buttons) echo WINDOW_BUTTONS;; buttons-side) echo BUTTONS_SIDE;; buttons-shown) echo BUTTONS_SHOWN;; title-align) echo TITLE_ALIGN;;
+  border-active) echo BORDER_ACTIVE;; border-inactive) echo BORDER_INACTIVE;; border-width) echo BORDER_WIDTH;; border-highlight) echo BORDER_HIGHLIGHT;;
+  corners) echo CORNER_RADIUS;; inner-gap) echo INNER_GAP;; outer-gap) echo OUTER_GAP;; smart-gaps) echo SMART_GAPS;; drag-tiled) echo DRAG_TILED;; workspaces) echo WORKSPACES;; workspace-names) echo WS_NAMES;;
+  hinting) echo HINTING;; rgba) echo RGBA;; lcdfilter) echo LCDFILTER;; antialias) echo ANTIALIAS;; scale) echo SCALE;;
+  *) die "unknown key '$1'";; esac; }
+valid() { case $1 in
+  UI_SIZE|MONO_SIZE|CURSOR_SIZE) case $2 in ''|*[!0-9]*) die "$1 must be a number";; esac;;
+  SCALE) case $2 in auto) ;; ''|*[!0-9]*) die "scale: auto or 100-300 (percent)";; *) [ "$2" -ge 100 ] && [ "$2" -le 300 ] || die "scale: auto or 100-300 (percent)";; esac;;
+  WINDOW_BUTTONS) case $2 in windows|macos|gnome|kde|minimal|ring|squircle|contrast|omarchy|kylin|nothing|classic98|luna|none) ;; *) die "window-buttons: windows|macos|gnome|kde|minimal|ring|squircle|contrast|omarchy|kylin|nothing|classic98|luna|none";; esac;;
+  CORNER_RADIUS) [ "$2" -ge 0 ] 2>/dev/null && [ "$2" -le 20 ] 2>/dev/null || die "corners: 0-20";;
+  INNER_GAP|OUTER_GAP) [ "$2" -ge 0 ] 2>/dev/null && [ "$2" -le 100 ] 2>/dev/null || die "gaps: 0-100";;
+  BORDER_WIDTH) [ "$2" -ge 0 ] 2>/dev/null && [ "$2" -le 8 ] 2>/dev/null || die "border-width: 0-8";;
+  BORDER_HIGHLIGHT) [ "$2" -ge 0 ] 2>/dev/null && [ "$2" -le 6 ] 2>/dev/null || die "border-highlight: 0-6";;
+  SMART_GAPS) case $2 in 0|1) ;; *) die "smart-gaps: 0|1";; esac;;
+  WORKSPACES) case $2 in [1-9]) ;; *) die "workspaces: 1-9";; esac;;
+  WS_NAMES) case $2 in *'"'*|*'\'*) die "workspace-names: no quotes or backslashes";; esac; [ "${#2}" -le 200 ] || die "workspace-names: too long";;
+  DRAG_TILED) case $2 in float|place) ;; *) die "drag-tiled: float|place";; esac;;
+  BORDER_ACTIVE|BORDER_INACTIVE) case $2 in '#'??????) ;; *) die "$1 must be a colour like #ff8800";; esac;;
+  BUTTONS_SIDE) case $2 in auto|left|right) ;; *) die "buttons-side: auto|left|right";; esac;;
+  BUTTONS_SHOWN) case $2 in all|close) ;; *) die "buttons-shown: all|close";; esac;;
+  TITLE_ALIGN) case $2 in auto|left|center) ;; *) die "title-align: auto|left|center";; esac;;
+  HINTING) case $2 in none|slight|medium|full) ;; *) die "hinting: none|slight|medium|full";; esac;;
+  RGBA) case $2 in none|rgb|bgr|vrgb|vbgr) ;; *) die "rgba: none|rgb|bgr|vrgb|vbgr";; esac;;
+  LCDFILTER) case $2 in lcdnone|lcddefault|lcdlight|lcdlegacy) ;; *) die "lcdfilter: lcdnone|lcddefault|lcdlight|lcdlegacy";; esac;;
+  ANTIALIAS) case $2 in 0|1) ;; *) die "antialias: 0|1";; esac;;
+  esac; }
+cmd=${1:-get}; [ $# -gt 0 ] && shift
+case $cmd in
+  get) [ -f "$CFG_DIR/appearance.env" ] || carpatic-apply >/dev/null 2>&1; cat "$CFG_DIR/appearance.env" 2>/dev/null
+       for k in BORDER_ACTIVE BORDER_INACTIVE BORDER_WIDTH BORDER_HIGHLIGHT CORNER_RADIUS INNER_GAP OUTER_GAP SMART_GAPS DRAG_TILED WORKSPACES WS_NAMES; do printf '%s="%s"\n' $k "$(get_setting $k '')"; done
+       printf 'HINTING="%s"\nRGBA="%s"\nLCDFILTER="%s"\nANTIALIAS="%s"\n' "$(get_setting HINTING slight)" "$(get_setting RGBA rgb)" "$(get_setting LCDFILTER lcddefault)" "$(get_setting ANTIALIAS 1)" ;;
+  list)
+    case ${1:-} in
+      fonts) # curated families that are installed
+        fc-list : family 2>/dev/null | tr ',' '\n' | sort -u | grep -x -E 'Inter|JetBrains Mono|Noto Sans|Noto Sans Mono|Cantarell|Fira Sans|Fira Mono|Roboto|Roboto Mono|Hack|Source Sans 3|Source Code Pro|Open Sans|Lato|DejaVu Sans|DejaVu Sans Mono|Liberation Sans|Liberation Mono|Nunito|Montserrat|IBM Plex Mono|Iosevka|Doto' ;;
+      icons) for d in /usr/share/icons "$HOME/.local/share/icons" "$HOME/.icons"; do for t in "$d"/*/index.theme; do [ -f "$t" ] || continue; n=$(basename "$(dirname "$t")"); [ "$n" = hicolor ] && continue
+               grep -q '^Directories=' "$t" && [ -n "$(grep '^Directories=.\+' "$t")" ] && printf '%s\n' "$n"; done; done | sort -u | grep -v -E '^(Faenza-|ePapirus|Breeze_Light|Paper-Mono-Dark|Adwaita-xfce)' ;;
+      cursors) for d in /usr/share/icons "$HOME/.local/share/icons" "$HOME/.icons"; do for t in "$d"/*/cursors; do [ -d "$t" ] && basename "$(dirname "$t")"; done; done | sort -u ;;
+      gtk) echo palette; for d in /usr/share/themes "$HOME/.local/share/themes"; do for t in "$d"/*/gtk-3.0; do [ -d "$t" ] && basename "$(dirname "$t")"; done; done | sort -u ;;
+      window-buttons) printf '%s\n' "windows|Windows|flat glyph buttons on the right, close turns red" "macos|macOS|traffic-light circles on the left" "gnome|GNOME / Ubuntu|round symbolic buttons" "kde|KDE Breeze|flat icons with a hover plate" "minimal|Minimal dots|small dots, colour on hover" "ring|Rings|thin outline circles" "squircle|Squircles|rounded squares" "contrast|High contrast|big outlined squares" "omarchy|Omarchy|bare thin glyphs" "kylin|Kylin|rounded plates, red close" "nothing|Nothing|square outlines, dot-matrix glyphs" "none|None|title bar only" ;;
+      presets) printf '%s\n' "polished|Inter|JetBrains Mono|Inter + JetBrains Mono (default)" "gnome|Cantarell|JetBrains Mono|Cantarell + JetBrains Mono" \
+               "classic|DejaVu Sans|DejaVu Sans Mono|DejaVu (classic)" "clean|Noto Sans|Noto Sans Mono|Noto Sans + Noto Mono" "fira|Fira Sans|Fira Mono|Fira Sans + Fira Mono" \
+               "roboto|Roboto|Roboto Mono|Roboto + Roboto Mono" "humanist|Open Sans|Hack|Open Sans + Hack" ;;
+      *) die "list fonts|icons|cursors|gtk|presets|window-buttons" ;;
+    esac ;;
+  preset) p=$(carpatic-appearance list presets | grep "^$1|") || die "unknown preset"
+          set_setting UI_FONT "$(echo "$p" | cut -d'|' -f2)"; set_setting MONO_FONT "$(echo "$p" | cut -d'|' -f3)"; carpatic-apply ;;
+  look) case ${1:-} in
+          zen)     set_setting INNER_GAP 20; set_setting OUTER_GAP 24; set_setting BORDER_WIDTH 1; set_setting CORNER_RADIUS 14; set_setting SMART_GAPS 0; set_setting BORDER_HIGHLIGHT 0 ;;
+          compact) set_setting INNER_GAP 4; set_setting OUTER_GAP 4; set_setting BORDER_WIDTH 2; set_setting CORNER_RADIUS 0; set_setting SMART_GAPS 1; set_setting BORDER_HIGHLIGHT 0 ;;
+          default) for k in INNER_GAP OUTER_GAP BORDER_WIDTH CORNER_RADIUS SMART_GAPS BORDER_HIGHLIGHT BORDER_ACTIVE BORDER_INACTIVE DRAG_TILED; do set_setting $k ""; done ;;
+          *) die "look zen|compact|default" ;;
+        esac; carpatic-apply ;;
+  reset) for k in BORDER_ACTIVE BORDER_INACTIVE BORDER_WIDTH BORDER_HIGHLIGHT CORNER_RADIUS INNER_GAP OUTER_GAP SMART_GAPS DRAG_TILED UI_FONT UI_SIZE MONO_FONT MONO_SIZE GTK_THEME ICON_THEME CURSOR_THEME CURSOR_SIZE HINTING RGBA LCDFILTER ANTIALIAS SCALE; do set_setting $k ""; done; carpatic-apply ;;
+  set)
+    noapply=0; while [ $# -ge 2 ]; do
+      if [ "$1" = gaps ]; then g=$2; shift 2; set -- inner-gap "$g" outer-gap "$g" "$@"; fi
+      k=$(key_of "$1"); v=$2; [ "$v" = default ] && v=""; [ -n "$v" ] && valid "$k" "$v"; set_setting "$k" "$v"; shift 2
+    done
+    [ "${1:-}" = --no-apply ] || exec carpatic-apply ;;
+  *) die "usage: carpatic-appearance get|list|set|preset|reset" ;;
+esac

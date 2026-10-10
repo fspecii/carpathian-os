@@ -1,0 +1,4 @@
+#!/bin/sh
+# /etc/periodic/daily/carpatic-update-check: look for updates once a day so the desktop can tell the user (never installs anything)
+command -v carpatic-update >/dev/null 2>&1 && carpatic-update check >/dev/null 2>&1
+exit 0

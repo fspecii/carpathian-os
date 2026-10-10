@@ -1,0 +1,8 @@
+/* ~lightdm/.config/gtk-3.0/gtk.css : makes lightdm-gtk-greeter match Carpatic. Tokens: design/tokens/out/gtk/. */
+@import url("colors-dark.css");
+#login_window, #panel_window { background-color: alpha(@window_bg_color, 0.78); }
+#login_window { border-radius: 14px; border: 1px solid @borders; padding: 24px; box-shadow: 0 24px 64px rgba(0,0,0,0.55); }
+#panel_window { border-bottom: 1px solid @borders; }
+#user_combobox, #user_image { border-radius: 999px; }
+entry { border-radius: 10px; min-height: 40px; padding: 4px 14px; }
+button#login_button, button.suggested-action { background-image: none; background-color: @accent_bg_color; color: @accent_fg_color; border-radius: 10px; font-weight: 600; min-height: 40px; }

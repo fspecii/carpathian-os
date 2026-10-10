@@ -1,0 +1,3 @@
+# Listen address. Keep 127.0.0.1 unless you want other computers to use your models.
+OLLAMA_HOST=127.0.0.1:11434
+OLLAMA_MODELS=/var/lib/ollama/models

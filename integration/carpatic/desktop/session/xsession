@@ -1,0 +1,3 @@
+#!/bin/sh
+# Session script for display managers (lightdm). Same environment as the autologin xinitrc.
+exec /usr/local/share/carpatic/xinitrc

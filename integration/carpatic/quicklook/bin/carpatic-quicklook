@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""carpatic-quicklook [--toggle] FILE...   Show the macOS-style instant preview for the files (Space in the file manager does this).
+   carpatic-quicklook --hide | --status | --stop | --reload | --setup | --on | --off | --help
+Standard library only, starts in a few milliseconds, talks to the warm daemon `carpatic-quicklookd` (started on demand)."""
+import os, sys, json, socket, subprocess, time
+
+RT = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+SOCK = os.path.join(RT, "carpatic-quicklook.sock" if RT != "/tmp" else "carpatic-quicklook-%d.sock" % os.getuid())
+
+def carpatic_session():
+    """Quick Look only ever runs inside a Carpatic desktop: CARPATIC_SESSION=1 (set by carpatic-session) or the configurator install marker,
+    on an X11 display and never under Wayland. This keeps it from attaching to someone else's desktop (a dev host, a test run)."""
+    if os.environ.get("WAYLAND_DISPLAY") or not os.environ.get("DISPLAY"): return False
+    if os.environ.get("CARPATIC_SESSION") == "1": return True
+    return any(os.path.isdir(p) for p in ("/usr/local/share/carpatic/configurator", "/usr/share/carpatic"))
+HELP = """Quick Look: preview a file without opening an app.
+
+  carpatic quicklook FILE...      preview files (arrow keys move through them)
+  carpatic quicklook --toggle F   preview, or close if already showing (what Space does)
+  carpatic quicklook --hide       close the preview
+  carpatic quicklook --on|--off   turn the Space shortcut on or off
+  carpatic quicklook --setup      (re)install the Space shortcut in the file manager
+  carpatic quicklook --status     is it running, how much memory it uses
+
+In the preview:  Space or Esc closes  -  Left/Right previous/next file  -  Enter opens the file in its app
+                 Ctrl+C copies the path  -  K plays or pauses  -  + - 0 1 zooms  -  Page Up/Down turns PDF pages
+"""
+
+def send(req, start=True):
+    for attempt in range(2):
+        try:
+            s = socket.socket(socket.AF_UNIX); s.settimeout(3); s.connect(SOCK)
+            s.sendall((json.dumps(req) + "\n").encode()); data = s.recv(65536); s.close()
+            return json.loads(data or b"{}")
+        except (OSError, ValueError):
+            if not start or attempt or os.environ.get("CARPATIC_QL_NO_SPAWN") == "1": return None
+            daemon = next((p for p in ("/usr/local/bin/carpatic-quicklookd", os.path.join(os.path.dirname(os.path.abspath(__file__)), "carpatic-quicklookd")) if os.path.exists(p)), None)
+            if not daemon: return None
+            subprocess.Popen([daemon], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            for _ in range(80):                                   # wait (up to 8 s) until the new daemon really answers
+                time.sleep(0.1)
+                try:
+                    t = socket.socket(socket.AF_UNIX); t.settimeout(0.3); t.connect(SOCK); t.close(); break
+                except OSError:
+                    pass
+    return None
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        if not argv: pass
+        print(HELP); return 0
+    cmd, files = "show", []
+    cfg = os.path.expanduser("~/.config/carpatic/settings.conf")
+    it = iter(argv)
+    for a in it:
+        if a == "--toggle": cmd = "toggle"
+        elif a in ("--hide", "--close"): cmd = "hide"
+        elif a == "--status": cmd = "status"
+        elif a == "--stop": cmd = "quit"
+        elif a == "--reload": cmd = "reload"
+        elif a in ("--on", "--off"):
+            keep = []
+            try: keep = [l for l in open(cfg) if not l.startswith("QUICKLOOK=")]
+            except OSError: pass
+            os.makedirs(os.path.dirname(cfg), exist_ok=True)
+            with open(cfg, "w") as f:
+                f.writelines(keep if not keep or keep[-1].endswith("\n") else keep + ["\n"]); f.write('QUICKLOOK="%s"\n' % a[2:])
+            send({"cmd": "reload"}, start=False)
+            print("Quick Look is %s." % a[2:]); return 0
+        elif a == "--setup":
+            import importlib.util
+            here = os.path.dirname(os.path.abspath(__file__))
+            lib = next((p for p in ("/usr/local/lib/carpatic/quicklook", os.path.join(here, "..", "lib")) if os.path.isdir(p)))
+            sys.path.insert(0, lib); import ql_setup
+            return ql_setup.main()
+        elif a == "--":
+            files += [os.path.abspath(f) for f in it]
+        elif a.startswith("file://"):
+            from urllib.parse import unquote, urlparse
+            files.append(unquote(urlparse(a).path))
+        elif a.startswith("-"):
+            print("Unknown option %s. Try: carpatic quicklook --help" % a, file=sys.stderr); return 2
+        else:
+            files.append(os.path.abspath(a))
+    if cmd in ("show", "toggle") and not files and cmd == "show":
+        print("Which file? Try: carpatic quicklook photo.jpg", file=sys.stderr); return 2
+    if cmd in ("show", "toggle") and not carpatic_session():
+        print("Quick Look only works inside the Carpatic desktop.", file=sys.stderr); return 3
+    r = send({"cmd": cmd, "files": files}, start=cmd in ("show", "toggle"))
+    if r is None:
+        if cmd in ("hide", "quit", "reload"): return 0
+        if cmd == "status": print("Quick Look is not running."); return 1
+        print("Quick Look could not start. Is the desktop running?", file=sys.stderr); return 1
+    if cmd == "status":
+        print("Quick Look is running (pid %s, %.0f MB, decoders: %s, window: %s)%s%s" % (r.get("pid"), r.get("rss_kb", 0) / 1024, r.get("sandbox"), r.get("window"), "" if r.get("enabled", True) else " but turned off",
+              (", showing " + r["file"]) if r.get("visible") else ", hidden"))
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

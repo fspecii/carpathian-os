@@ -1,0 +1,15 @@
+#!/bin/sh
+# carpatic-set-motion full|reduced : the one switch for movement in Carpatic (login animation, installer greeter, screensaver). Stored as MOTION in settings.conf.
+# The boot splash reads the kernel line instead: `sudo carpatic-boot motion reduced`. Usage: carpatic-set-motion full|reduced|status
+SELF=$(readlink -f "$0"); LIB=${CARPATIC_LIB:-$(dirname "$SELF")/../lib}; [ -r "$LIB/motionconf.sh" ] || LIB=/usr/local/share/carpatic/motion
+. "$LIB/motionconf.sh"
+case ${1:-status} in
+  full|reduced) m_set MOTION "$1"
+    command -v carpatic-apply >/dev/null 2>&1 && carpatic-apply >/dev/null 2>&1
+    if command -v carpatic-animations >/dev/null 2>&1; then
+      carpatic-animations apply || exit $?
+    fi
+    echo "Motion: $1." ;;
+  status) m_get MOTION full ;;
+  *) echo "carpatic-set-motion: use full, reduced or status" >&2; exit 2 ;;
+esac

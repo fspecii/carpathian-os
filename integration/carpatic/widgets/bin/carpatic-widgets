@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+"""carpatic-widgets: desktop widgets, OFF by default. `carpatic widgets enable|disable|add|remove|edit|peek|list|...`. MIT."""
+import os, sys, signal, subprocess, time, json
+sys.path.insert(0, "/usr/local/lib/carpatic"); sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+from cwidgets import conf, data
+
+HELP = """Desktop widgets (off until you turn them on).
+  carpatic widgets enable            turn widgets on (starts now and at every login)
+  carpatic widgets disable           turn widgets off completely (no process is left running)
+  carpatic widgets status            on or off, and what is on the desktop
+  carpatic widgets list              every widget you can add, and which are on your desktop
+  carpatic widgets add <name> [S|M|L]   put a widget on the desktop        (e.g. add weather L)
+  carpatic widgets remove <name>     take a widget off the desktop
+  carpatic widgets size <name> S|M|L change the size of a widget
+  carpatic widgets move <name> <column> <row>   place a widget on the grid (columns count from the right edge)
+  carpatic widgets edit              drag, resize, add and remove widgets with the mouse or keyboard
+  carpatic widgets peek              show the widgets above your windows until you press a key
+  carpatic widgets look <auto|macos|windows|ubuntu|tiling|nothing>   card style (auto follows your theme and desktop style)
+  carpatic widgets clock <analog|digital|dots>      clock face
+  carpatic widgets weather city <name> | locate --yes | units c|f | off    where to show the weather for
+  carpatic widgets todo add <text> | list | done <number> | clear
+  carpatic widgets note [text]       show or set the sticky note
+  carpatic widgets arrange           pack the widgets tightly, no gaps
+  carpatic widgets monitor primary|0|1|name   which screen shows the widgets
+  carpatic widgets reset             back to the default arrangement
+  carpatic widgets doctor            check what this computer can do (fonts, D-Bus, tools)"""
+
+
+def say(*a): print(*a)
+def die(msg, code=1): print("carpatic widgets: " + msg, file=sys.stderr); sys.exit(code)
+
+
+def host_pid():
+    try: pid = int(open(conf.PIDFILE).read().strip())
+    except (OSError, ValueError): return 0
+    try:
+        if b"carpatic-widgets" in open(f"/proc/{pid}/cmdline", "rb").read(): return pid
+    except OSError: pass
+    return 0
+
+
+def start_host():
+    if host_pid(): return True
+    if not os.environ.get("DISPLAY") or not conf.in_carpatic_session(): return False
+    subprocess.Popen([sys.argv[0] if os.path.isabs(sys.argv[0]) else os.path.abspath(sys.argv[0]), "run"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    for _ in range(40):
+        time.sleep(0.1)
+        if host_pid(): return True
+    return False
+
+
+def stop_host():
+    pid = host_pid()
+    if not pid: return
+    os.kill(pid, signal.SIGTERM)
+    for _ in range(40):
+        time.sleep(0.1)
+        if not host_pid(): return
+    os.kill(pid, signal.SIGKILL)
+
+
+def poke(sig):
+    pid = host_pid()
+    if pid: os.kill(pid, sig)
+    return bool(pid)
+
+
+def need_enabled():
+    if not conf.enabled(): die("Widgets are off. Turn them on first: carpatic widgets enable")
+
+
+def mutate(fn):
+    d = conf.load()
+    try: fn(d)
+    except conf.Error as e: die(str(e))
+    conf.save(d); poke(signal.SIGHUP)
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"): say(HELP); return 0
+    c, a = argv[0], argv[1:]
+    if c == "run": from cwidgets import host; return host.run()
+    if c == "enable":
+        os.makedirs(conf.WDIR, exist_ok=True); open(conf.FLAG, "w").close()
+        if not os.path.exists(conf.LAYOUT): conf.save(conf.new_layout())
+        if start_host(): say("Widgets are on. Change them with: carpatic widgets edit")
+        else: say("Widgets are on and will appear the next time you log in (no desktop is running here).")
+        return 0
+    if c == "disable":
+        try: os.unlink(conf.FLAG)
+        except OSError: pass
+        stop_host(); say("Widgets are off. Nothing is running. Your layout is kept for next time."); return 0
+    if c == "status":
+        d = conf.load(); on = conf.enabled(); pid = host_pid()
+        say("Widgets: " + ("on" if on else "off") + (f" (running, process {pid})" if pid else " (not running)" if on else ""))
+        if on: say("On the desktop: " + (", ".join(f"{i['id']} {i['size']}" for i in d["items"]) or "nothing yet"))
+        return 0
+    if c == "list":
+        d = conf.load(); have = {i["id"]: i for i in d["items"]}
+        for k, m in conf.CATALOG.items(): say(f"{k:<11} {'on  ' + have[k]['size'] if k in have else 'off   '}  {m['title']}: {m['desc']}")
+        return 0
+    if c == "ids":      # for shell completion: ids on | off | all
+        have = {i["id"] for i in conf.load()["items"]}; want = a[0] if a else "all"
+        for k in conf.CATALOG:
+            if want == "all" or (want == "on") == (k in have): say(k)
+        return 0
+    if c == "add":
+        if not a: die("Which widget? See: carpatic widgets list")
+        mutate(lambda d: conf.add(d, a[0], a[1].upper() if len(a) > 1 else None)); say(f"Added {a[0]}." + ("" if conf.enabled() else " Turn widgets on with: carpatic widgets enable")); return 0
+    if c == "remove":
+        if not a: die("Which widget? See: carpatic widgets list")
+        mutate(lambda d: conf.remove(d, a[0])); say(f"Removed {a[0]}."); return 0
+    if c == "size":
+        if len(a) < 2 or a[1].upper() not in conf.SIZES: die("Usage: carpatic widgets size <name> S|M|L")
+        def f(d):
+            it = next((i for i in d["items"] if i["id"] == a[0]), None)
+            if not it: raise conf.Error(f"{a[0]} is not on your desktop.")
+            if a[1].upper() not in conf.CATALOG[a[0]]["dims"]: raise conf.Error("That size is not available for this widget.")
+            it["size"] = a[1].upper()
+            if conf.overlaps(d["items"], it): it["col"], it["row"] = conf.free_spot([i for i in d["items"] if i is not it], it["id"], it["size"], 12, 8)
+        mutate(f); say("Done."); return 0
+    if c == "move":
+        if len(a) < 3: die("Usage: carpatic widgets move <name> <column> <row>")
+        def f(d):
+            it = next((i for i in d["items"] if i["id"] == a[0]), None)
+            if not it: raise conf.Error(f"{a[0]} is not on your desktop.")
+            try: col, row = int(a[1]), int(a[2])
+            except ValueError: raise conf.Error("Column and row are whole numbers, starting at 0.")
+            t = dict(it, col=max(0, col), row=max(0, row))
+            if conf.overlaps(d["items"], t): raise conf.Error("Another widget is already there.")
+            it["col"], it["row"] = t["col"], t["row"]
+        mutate(f); say("Done."); return 0
+    if c == "edit":
+        need_enabled()
+        if not start_host(): die("There is no desktop to show widgets on.")
+        poke(signal.SIGUSR2); return 0
+    if c == "peek":
+        need_enabled()
+        if not start_host(): die("There is no desktop to show widgets on.")
+        poke(signal.SIGUSR1); return 0
+    if c == "look":
+        if not a or a[0] not in conf.LOOKS: die("Choose one of: " + " ".join(conf.LOOKS))
+        mutate(lambda d: d.update(look=a[0])); say("Done."); return 0
+    if c == "clock":
+        if not a or a[0] not in ("analog", "digital", "dots"): die("Choose one of: analog digital dots")
+        def f(d):
+            it = next((i for i in d["items"] if i["id"] == "clock"), None)
+            if not it: raise conf.Error("The clock is not on your desktop. Add it with: carpatic widgets add clock")
+            it.setdefault("opts", {})["clock"] = a[0]
+        mutate(f); say("Done."); return 0
+    if c == "weather":
+        sub = a[0] if a else ""
+        if sub == "city" and len(a) > 1:
+            name, lat, lon, country = _try(lambda: data.geocode(" ".join(a[1:])))
+            mutate(lambda d: d["weather"].update(name=name, lat=lat, lon=lon, country=country)); say(f"Weather for {name}{', ' + country if country else ''}."); return 0
+        if sub == "locate":
+            if "--yes" not in a: die("This asks a public service (ipwho.is) for a rough location from your internet address. Run again with --yes to allow it, or set your city: carpatic widgets weather city <name>")
+            name, lat, lon, country = _try(data.locate_by_ip)
+            mutate(lambda d: d["weather"].update(name=name, lat=lat, lon=lon, country=country)); say(f"Weather for {name}."); return 0
+        if sub == "units" and len(a) > 1 and a[1] in ("c", "f"): mutate(lambda d: d["weather"].update(units=a[1])); say("Done."); return 0
+        if sub == "off": mutate(lambda d: d.update(weather={})); say("The weather location was forgotten."); return 0
+        die("Usage: carpatic widgets weather city <name> | locate --yes | units c|f | off")
+    if c == "todo":
+        sub = a[0] if a else "list"; items = data.read_todo()
+        if sub == "add" and len(a) > 1: items.append(dict(t=" ".join(a[1:]), done=False)); data.write_todo(items); poke(signal.SIGHUP); say("Added.")
+        elif sub == "done" and len(a) > 1 and a[1].isdigit() and 1 <= int(a[1]) <= len(items): data.toggle_todo(int(a[1]) - 1); poke(signal.SIGHUP); say("Done.")
+        elif sub == "clear": data.write_todo([i for i in items if not i["done"]]); poke(signal.SIGHUP); say("Ticked items removed.")
+        elif sub == "list":
+            for n, i in enumerate(items, 1): say(f"{n:>2}. [{'x' if i['done'] else ' '}] {i['t']}")
+            if not items: say("Nothing to do.")
+        else: die("Usage: carpatic widgets todo add <text> | list | done <number> | clear")
+        return 0
+    if c == "note":
+        if a: data.write_notes(" ".join(a).replace("\\n", "\n")); poke(signal.SIGHUP); say("Saved.")
+        else: say(data.read_notes().rstrip() or "(empty)")
+        return 0
+    if c == "arrange":
+        def f(d): conf.auto_arrange(d["items"], 14, 7)
+        mutate(f); say("Widgets are packed tightly."); return 0
+    if c == "monitor":
+        if not a: die("Usage: carpatic widgets monitor primary | <number starting at 0> | <name>")
+        mutate(lambda d: d.update(monitor=a[0])); say("Widgets will show on that screen."); return 0
+    if c == "reset": conf.save(conf.reset_layout(conf.load())); poke(signal.SIGHUP); say("Widgets are back to the default arrangement."); return 0
+    if c == "doctor": return doctor()
+    die(f"Unknown command '{c}'. Try: carpatic widgets help")
+
+
+def _try(fn):
+    try: return fn()
+    except conf.Error as e: die(str(e))
+
+
+def doctor():
+    import shutil
+    ok = lambda b: "ok     " if b else "MISSING"
+    say(f"{ok(True)} widgets are {'on' if conf.enabled() else 'off (by default)'}")
+    try:
+        import gi; gi.require_version("Gtk", "3.0"); gi.require_foreign("cairo"); say(f"{ok(True)} GTK 3 and cairo")
+    except Exception as e: say(f"{ok(False)} GTK 3 / python cairo bridge: {e}")
+    for t, why in (("nmcli", "Wi-Fi switch"), ("rfkill", "Bluetooth switch"), ("dunstctl", "Do not disturb"), ("brightnessctl", "brightness"), ("wpctl", "volume (or pactl)"), ("sct", "night light (or redshift)"), ("carpatic-power", "power profile")):
+        say(f"{ok(shutil.which(t))} {t}: {why}")
+    say(f"{ok(os.environ.get('DBUS_SESSION_BUS_ADDRESS'))} session D-Bus: Now playing")
+    return 0
+
+
+if __name__ == "__main__":
+    try: sys.exit(main(sys.argv[1:]))
+    except BrokenPipeError: sys.exit(0)

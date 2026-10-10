@@ -1,0 +1,24 @@
+unbind SUPER space
+unbind SUPER k
+unbind SUPER w
+unbind SUPER p
+{ mod="SUPER",       key="Return", desc="Terminal",           func="spawn", exec=["carpatic-term"] },
+{ mod="SUPER",       key="space",  desc="App launcher",       func="spawn", exec=["carpatic-launch"] },
+{ mod="SUPER",       key="p",      desc="App launcher",       func="spawn", exec=["carpatic-launch"] },
+{ mod="SUPER",       key="w",      desc="Close window",       func="killclient" },
+{ mod="SUPER",       key="b",      desc="Browser",            func="spawn", exec=["firefox"] },
+{ mod="SUPER",       key="e",      desc="File manager",       func="spawn", exec=["thunar"] },
+{ mod="SUPER",       key="Escape", desc="System menu",        func="spawn", exec=["carpatic-launch", "power"] },
+{ mod="SUPER",       key="slash",  desc="Show keybindings",   func="spawn", exec=["carpatic-keys"] },
+{ mod="SUPER CTRL",  key="l",      desc="Lock screen",        func="spawn", exec=["carpatic-lock"] },
+{ mod="SUPER",       key="Left",   desc="Focus prev window",  func="focusstack", i=-1 },
+{ mod="SUPER",       key="Right",  desc="Focus next window",  func="focusstack", i=1 },
+{ mod="SUPER",       key="Up",     desc="Focus prev window",  func="focusstack", i=-1 },
+{ mod="SUPER",       key="Down",   desc="Focus next window",  func="focusstack", i=1 },
+{ mod="SUPER SHIFT", key="Left",   desc="Move window up",     func="movestack", i=-1 },
+{ mod="SUPER SHIFT", key="Right",  desc="Move window down",   func="movestack", i=1 },
+{ mod="SUPER",       key="g",      desc="Toggle gaps/bar",    func="togglebar" },
+{ mod="SUPER",       key="k",      desc="Keyboard shortcuts", func="spawn", exec=["carpatic-cheatsheet", "show"] },
+{ mod="SUPER",      key="t",      desc="Auto-tiling on or off (this workspace)", func="togglelayout" },
+unbind SUPER Tab
+{ mod="SUPER",      key="Tab",    desc="Workspace overview", func="spawn", exec=["carpatic-overview"] },

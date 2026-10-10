@@ -1,0 +1,24 @@
+#!/bin/sh
+# carpatic-layout : window layout of your workspaces. Auto-tiling (windows arrange themselves, master on the left) or Floating (windows stay where you put them).
+#   carpatic-layout get                  print the layout you chose: tile | float (your choice, else the style's default)
+#   carpatic-layout set tile|float       choose it for ALL workspaces, remembered, applied live
+#   carpatic-layout set default          forget your choice (the style's default applies)
+#   carpatic-layout toggle               flip this workspace between auto-tiling and floating (same as the Super+T shortcut)
+#   carpatic-layout float|tile           (internal) switch every tag once through the hidden hotkeys, then return to tag 1
+# dwm has no IPC: it reads the default for new sessions from ~/.config/carpatic/dwm-deflayout and applies [appearance] default_layout live.
+. "$(dirname "$0")/carpatic-lib" 2>/dev/null || . carpatic-lib
+cur() { v=$(get_setting LAYOUT ""); [ -n "$v" ] || v=$(profile_get "$(get_setting PROFILE windows)" LAYOUT); case $v in float) echo float;; *) echo tile;; esac; }
+case ${1:-} in
+  get) cur ;;
+  set) case ${2:-} in
+         tile|float) set_setting LAYOUT "$2" ;;
+         default) set_setting LAYOUT "" ;;
+         *) echo "usage: carpatic-layout set tile|float|default" >&2; exit 2 ;;
+       esac
+       [ "${3:-}" = --no-apply ] || exec carpatic-apply ;;
+  toggle) exec xdotool key super+alt+t ;;
+  float) k=f;; tile) k=t;;
+  *) echo "usage: carpatic-layout get|set tile|float|toggle" >&2; exit 2 ;;
+esac
+for n in 1 2 3 4 5 6 7 8 9; do xdotool key --delay 40 "super+$n" "super+ctrl+alt+$k"; done
+xdotool key --delay 40 super+1

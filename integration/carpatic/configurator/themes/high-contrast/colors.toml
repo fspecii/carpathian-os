@@ -1,0 +1,33 @@
+# Carpatic High Contrast: white on black, yellow accent. Contrast ratios: foreground/background 21:1, accent/background 14.6:1,
+# foreground on selection 10:1, muted text 12.6:1. For low-vision users; selected with `carpatic-a11y high-contrast on`.
+mode = "dark"
+
+accent = "#ffd400"
+selection = "#0a3d91"
+muted = "#c8c8c8"
+
+background = "#000000"
+dark_background = "#000000"
+darker_background = "#000000"
+lighter_background = "#1a1a1a"
+
+foreground = "#ffffff"
+dark_foreground = "#c8c8c8"
+light_foreground = "#ffffff"
+bright_foreground = "#ffffff"
+
+red = "#ff6b6b"
+green = "#5dff7a"
+yellow = "#ffd400"
+blue = "#6ab7ff"
+magenta = "#ff7bff"
+cyan = "#4dffff"
+orange = "#ffa23a"
+brown = "#c9a27a"
+
+bright_red = "#ff9a9a"
+bright_green = "#9bffae"
+bright_yellow = "#fff066"
+bright_blue = "#a3d3ff"
+bright_magenta = "#ffb0ff"
+bright_cyan = "#9bffff"

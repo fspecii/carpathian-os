@@ -1,0 +1,21 @@
+unbind SUPER s
+unbind SUPER v
+unbind SUPER l
+unbind SUPER d
+unbind SUPER a
+{ mod="SUPER",      key="a",     desc="Show applications",    func="spawn", exec=["carpatic-launch"] },
+{ mod="ALT",        key="Tab",   desc="Switch window",        func="spawn", exec=["carpatic-switch"] },
+{ mod="SUPER",      key="Tab",   desc="Switch application",   func="spawn", exec=["carpatic-switch"] },
+{ mod="ALT",        key="F2",    desc="Run command",          func="spawn", exec=["carpatic-launch", "run"] },
+{ mod="ALT",        key="F4",    desc="Close window",         func="killclient" },
+{ mod="CTRL ALT",   key="t",     desc="Terminal",             func="spawn", exec=["carpatic-term"] },
+{ mod="SUPER",      key="d",     desc="Show desktop",         func="view", ui=256 },
+{ mod="SUPER",      key="l",     desc="Lock screen",          func="spawn", exec=["carpatic-lock"] },
+{ mod="SUPER",      key="e",     desc="Files",                func="spawn", exec=["thunar"] },
+{ mod="SUPER",      key="Left",  desc="Snap left",            func="spawn", exec=["carpatic-snap", "left"] },
+{ mod="SUPER",      key="Right", desc="Snap right",           func="spawn", exec=["carpatic-snap", "right"] },
+{ mod="SUPER",      key="Up",    desc="Maximize",             func="spawn", exec=["carpatic-snap", "max"] },
+{ mod="SUPER",      key="Down",  desc="Restore size",         func="spawn", exec=["carpatic-snap", "restore"] },
+{ mod="SUPER", key="s", desc="Quick settings", func="spawn", exec=["carpatic-flyout", "quick"] },
+{ mod="SUPER", key="v", desc="Calendar and notifications", func="spawn", exec=["carpatic-flyout", "calendar"] },
+{ mod="SUPER",      key="t",      desc="Auto-tiling on or off (this workspace)", func="togglelayout" },

@@ -1,0 +1,27 @@
+# Zen design tokens as DATA for other components (widgets skin, lock screen, greeter). Facts read from the Zorin GTK theme CSS and the
+# Zorin Taskbar defaults (see stylepacks/RESEARCH.md); colours per mode live in themes/zen-{light,dark}/colors.toml, accents in accents.list.
+[radius]
+window = 15            # GTK decoration radius
+control = 9            # buttons, entries
+card = 15              # popovers, OSD, notifications
+round_button = 999     # window buttons are circles
+
+[motion]
+default_ms = 150       # transition: 150ms ease-out
+
+[panel]
+height = 48
+icon = 32
+preview = [240, 150]   # Zorin Taskbar window-preview-size 200 + padding
+indicator = "line under the icon, accent when focused"
+show_desktop_width = 8
+
+[start_menu]
+size = [720, 560]
+columns = [470, 250]
+row_height = 44
+icon = 32
+
+[shadow]
+window = "0 10px 15px 5px rgba(0,0,0,0.175)"
+outline = "0 0 0 1px rgba(fg,0.075)"

@@ -1,0 +1,32 @@
+# Zen light. Palette values follow the public colour tokens of the Zorin Blue light GTK theme (colour facts, no code copied); accent darkened for 4.5:1 text on it.
+mode = "light"
+
+accent = "#0a82c8"
+selection = "#bfe0f3"
+muted = "#7e92a5"
+
+background = "#eaf0f6"
+dark_background = "#ffffff"
+darker_background = "#dae2ea"
+lighter_background = "#f3f6fa"
+
+foreground = "#123354"
+dark_foreground = "#7e92a5"
+light_foreground = "#3b5873"
+bright_foreground = "#ffffff"
+
+red = "#c8323f"
+green = "#1a8f6b"
+yellow = "#a87800"
+blue = "#0a6fb8"
+magenta = "#7c4fc0"
+cyan = "#0f7f90"
+orange = "#c0551a"
+brown = "#8a5a3a"
+
+bright_red = "#d94453"
+bright_green = "#25a37c"
+bright_yellow = "#b88600"
+bright_blue = "#2a8ad8"
+bright_magenta = "#9a68da"
+bright_cyan = "#1a98ab"

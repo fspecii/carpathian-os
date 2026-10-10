@@ -1,0 +1,638 @@
+#!/usr/bin/env python3
+"""LEGACY Appearance-only window, kept as the fallback of the carpatic-settings launcher when the new Settings (settings/) is not installed. Pages: Style, Colours, Fonts, Icons, Cursors, Wallpapers + live preview.
+Every change calls the carpatic-* CLI tools (carpatic-profile / -theme / -appearance / -pack), which apply live and persist."""
+import os, sys, glob, subprocess
+sys.path.insert(0, "/usr/local/lib/carpatic"); sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import gi
+gi.require_version("Gtk", "3.0"); gi.require_version("Pango", "1.0"); gi.require_version("PangoCairo", "1.0")
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import Gtk, Gdk, GLib, Pango, PangoCairo, GdkPixbuf
+from carpatic_ui import *
+from carpatic_buttons import STYLES as BTN_STYLES, draw_card, draw_titlebar
+
+def rgb(h):
+    h = h.lstrip("#"); return tuple(int(h[i:i+2], 16)/255 for i in (0, 2, 4))
+
+class Preview(Gtk.DrawingArea):
+    """Mini desktop: wallpaper, the style's bar/dock layout, one window with title buttons, fonts, icons - all from the current state files."""
+    def __init__(self):
+        super().__init__(); self.set_size_request(340, 230); self.connect("draw", self.on_draw); self.wp = None; self.wp_path = None
+    def profile_style(self, prof):
+        try:
+            for line in open(f"{SHARE}/profiles/{prof}.conf"):
+                if line.startswith("TITLEBAR_STYLE="): return line.split("=", 1)[1].split("#")[0].strip()
+        except OSError: pass
+        return "windows"
+    def is_pack(self, prof):
+        try:
+            return any(l.startswith("STYLEPACK=") for l in open(f"{SHARE}/profiles/{prof}.conf"))
+        except OSError: return False
+    def on_draw(self, w, cr):
+        W, H = w.get_allocated_width(), w.get_allocated_height()
+        s = settings(); theme = s.get("THEME", "carpatic"); c = read_colors(theme)
+        if s.get("ACCENT"): c["accent"] = s["ACCENT"]
+        pe = read_env(f"{CFG}/profile.env"); ae = read_env(f"{CFG}/appearance.env")
+        prof = pe.get("PROFILE", "tiling")
+        try: wp = open(f"{CFG}/wallpaper").read().strip()
+        except OSError: wp = ""
+        if wp != self.wp_path:
+            self.wp_path = wp
+            try: self.wp = GdkPixbuf.Pixbuf.new_from_file_at_scale(wp, W, int(W*0.5625), False) if wp else None
+            except Exception: self.wp = None
+        # wallpaper (cover)
+        if self.wp:
+            Gdk.cairo_set_source_pixbuf(cr, self.wp, 0, (H - self.wp.get_height())/2); cr.paint()
+        else:
+            cr.set_source_rgb(*rgb(c.get("background", "#222222"))); cr.paint()
+        bar = rgb(c.get("dark_background", "#222222")); fg = rgb(c.get("foreground", "#ffffff")); acc = rgb(c.get("accent", "#88aaff"))
+        ui = ae.get("UI_FONT", "Sans 10"); mono = ae.get("MONO_FONT", "Monospace 10")
+        def text(x, y, s_, font, color, size=None):
+            fd = Pango.FontDescription(font)
+            if size: fd.set_size(int(size * Pango.SCALE))
+            lay = self.create_pango_layout(s_); lay.set_font_description(fd); cr.set_source_rgb(*color); cr.move_to(x, y); PangoCairo.show_layout(cr, lay)
+            return lay.get_pixel_size()
+        def rect(x, y, w_, h_, col, a=1.0):
+            cr.set_source_rgba(*col, a); cr.rectangle(x, y, w_, h_); cr.fill()
+        top = left = bottom = 0
+        if self.is_pack(prof):   # style packs (stylepacks/): rounded icon taskbar, start tile, tray and clock
+            bottom = 24; rect(0, H-24, W, 24, bar)
+            cr.set_source_rgb(*acc); cr.arc(18, H-12, 7, 0, 6.2832); cr.fill()
+            for i in range(4): rect(34 + i*22, H-18, 16, 12, rgb(c.get("lighter_background", "#444")))
+            rect(34 + 22, H-4, 16, 2, acc)
+            text(W-40, H-20, "12:30", ui, fg, 8)
+        elif prof in ("windows", "beginner"):
+            bottom = 22; rect(0, H-22, W, 22, bar); rect(0, H-22, 26, 22, acc)
+            for i in range(3): rect(34 + i*52, H-19, 46, 16, rgb(c.get("lighter_background", "#444")))
+            text(W-40, H-18, "12:30", ui, fg, 8)
+        elif prof == "macos":
+            top = 14; rect(0, 0, W, 14, bar, 0.92); text(8, 0, "Carpatic", ui, fg, 7); text(W-70, 0, "Wed 12:30", ui, fg, 7)
+            rect(W/2-70, H-34, 140, 28, bar, 0.85)
+            for i in range(5): rect(W/2-62 + i*26, H-31, 20, 20, rgb(c.get("lighter_background", "#444")))
+        elif prof == "ubuntu":
+            top = 14; left = 26; rect(0, 0, W, 14, bar); text(W/2-30, 0, "Wed 12:30", ui, fg, 7); rect(0, 14, 26, H-14, bar)
+            for i in range(5): rect(4, 22 + i*26, 18, 18, rgb(c.get("lighter_background", "#444")))
+        else:
+            top = 16; rect(0, 0, W, 16, bar); rect(0, 0, 16, 16, acc)
+            for i in range(1, 6): text(2 + i*16, 0, str(i), mono, fg, 7)
+        # window area
+        ax, ay, aw, ah = left, top, W-left, H-top-bottom
+        def window(x, y, w_, h_, title, lines):
+            rect(x, y, w_, h_, rgb(c.get("background", "#222222")))
+            cr.set_source_rgb(*acc); cr.set_line_width(1.5); cr.rectangle(x, y, w_, h_); cr.stroke()
+            if pe.get("PROFILE") != "tiling":
+                st_ = s.get("WINDOW_BUTTONS") or self.profile_style(pe.get("PROFILE", "tiling"))
+                draw_titlebar(cr, x, y, w_, 16, st_, c, True, None, None, s.get("BUTTONS_SIDE") or "auto", s.get("BUTTONS_SHOWN") or "all", title)
+            yy = y + (20 if pe.get("PROFILE") != "tiling" else 4)
+            for ln, f in lines:
+                text(x + 8, yy, ln, f, fg, 8); yy += 15
+            return yy
+        if prof == "tiling":
+            window(ax+4, ay+4, aw/2-6, ah-8, "", [("$ carpatic", mono), ("~ ls", mono)])
+            window(ax+aw/2+2, ay+4, aw/2-6, ah-8, "", [("Files", ui), ("Documents", ui)])
+        else:
+            wx, wy, ww, wh = ax+aw*0.14, ay+ah*0.12, aw*0.72, ah*0.74
+            yy = window(wx, wy, ww, wh, "Files", [("The quick brown fox", ui), ("$ carpatic --hello", mono)])
+            # icon row from the selected icon theme
+            it = Gtk.IconTheme.new(); it.set_custom_theme(ae.get("ICON_THEME", "Adwaita"))
+            for i, n in enumerate(("folder", "utilities-terminal", "web-browser", "preferences-system")):
+                try:
+                    pb = it.load_icon(n, 28, 0); Gdk.cairo_set_source_pixbuf(cr, pb, wx + 12 + i*38, yy + 6); cr.paint()
+                except Exception: pass
+        return False
+
+class App(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="Carpatic Settings")
+        self.set_default_size(1180, 720); self.set_position(Gtk.WindowPosition.CENTER)
+        self.css = Gtk.CssProvider(); install_css(self.css)
+        self.pending = []; self.proc = None
+        outer = Gtk.Box(); self.add(outer)
+        self.stack = Gtk.Stack(); self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        side = Gtk.StackSidebar(); side.set_stack(self.stack); side.set_size_request(170, -1)
+        outer.pack_start(side, False, False, 0)
+        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        outer.pack_start(right, True, True, 0)
+        right.pack_start(self.stack, True, True, 0)
+        pv = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6); pv.set_margin_end(18); pv.set_margin_top(18); pv.set_margin_bottom(18); pv.set_margin_start(6)
+        l = Gtk.Label(label="Live preview", xalign=0); l.get_style_context().add_class("ctitle"); pv.pack_start(l, False, False, 0)
+        self.preview = Preview(); pv.pack_start(self.preview, False, False, 0)
+        self.status = Gtk.Label(label="", xalign=0, wrap=True); self.status.get_style_context().add_class("sub"); self.status.set_max_width_chars(44)
+        pv.pack_start(self.status, False, False, 0)
+        self.spin = Gtk.Spinner(); pv.pack_start(self.spin, False, False, 0)
+        hint = Gtk.Label(label="Changes apply instantly and are kept after a reboot.", xalign=0, wrap=True); hint.get_style_context().add_class("sub"); pv.pack_end(hint, False, False, 0)
+        outer.pack_start(pv, False, False, 0); self.pv = pv
+        self.build_pages(); self.restyle()
+        self.mt = self.mtimes(); GLib.timeout_add(2000, self.watch)
+        self.connect("destroy", Gtk.main_quit)
+
+    def mtimes(self):
+        out = []
+        for f in (f"{CFG}/settings.conf", f"{CFG}/appearance.env"):
+            try: out.append(os.stat(f).st_mtime)
+            except OSError: out.append(0)
+        return out
+    def watch(self):
+        # settings changed by someone else (CLI, hotkey, another window): follow
+        m = self.mtimes()
+        if m != self.mt and self.proc is None and not self.pending:
+            self.mt = m; self.restyle(); self.refresh_all()
+        elif self.proc is None: self.mt = m
+        return True
+
+    # ---------- state / apply plumbing ----------
+    def st(self): return settings()
+    def restyle(self):
+        s = self.st(); self.css.load_from_data(card_css(s.get("THEME", "carpatic"), s.get("ACCENT", "")).encode()); self.preview.queue_draw()
+    def queue(self, *cmd, msg=""):
+        self.pending.append((cmd, msg)); self.pump()
+    def pump(self):
+        if self.proc is not None or not self.pending: return
+        cmd, msg = self.pending.pop(0); self.status.set_text(msg or "Applying..."); self.spin.start()
+        self.proc = run(*cmd, done=self.finished)
+    def finished(self, rc):
+        self.proc = None
+        if self.pending: self.pump(); return
+        self.spin.stop(); self.status.set_text("" if rc == 0 else "That did not work (see the terminal output or try again).")
+        self.restyle(); self.refresh_all()
+    def page(self, name, title, sub, body, scroll=True):
+        box = self.boxes.get(name)
+        if box is None:
+            box = self.new_box(); self.stack.add_titled(box, name, title); self.boxes[name] = box
+        t = Gtk.Label(label=title, xalign=0); t.get_style_context().add_class("h1"); box.pack_start(t, False, False, 0)
+        s = Gtk.Label(label=sub, xalign=0, wrap=True); s.get_style_context().add_class("sub"); box.pack_start(s, False, False, 0)
+        if scroll:
+            sw = Gtk.ScrolledWindow(); sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC); sw.add(body); box.pack_start(sw, True, True, 0)
+        else: box.pack_start(body, True, True, 0)
+        box.show_all()
+    def new_box(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12); box.set_margin_start(24); box.set_margin_top(20); box.set_margin_end(12); box.set_margin_bottom(16); return box
+    def lazy(self, name, title, builder):
+        """Register a page whose widgets are built the first time it is shown (keeps start-up fast)."""
+        box = self.new_box(); self.stack.add_titled(box, name, title); self.boxes[name] = box; self.builders[name] = builder
+    def on_visible(self, *_):
+        n = self.stack.get_visible_child_name()
+        self.pv.set_visible(n not in ("updates", "access", "touchpad", "display", "language", "startup", "widgets"))   # the live preview only belongs to the look pages
+        b = self.builders.pop(n, None)
+        if b: self.guard = True; b(); self.guard = False; self.built.add(n); self.stack.get_visible_child().show_all()
+    def flow(self, cols=3):
+        f = Gtk.FlowBox(); f.set_selection_mode(Gtk.SelectionMode.NONE); f.set_max_children_per_line(cols); f.set_min_children_per_line(2)
+        f.set_row_spacing(12); f.set_column_spacing(12); f.set_homogeneous(True); f.set_valign(Gtk.Align.START); return f
+    def clear(self, c):
+        for ch in c.get_children(): c.remove(ch)
+
+    def build_pages(self):
+        self.guard = False; self.boxes = {}; self.builders = {}; self.built = set(); self.pack_cache = None
+        self.build_style(); self.built.add("style")
+        for n, t, f in (("colours", "Colours", self.build_colours), ("fonts", "Fonts", self.build_fonts), ("icons", "Icon packs", self.build_icons),
+                        ("cursors", "Cursors", self.build_cursors), ("wallpapers", "Wallpapers", self.build_wallpapers)):
+            self.lazy(n, t, f)
+        try:                                   # Updates, Accessibility, Touchpad, Screen, Typing in other languages (compat/gui)
+            from carpatic_system_pages import SystemPages
+            self.syspages = SystemPages(self); self.syspages.register()
+        except ImportError: self.syspages = None
+        try:                                   # Startup and screensaver (login animation, screensaver, boot menu; motion/gui)
+            from carpatic_motion_pages import MotionPages
+            self.motionpages = MotionPages(self); self.motionpages.register()
+        except ImportError: self.motionpages = None
+        try:                                   # Widgets (desktop widgets, off by default; widgets/gui)
+            from carpatic_widgets_pages import WidgetsPages
+            self.widgetpages = WidgetsPages(self); self.widgetpages.register()
+        except ImportError: self.widgetpages = None
+        self.stack.connect("notify::visible-child-name", self.on_visible)
+
+    def refresh_all(self):
+        """Refresh only the pages that exist; the rest build from fresh state when first shown."""
+        self.guard = True; self.pack_cache = None
+        try:
+            fn = {"style": self.fill_style, "colours": self.fill_themes, "fonts": self.fill_fonts, "icons": self.fill_icons, "cursors": self.fill_cursors, "wallpapers": self.fill_walls}
+            for n in list(self.built):
+                if n in fn: fn[n]()
+                elif n == "startup": pass
+                elif getattr(self, "syspages", None): self.syspages.refresh(n)
+        finally: self.guard = False
+
+    # ---------- Style ----------
+    def build_style(self):
+        self.style_flow = self.flow(3); self.style_buttons = {}; self.style_badges = {}
+        group = None
+        for pid, glyph, title, blurb in PROFILES:
+            b = Gtk.RadioButton.new_from_widget(group) if group else Gtk.RadioButton(); group = group or b
+            b.set_mode(False); b.get_style_context().add_class("card")
+            v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            for txt, cls in ((glyph, "glyph"), (title, "ctitle"), (blurb, "cdesc")):
+                l = Gtk.Label(label=txt); l.get_style_context().add_class(cls); l.set_line_wrap(True); l.set_max_width_chars(26); l.set_justify(Gtk.Justification.CENTER); v.pack_start(l, False, False, 0)
+            badge = Gtk.Label(label="In use"); badge.get_style_context().add_class("badge"); badge.set_halign(Gtk.Align.CENTER); badge.set_no_show_all(True); badge.hide()
+            v.pack_start(badge, False, False, 2); self.style_badges[pid] = badge
+            b.add(v); b.connect("toggled", self.on_style, pid); self.style_buttons[pid] = b; self.style_flow.add(b)
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12); body.pack_start(self.style_flow, False, False, 0)
+        tip = Gtk.Label(label="This is the same question the Welcome asked. Changing it moves the bars, shortcuts and launcher. Your colours, fonts and icons stay as they are.", xalign=0, wrap=True)
+        tip.get_style_context().add_class("sub"); body.pack_start(tip, False, False, 0)
+        self.look_box = Gtk.Box(spacing=12); body.pack_start(self.look_box, False, False, 0)
+        wb = Gtk.Button(label="Run the Welcome again"); wb.connect("clicked", lambda *_: run("carpatic-welcome")); wb.set_halign(Gtk.Align.START); body.pack_start(wb, False, False, 0)
+        tpb = Gtk.Button(label="Open theme picker"); tpb.set_tooltip_text("Change the theme, wallpaper, accent, borders, icons and fonts with the arrow keys, live. Super+Ctrl+Shift+Space"); tpb.connect("clicked", lambda *_: run("carpatic-theme-picker")); tpb.set_halign(Gtk.Align.START); body.pack_start(tpb, False, False, 0)
+        # ---- Window buttons: close / minimise / maximise ----
+        ht = Gtk.Label(label="Window buttons", xalign=0); ht.get_style_context().add_class("h1"); ht.set_margin_top(14); body.pack_start(ht, False, False, 0)
+        hs = Gtk.Label(label="How the close, minimise and maximise buttons look. Each style is shown in dark and light. Your choice is kept when you change colours; changing the desktop style above resets it to that style's usual buttons.", xalign=0, wrap=True)
+        hs.get_style_context().add_class("sub"); body.pack_start(hs, False, False, 0)
+        self.btn_flow = self.flow(3); self.btn_buttons = {}; g2 = None
+        for sid, lab, desc in BTN_STYLES:
+            b = Gtk.RadioButton.new_from_widget(g2) if g2 else Gtk.RadioButton(); g2 = g2 or b
+            b.set_mode(False); b.get_style_context().add_class("card")
+            v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            da = Gtk.DrawingArea(); da.set_size_request(210, 104); da.connect("draw", self.on_btn_draw, sid); v.pack_start(da, False, False, 0)
+            for txt, cls in ((lab, "ctitle"), (desc, "cdesc")):
+                l = Gtk.Label(label=txt); l.get_style_context().add_class(cls); v.pack_start(l, False, False, 0)
+            b.add(v); b.connect("toggled", self.on_btn_style, sid); self.btn_buttons[sid] = b; self.btn_flow.add(b)
+        body.pack_start(self.btn_flow, False, False, 0)
+        opt = Gtk.Box(spacing=18); self.btn_side = {}; self.btn_shown = {}; gs = None
+        opt.pack_start(Gtk.Label(label="Position"), False, False, 0)
+        for key, lab in (("auto", "Style default"), ("left", "Left"), ("right", "Right")):
+            r = Gtk.RadioButton.new_with_label_from_widget(gs, lab) if gs else Gtk.RadioButton.new_with_label(None, lab); gs = gs or r
+            r.set_mode(False); r.get_style_context().add_class("pill"); r.connect("toggled", self.on_btn_opt, "buttons-side", key); self.btn_side[key] = r; opt.pack_start(r, False, False, 0)
+        opt.pack_start(Gtk.Label(label="   Show"), False, False, 0); gs = None
+        for key, lab in (("all", "All three"), ("close", "Only close")):
+            r = Gtk.RadioButton.new_with_label_from_widget(gs, lab) if gs else Gtk.RadioButton.new_with_label(None, lab); gs = gs or r
+            r.set_mode(False); r.get_style_context().add_class("pill"); r.connect("toggled", self.on_btn_opt, "buttons-shown", key); self.btn_shown[key] = r; opt.pack_start(r, False, False, 0)
+        body.pack_start(opt, False, False, 0)
+        # ---- Window look: borders, corners, gaps ----
+        lt = Gtk.Label(label="Window look", xalign=0); lt.get_style_context().add_class("h1"); lt.set_margin_top(14); body.pack_start(lt, False, False, 0)
+        ls = Gtk.Label(label="Borders, rounded corners and the space between tiled windows. Changes apply live. Zen is airy, Compact packs windows tightly.", xalign=0, wrap=True)
+        ls.get_style_context().add_class("sub"); body.pack_start(ls, False, False, 0)
+        self.look_prev = Gtk.DrawingArea(); self.look_prev.set_size_request(420, 220); self.look_prev.set_valign(Gtk.Align.START); self.look_prev.set_halign(Gtk.Align.START); self.look_prev.connect("draw", self.on_look_draw)
+        pv = Gtk.Box(spacing=18); pv.pack_start(self.look_prev, False, False, 0)
+        grid = Gtk.Grid(column_spacing=12, row_spacing=8); self.look_spins = {}; self.look_deb = {}
+        for row, (key, lab, lo, hi) in enumerate((("corners", "Corner radius", 0, 20), ("inner-gap", "Gap between windows", 0, 60), ("outer-gap", "Gap to the screen edge", 0, 60),
+                                                  ("border-width", "Border width", 0, 8), ("border-highlight", "Highlight (extra border on the focused window)", 0, 6))):
+            grid.attach(Gtk.Label(label=lab, xalign=0), 0, row, 1, 1)
+            sp = Gtk.SpinButton.new_with_range(lo, hi, 1); sp.connect("value-changed", self.on_look_spin, key); self.look_spins[key] = sp; grid.attach(sp, 1, row, 1, 1)
+        self.look_smart = Gtk.CheckButton(label="No gaps when there is a single window"); self.look_smart.connect("toggled", self.on_look_smart); grid.attach(self.look_smart, 0, 5, 2, 1)
+        self.look_cols = {}
+        for row, (key, lab) in enumerate((("border-active", "Focused border colour"), ("border-inactive", "Other windows border colour")), start=6):
+            grid.attach(Gtk.Label(label=lab, xalign=0), 0, row, 1, 1)
+            cb = Gtk.ColorButton(); cb.connect("color-set", self.on_look_color, key); self.look_cols[key] = cb
+            rb = Gtk.Button(label="Use the theme"); rb.connect("clicked", lambda b, k=key: self.queue("carpatic-appearance", "set", k, "default", msg="Applying window look..."))
+            hb = Gtk.Box(spacing=8); hb.pack_start(cb, False, False, 0); hb.pack_start(rb, False, False, 0); grid.attach(hb, 1, row, 1, 1)
+        pv.pack_start(grid, False, False, 0); body.pack_start(pv, False, False, 0)
+        pr = Gtk.Box(spacing=10)
+        for name, lab in (("default", "Style default"), ("zen", "Zen"), ("compact", "Compact")):
+            b = Gtk.Button(label=lab); b.get_style_context().add_class("tile"); b.connect("clicked", lambda _b, n=name: self.queue("carpatic-appearance", "look", n, msg="Applying window look...")); pr.pack_start(b, False, False, 0)
+        body.pack_start(pr, False, False, 0)
+        self.page("style", "Style", "Where are you coming from? Pick the desktop that feels most familiar. You can change it any time.", body)
+        self.fill_style()
+    def fill_style(self):
+        cur = self.st().get("PROFILE", "tiling")
+        for pid, b in self.style_buttons.items():
+            b.set_active(pid == cur); self.style_badges[pid].set_visible(pid == cur)
+        self.fill_look()
+        st = self.st(); cs = self.current_btn_style()
+        for sid, b in self.btn_buttons.items(): b.set_active(sid == cs)
+        for k, r in self.btn_side.items(): r.set_active(k == (st.get("BUTTONS_SIDE") or "auto"))
+        for k, r in self.btn_shown.items(): r.set_active(k == (st.get("BUTTONS_SHOWN") or "all"))
+        lv = self.look_vals()
+        if True:
+            for k, sp in self.look_spins.items(): sp.set_value(lv[k])
+            self.look_smart.set_active(lv["smart"])
+            pal = read_colors(st.get("THEME", "carpatic"))
+            for k, env, dflt in (("border-active", "BORDER_ACTIVE", pal.get("accent", "#5cc8a8")), ("border-inactive", "BORDER_INACTIVE", pal.get("lighter_background", "#1e2430"))):
+                c = Gdk.RGBA(); c.parse(st.get(env) or dflt); self.look_cols[k].set_rgba(c)
+        self.look_prev.queue_draw()
+    def look_vals(self):
+        st = self.st(); prof = st.get("PROFILE", "tiling"); d = {}
+        for key, env, dflt in (("corners", "CORNER_RADIUS", 0), ("inner-gap", "INNER_GAP", 8), ("outer-gap", "OUTER_GAP", 8), ("border-width", "BORDER_WIDTH", 2), ("border-highlight", "BORDER_HIGHLIGHT", 0)):
+            v = st.get(env) or profile_value(prof, env) or dflt
+            try: d[key] = int(v)
+            except ValueError: d[key] = dflt
+        d["smart"] = (st.get("SMART_GAPS") or profile_value(prof, "SMART_GAPS") or "0") == "1"
+        return d
+    def on_look_spin(self, sp, key):
+        if self.guard: return
+        if key in self.look_deb: GLib.source_remove(self.look_deb[key])
+        self.look_deb[key] = GLib.timeout_add(450, self.look_commit, key, int(sp.get_value()))
+        self.look_prev.queue_draw()
+    def look_commit(self, key, val):
+        self.look_deb.pop(key, None); self.queue("carpatic-appearance", "set", key, str(val), msg="Applying window look..."); return False
+    def on_look_smart(self, cb):
+        if self.guard: return
+        self.queue("carpatic-appearance", "set", "smart-gaps", "1" if cb.get_active() else "0", msg="Applying window look...")
+    def on_look_color(self, cb, key):
+        c = cb.get_rgba(); hx = "#%02x%02x%02x" % (round(c.red * 255), round(c.green * 255), round(c.blue * 255))
+        self.queue("carpatic-appearance", "set", key, hx, msg="Applying window look..."); self.look_prev.queue_draw()
+    def on_look_draw(self, w, cr):
+        v = {k: int(sp.get_value()) for k, sp in self.look_spins.items()}; st = self.st()
+        pal = read_colors(st.get("THEME", "carpatic")); acc = st.get("BORDER_ACTIVE") or pal.get("accent", "#5cc8a8"); ina = st.get("BORDER_INACTIVE") or pal.get("lighter_background", "#1e2430")
+        W, H = w.get_allocated_width(), w.get_allocated_height(); k = 0.5  # preview scale: 1 px of the real desktop = 0.5 px here
+        def col(h, a=1.0): h = h.lstrip("#"); cr.set_source_rgba(int(h[0:2], 16) / 255, int(h[2:4], 16) / 255, int(h[4:6], 16) / 255, a)
+        col(pal.get("background", "#11151c")); cr.rectangle(0, 0, W, H); cr.fill()
+        col(pal.get("foreground", "#e7ecf3"), 0.16); cr.rectangle(0, 0, W, H); cr.fill()
+        og, ig, r, bw, hl = v["outer-gap"] * k, v["inner-gap"] * k, v["corners"] * k, max(1, v["border-width"] * k), v["border-highlight"] * k
+        cw = (W - 2 * og - ig) / 2; ch = H - 2 * og
+        for i, focused in enumerate((False, True)):
+            x = og + i * (cw + ig); y = og; b = bw + (hl if focused else 0); rr = min(r, cw / 2, ch / 2)
+            col(acc if focused else ina)
+            cr.new_sub_path(); cr.arc(x + cw - rr, y + rr, rr, -1.5708, 0); cr.arc(x + cw - rr, y + ch - rr, rr, 0, 1.5708); cr.arc(x + rr, y + ch - rr, rr, 1.5708, 3.1416); cr.arc(x + rr, y + rr, rr, 3.1416, 4.7124); cr.close_path(); cr.fill()
+            col(pal.get("background", "#11151c")); ri = max(0, rr - b)
+            x2, y2, w2, h2 = x + b, y + b, cw - 2 * b, ch - 2 * b
+            cr.new_sub_path(); cr.arc(x2 + w2 - ri, y2 + ri, ri, -1.5708, 0); cr.arc(x2 + w2 - ri, y2 + h2 - ri, ri, 0, 1.5708); cr.arc(x2 + ri, y2 + h2 - ri, ri, 1.5708, 3.1416); cr.arc(x2 + ri, y2 + ri, ri, 3.1416, 4.7124); cr.close_path(); cr.fill()
+            col(pal.get("lighter_background", "#1e2430")); cr.rectangle(x2 + ri / 2, y2, w2 - ri, 14); cr.fill()
+        return False
+    def current_btn_style(self):
+        st = self.st()
+        if st.get("WINDOW_BUTTONS"): return st["WINDOW_BUTTONS"]
+        try:
+            for line in open(f"{SHARE}/profiles/{st.get('PROFILE', 'tiling')}.conf"):
+                if line.startswith("TITLEBAR_STYLE="): return line.split("=", 1)[1].split("#")[0].strip()
+        except OSError: pass
+        return "windows"
+    def on_btn_draw(self, w, cr, sid):
+        st = self.st(); side = st.get("BUTTONS_SIDE") or "auto"; shown = st.get("BUTTONS_SHOWN") or "all"
+        dark = read_colors("carpatic"); light = read_colors("carpatic-light")
+        if st.get("ACCENT"): dark["accent"] = light["accent"] = st["ACCENT"]
+        draw_card(cr, w.get_allocated_width(), w.get_allocated_height(), sid, dark, light, side, shown)
+    def on_btn_style(self, b, sid):
+        if self.guard or not b.get_active() or sid == self.current_btn_style(): return
+        self.queue("carpatic-appearance", "set", "window-buttons", sid, msg="Applying window buttons...")
+    def on_btn_opt(self, r, key, val):
+        if self.guard or not r.get_active(): return
+        cur = self.st().get({"buttons-side": "BUTTONS_SIDE", "buttons-shown": "BUTTONS_SHOWN"}[key]) or ("auto" if key == "buttons-side" else "all")
+        if cur == val: return
+        self.queue("carpatic-appearance", "set", key, val, msg="Applying window buttons...")
+        for w in self.btn_buttons.values(): w.queue_draw()
+    def fill_look(self):
+        for ch in self.look_box.get_children(): self.look_box.remove(ch)
+        cur = self.st().get("PROFILE", "tiling")
+        ids = (profile_value(cur, "PACKS") or "").split()
+        if not ids: return
+        if self.pack_cache is None: self.pack_cache = [r.split("\t") for r in sh("carpatic-pack", "list").split("\n") if r]
+        miss = [r for r in self.pack_cache if r[0] in ids and r[3] == "0"]
+        if not miss: return
+        dl = sum(float(r[7] or 0) for r in miss); names = ", ".join(r[2] for r in miss)
+        l = Gtk.Label(label=f"For the full look: {names} ({dl:.1f} MB to download).", xalign=0, wrap=True); l.get_style_context().add_class("sub"); l.set_max_width_chars(60)
+        b = Gtk.Button(label="Get the full look"); b.get_style_context().add_class("tile"); b.connect("clicked", lambda *_: self.queue("sh", "-c", f"carpatic-pack style {cur} && carpatic-apply", msg="Downloading the style pack..."))
+        self.look_box.pack_start(l, True, True, 0); self.look_box.pack_start(b, False, False, 0); self.look_box.show_all()
+    def on_style(self, b, pid):
+        if self.guard or not b.get_active() or pid == self.st().get("PROFILE"): return
+        self.queue("carpatic-profile", "set", pid, msg="Switching style... (bars restart, takes a few seconds)")
+
+    # ---------- Colours ----------
+    def build_colours(self):
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        row = Gtk.Box(spacing=8); self.mode_btn = {}; g = None
+        for m, lab in (("dark", "☾  Dark"), ("light", "☀  Light")):
+            b = Gtk.RadioButton.new_with_label_from_widget(g, lab) if g else Gtk.RadioButton.new_with_label(None, lab)
+            g = g or b; b.set_mode(False); b.get_style_context().add_class("pill"); b.connect("toggled", self.on_mode, m); row.pack_start(b, False, False, 0); self.mode_btn[m] = b
+        self.acc_row = Gtk.Box(spacing=8)
+        body.pack_start(row, False, False, 0)
+        arow = Gtk.Box(spacing=10); arow.pack_start(Gtk.Label(label="Accent"), False, False, 0); arow.pack_start(self.acc_row, False, False, 0); body.pack_start(arow, False, False, 0)
+        self.tflow = self.flow(3); body.pack_start(self.tflow, False, False, 0)
+        al = Gtk.Label(label="Also colour", xalign=0); al.get_style_context().add_class("ctitle"); body.pack_start(al, False, False, 0)
+        ad = Gtk.Label(label="The desktop, launcher and notifications always follow the theme. Choose which other apps follow it too.", xalign=0, wrap=True); ad.get_style_context().add_class("sub"); body.pack_start(ad, False, False, 0)
+        self.also_box = Gtk.Box(spacing=18); self.also = {}
+        for key, lab in (("terminal", "Terminal"), ("editors", "Editors"), ("browser", "Browser"), ("qt", "Qt apps"), ("cli", "CLI tools")):
+            cb = Gtk.CheckButton(label=lab); cb.connect("toggled", self.on_also); self.also[key] = cb; self.also_box.pack_start(cb, False, False, 0)
+        body.pack_start(self.also_box, False, False, 0)
+        l = Gtk.Label(label="App theme (GTK)", xalign=0); l.get_style_context().add_class("ctitle"); body.pack_start(l, False, False, 0)
+        d2 = Gtk.Label(label="\"Follow colours\" recolours GTK apps with the theme above. Native themes (WhiteSur, Yaru...) keep their own look.", xalign=0, wrap=True); d2.get_style_context().add_class("sub"); body.pack_start(d2, False, False, 0)
+        self.gtk_combo = Gtk.ComboBoxText(); self.gtk_combo.connect("changed", self.on_gtk); self.gtk_combo.set_halign(Gtk.Align.START); body.pack_start(self.gtk_combo, False, False, 0)
+        self.gtk_packs = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4); body.pack_start(self.gtk_packs, False, False, 0)
+        self.page("colours", "Colours", "One palette colours the bars, launcher, notifications, terminal and apps.", body)
+        self.fill_themes()
+    def fill_accents(self, mode, cur):
+        self.clear(self.acc_row)
+        for name, dk, lt in ACCENT_SETS:
+            val = dk if mode == "dark" else lt
+            b = Gtk.Button(); b.get_style_context().add_class("swatch"); b.set_tooltip_text(name)
+            if cur.lower() == val.lower(): b.get_style_context().add_class("selected")
+            p = Gtk.CssProvider(); p.load_from_data(f"button {{ background-color: {val}; background-image: none; }}".encode()); b.get_style_context().add_provider(p, Gtk.STYLE_PROVIDER_PRIORITY_USER)
+            b.connect("clicked", lambda _b, v=val: self.queue("carpatic-theme", "set", self.st().get("THEME", "carpatic"), "--accent", v)); self.acc_row.pack_start(b, False, False, 0)
+        d = Gtk.Button(label="Theme default"); d.connect("clicked", lambda *_: self.queue("carpatic-theme", "set", self.st().get("THEME", "carpatic"), "--accent", "default")); self.acc_row.pack_start(d, False, False, 0)
+        self.acc_row.show_all()
+    def fill_themes(self):
+        s = self.st(); mode = read_colors(s.get("THEME", "carpatic")).get("mode", "dark")
+        self.guard = True; self.fill_accents(mode, s.get("ACCENT", "") or read_colors(s.get("THEME", "carpatic")).get("accent", ""))
+        for m, b in self.mode_btn.items(): b.set_active(m == mode)
+        self.clear(self.tflow)
+        for t in theme_names():
+            c = read_colors(t)
+            if c.get("mode", "dark") != mode: continue
+            b = Gtk.Button(); b.get_style_context().add_class("card")
+            area = Gtk.DrawingArea(); area.set_size_request(120, 64); area.connect("draw", lambda w, cr, c=c: draw_theme_swatch(w, cr, c))
+            lab = Gtk.Label(label="Carpatic" if t == "carpatic" else ("Carpatic Light" if t == "carpatic-light" else t.replace("-", " ").title())); lab.get_style_context().add_class("ctitle")
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6); box.pack_start(area, False, False, 0); box.pack_start(lab, False, False, 0)
+            b.add(box); b.connect("clicked", lambda _b, t=t: self.queue("carpatic-theme", "set", t)); 
+            if t == s.get("THEME"): b.get_style_context().add_class("selected")
+            self.tflow.add(b)
+        self.tflow.show_all()
+        self.gtk_combo.remove_all(); self.gtk_combo.append("", "Style default"); self.gtk_combo.append("palette", "Follow colours (recommended)")
+        for t in sh("carpatic-appearance", "list", "gtk").split("\n"):
+            if t and t != "palette": self.gtk_combo.append(t, t)
+        on = (s.get("ALSO") or "terminal editors browser qt cli").split()
+        for k, cb in self.also.items(): cb.set_active(k in on)
+        cur = s.get("GTK_THEME", "") or ""; self.gtk_combo.set_active_id(cur if cur else "")
+        self.fill_packs(self.gtk_packs, "gtk")
+        self.guard = False
+    def on_also(self, *_):
+        if self.guard: return
+        on = [k for k, cb in self.also.items() if cb.get_active()]
+        self.queue("carpatic-theme", "also", *(on or ["none"]), msg="Updating which apps follow the theme...")
+    def on_mode(self, b, m):
+        if self.guard or not b.get_active(): return
+        cur = self.st().get("THEME", "carpatic")
+        if read_colors(cur).get("mode", "dark") == m: return
+        pick = {"light": "carpatic-light", "dark": "carpatic"}[m]
+        self.queue("carpatic-theme", "set", pick, "--accent", "default")
+    def on_gtk(self, c):
+        if self.guard: return
+        v = c.get_active_id() or "default"; self.queue("carpatic-appearance", "set", "gtk", v)
+
+    # ---------- generic pack rows ----------
+    def fill_packs(self, box, cat):
+        self.clear(box)
+        if self.pack_cache is None:
+            self.pack_cache = [r.split("\t") for r in sh("carpatic-pack", "list").split("\n") if r]
+        missing = [r for r in self.pack_cache if r[1] == cat and r[3] == "0"]
+        if not missing: return
+        h = Gtk.Label(label="More to install", xalign=0); h.get_style_context().add_class("ctitle"); box.pack_start(h, False, False, 0)
+        for pid, c_, name, inst, mb, lic, kind, dl in missing:
+            row = Gtk.Box(spacing=10)
+            how = f"download {dl} MB" if kind != "apk" else "from Alpine, asks for your password"
+            lab = Gtk.Label(label=f"{name}   {mb} MB on disk, {how}, {lic}", xalign=0); row.pack_start(lab, True, True, 0)
+            b = Gtk.Button(label="Install"); b.connect("clicked", self.on_install, pid, name); row.pack_start(b, False, False, 0); box.pack_start(row, False, False, 0)
+        box.show_all()
+    def on_install(self, b, pid, name):
+        b.set_sensitive(False); self.queue("carpatic-pack", "install", pid, msg=f"Installing {name}...")
+
+    # ---------- Fonts ----------
+    def build_fonts(self):
+        g = Gtk.Grid(column_spacing=14, row_spacing=10)
+        def lbl(t): l = Gtk.Label(label=t, xalign=0); return l
+        self.preset = Gtk.ComboBoxText(); self.ui_combo = Gtk.ComboBoxText(); self.mono_combo = Gtk.ComboBoxText()
+        self.ui_size = Gtk.SpinButton.new_with_range(8, 20, 1); self.mono_size = Gtk.SpinButton.new_with_range(8, 20, 1)
+        self.hint = Gtk.ComboBoxText(); self.rgba = Gtk.ComboBoxText(); self.aa = Gtk.Switch(); self.scale = Gtk.ComboBoxText(); self.lcd = Gtk.ComboBoxText()
+        for k, v in (("none", "None"), ("slight", "Slight (recommended)"), ("medium", "Medium"), ("full", "Full")): self.hint.append(k, v)
+        for k, v in (("none", "Greyscale"), ("rgb", "RGB (most LCDs)"), ("bgr", "BGR"), ("vrgb", "Vertical RGB"), ("vbgr", "Vertical BGR")): self.rgba.append(k, v)
+        for k, v in (("lcdnone", "None"), ("lcddefault", "Default"), ("lcdlight", "Light"), ("lcdlegacy", "Legacy")): self.lcd.append(k, v)
+        for k, v in (("100", "100% (default)"), ("125", "125%"), ("150", "150%"), ("200", "200%")): self.scale.append(k, v)
+        self.preset.append("", "Choose a pairing...")
+        for p in sh("carpatic-appearance", "list", "presets").split("\n"):
+            if p: i, u, m, d = p.split("|"); self.preset.append(i, d)
+        rows = [("Pairing", self.preset), ("Interface font", self.ui_combo), ("Size", self.ui_size), ("Monospace font", self.mono_combo), ("Size", self.mono_size),
+                ("Hinting", self.hint), ("Subpixel order", self.rgba), ("LCD filter", self.lcd), ("Antialiasing", self.aa), ("Scale (HiDPI)", self.scale)]
+        for i, (t, w) in enumerate(rows):
+            g.attach(lbl(t), 0, i, 1, 1); w.set_halign(Gtk.Align.START); g.attach(w, 1, i, 1, 1)
+        for w in (self.preset, self.ui_combo, self.mono_combo, self.hint, self.rgba, self.lcd, self.scale): w.connect("changed", self.on_font_change, w)
+        for w in (self.ui_size, self.mono_size): w.connect("value-changed", self.on_font_change, w)
+        self.aa.connect("notify::active", self.on_font_change, self.aa)
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14); body.pack_start(g, False, False, 0)
+        self.sample = Gtk.Label(label="The quick brown fox jumps over the lazy dog 0123456789", xalign=0, wrap=True); body.pack_start(self.sample, False, False, 0)
+        self.sample2 = Gtk.Label(label="$ carpatic-theme set carpatic  # {}[]() 0O1lI", xalign=0); body.pack_start(self.sample2, False, False, 0)
+        rb = Gtk.Button(label="Reset fonts to the style default"); rb.set_halign(Gtk.Align.START); rb.connect("clicked", lambda *_: self.queue("carpatic-appearance", "set", "ui-font", "default", "ui-size", "default", "mono-font", "default", "mono-size", "default", "hinting", "default", "rgba", "default", "lcdfilter", "default", "antialias", "default", "scale", "default"))
+        body.pack_start(rb, False, False, 0)
+        note = Gtk.Label(label="Terminals and the tiling bar pick up the new font for newly opened windows / the next login. Scale above 100% applies to apps, text and cursors; bars keep their size until restart.", xalign=0, wrap=True); note.get_style_context().add_class("sub"); body.pack_start(note, False, False, 0)
+        self.font_packs = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4); body.pack_start(self.font_packs, False, False, 0)
+        self.page("fonts", "Fonts", "Typography for the bar, launcher, notifications, terminal and apps.", body)
+        self.fill_fonts()
+    def fill_fonts(self):
+        ae = read_env(f"{CFG}/appearance.env"); s = self.st(); self.guard = True
+        if not hasattr(self, 'font_cache'): self.font_cache = [f for f in sh("carpatic-appearance", "list", "fonts").split("\n") if f]
+        fonts = self.font_cache
+        for combo, key in ((self.ui_combo, "UI_FONT"), (self.mono_combo, "MONO_FONT")):
+            combo.remove_all()
+            for f in fonts: combo.append(f, f)
+            cur = ae.get(key, "").rsplit(" ", 1)[0]
+            if cur and cur not in fonts: combo.append(cur, cur)
+            combo.set_active_id(cur)
+        try:
+            self.ui_size.set_value(int(ae.get("UI_FONT", "x 10").rsplit(" ", 1)[1])); self.mono_size.set_value(int(ae.get("MONO_FONT", "x 10").rsplit(" ", 1)[1]))
+        except ValueError: pass
+        self.hint.set_active_id(s.get("HINTING") or "slight"); self.rgba.set_active_id(s.get("RGBA") or "rgb"); self.lcd.set_active_id(s.get("LCDFILTER") or "lcddefault")
+        self.aa.set_active((s.get("ANTIALIAS") or "1") != "0"); self.scale.set_active_id(s.get("SCALE") or "100"); self.preset.set_active(0)
+        uf, mf = ae.get("UI_FONT", "Sans 10"), ae.get("MONO_FONT", "Monospace 10")
+        self.sample.override_font(Pango.FontDescription(uf.rsplit(" ", 1)[0] + " " + str(int(uf.rsplit(" ", 1)[1]) + 6)) if " " in uf else None)
+        self.sample2.override_font(Pango.FontDescription(mf) if mf else None)
+        self.fill_packs(self.font_packs, "fonts"); self.guard = False
+    def on_font_change(self, *args):
+        if self.guard: return
+        w = args[-1]
+        if w is self.preset:
+            if w.get_active_id(): self.queue("carpatic-appearance", "preset", w.get_active_id())
+        elif w is self.ui_combo: self.queue("carpatic-appearance", "set", "ui-font", w.get_active_id() or "default")
+        elif w is self.mono_combo: self.queue("carpatic-appearance", "set", "mono-font", w.get_active_id() or "default")
+        elif w is self.ui_size: self.queue("carpatic-appearance", "set", "ui-size", str(int(w.get_value())))
+        elif w is self.mono_size: self.queue("carpatic-appearance", "set", "mono-size", str(int(w.get_value())))
+        elif w is self.hint: self.queue("carpatic-appearance", "set", "hinting", w.get_active_id())
+        elif w is self.rgba: self.queue("carpatic-appearance", "set", "rgba", w.get_active_id())
+        elif w is self.lcd: self.queue("carpatic-appearance", "set", "lcdfilter", w.get_active_id())
+        elif w is self.aa: self.queue("carpatic-appearance", "set", "antialias", "1" if w.get_active() else "0")
+        elif w is self.scale: self.queue("carpatic-appearance", "set", "scale", w.get_active_id())
+
+    # ---------- Icons ----------
+    def build_icons(self):
+        self.icon_flow = self.flow(3); self.icon_packs = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12); body.pack_start(self.icon_flow, False, False, 0); body.pack_start(self.icon_packs, False, False, 0)
+        self.page("icons", "Icon packs", "Icons are chosen independently of the style.", body); self.fill_icons()
+    def fill_icons(self):
+        cur = read_env(f"{CFG}/appearance.env").get("ICON_THEME", ""); self.clear(self.icon_flow)
+        if getattr(self, "icon_names", None) is None or self.pack_cache is None:
+            self.icon_names = [t for t in sh("carpatic-appearance", "list", "icons").split("\n") if t]
+        todo = []
+        for name in [""] + self.icon_names:
+            b = Gtk.Button(); b.get_style_context().add_class("card")
+            if name == cur: b.get_style_context().add_class("selected")
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8); row = Gtk.Box(spacing=4); row.set_size_request(-1, 36)
+            if not name: row.pack_start(Gtk.Label(label="\u2605"), False, False, 0)
+            else: todo.append((name, row))
+            box.pack_start(row, False, False, 0)
+            l = Gtk.Label(label=name or "Style default"); l.get_style_context().add_class("ctitle"); box.pack_start(l, False, False, 0)
+            b.add(box); b.connect("clicked", lambda _b, n=name: self.queue("carpatic-appearance", "set", "icons", n or "default")); self.icon_flow.add(b)
+        self.icon_flow.show_all(); self.fill_packs(self.icon_packs, "icons")
+        self.icon_gen = getattr(self, "icon_gen", 0) + 1; gen = self.icon_gen
+        def step():  # one theme per idle tick: the page appears at once, previews fill in
+            if gen != self.icon_gen or not todo: return False
+            name, row = todo.pop(0)
+            it = Gtk.IconTheme.new(); it.set_custom_theme(name)
+            for n in ("folder", "utilities-terminal", "web-browser", "preferences-system"):
+                try: row.pack_start(Gtk.Image.new_from_pixbuf(it.load_icon(n, 36, 0)), False, False, 0)
+                except Exception: pass
+            row.show_all(); return True
+        GLib.idle_add(step, priority=GLib.PRIORITY_LOW)
+
+    # ---------- Cursors ----------
+    def build_cursors(self):
+        g = Gtk.Grid(column_spacing=14, row_spacing=10); self.cur_combo = Gtk.ComboBoxText(); self.cur_size = Gtk.SpinButton.new_with_range(16, 64, 4)
+        g.attach(Gtk.Label(label="Cursor theme", xalign=0), 0, 0, 1, 1); g.attach(self.cur_combo, 1, 0, 1, 1)
+        g.attach(Gtk.Label(label="Size", xalign=0), 0, 1, 1, 1); g.attach(self.cur_size, 1, 1, 1, 1)
+        self.cur_combo.connect("changed", lambda c: None if self.guard else self.queue("carpatic-appearance", "set", "cursor", c.get_active_id() or "default"))
+        self.cur_size.connect("value-changed", lambda w: None if self.guard else self.queue("carpatic-appearance", "set", "cursor-size", str(int(w.get_value()))))
+        self.cur_packs = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14); body.pack_start(g, False, False, 0)
+        n = Gtk.Label(label="Move the mouse over this window to see the new cursor. Apps started earlier may keep the old cursor until restarted.", xalign=0, wrap=True); n.get_style_context().add_class("sub"); body.pack_start(n, False, False, 0)
+        body.pack_start(self.cur_packs, False, False, 0); self.page("cursors", "Cursors", "Pointer theme and size.", body); self.fill_cursors()
+    def fill_cursors(self):
+        ae = read_env(f"{CFG}/appearance.env"); self.guard = True; self.cur_combo.remove_all(); self.cur_combo.append("", "Style default")
+        for t in sh("carpatic-appearance", "list", "cursors").split("\n"):
+            if t: self.cur_combo.append(t, t)
+        self.cur_combo.set_active_id(self.st().get("CURSOR_THEME") or "")
+        try: self.cur_size.set_value(int(ae.get("CURSOR_SIZE", "24")))
+        except ValueError: pass
+        self.fill_packs(self.cur_packs, "cursors"); self.guard = False
+
+    # ---------- Wallpapers ----------
+    def build_wallpapers(self):
+        self.wall_flow = self.flow(3)
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12); body.pack_start(self.wall_flow, False, False, 0)
+        row = Gtk.Box(spacing=8)
+        for lab, fn in (("Use the theme wallpaper", lambda *_: self.set_wall("default")), ("Choose a file...", self.choose_wall)):
+            b = Gtk.Button(label=lab); b.connect("clicked", fn); row.pack_start(b, False, False, 0)
+        body.pack_start(row, False, False, 0); self.page("wallpapers", "Wallpapers", "Eight Carpathian scenes in your current light or dark mode, your own pictures in Pictures/Wallpapers, or any file.", body); self.fill_walls()
+    def thumb(self, f):
+        """Cached 200x112 thumbnail (~/.cache/carpatic/thumbs)."""
+        import hashlib
+        d = os.path.expanduser("~/.cache/carpatic/thumbs"); os.makedirs(d, exist_ok=True)
+        key = hashlib.sha1(f"{f}:{os.path.getmtime(f)}".encode()).hexdigest()[:20]; t = f"{d}/{key}.png"
+        try: return GdkPixbuf.Pixbuf.new_from_file(t)
+        except Exception: pass
+        pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(f, 200, 112, True)
+        try: pb.savev(t, "png", [], [])
+        except Exception: pass
+        return pb
+    def fill_walls(self):
+        self.clear(self.wall_flow); cur = self.st().get("THEME", "carpatic"); mode = read_colors(cur).get("mode", "dark")
+        wp = ""
+        try: wp = open(f"{CFG}/wallpaper").read().strip()
+        except OSError: pass
+        items = []   # (label, file)
+        for key, name in SCENES: items.append((name, f"{SHARE}/wallpapers/{key}-{mode}.jpg"))
+        for f in sorted(glob.glob(f"{SHARE}/themes/*/wallpaper*.jpg") + glob.glob(os.path.expanduser("~/.config/carpatic/themes/*/wallpaper*.jpg"))):
+            t = f.split("/")[-2]
+            if t.startswith("carpatic"): continue
+            items.append((t.replace("-", " ").title(), f))
+        items += [("Picture", f) for f in sorted(glob.glob(os.path.expanduser("~/Pictures/Wallpapers/*")))]
+        items = [(n, f) for n, f in items if os.path.exists(f)]
+        self.wall_gen = getattr(self, "wall_gen", 0) + 1; gen = self.wall_gen; todo = []
+        for name, f in items:
+            b = Gtk.Button(); b.get_style_context().add_class("card"); b.set_tooltip_text(name)
+            if os.path.realpath(f) == os.path.realpath(wp) if wp else False: b.get_style_context().add_class("selected")
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6); img = Gtk.Image(); img.set_size_request(200, 112); box.pack_start(img, False, False, 0)
+            l = Gtk.Label(label=name); l.get_style_context().add_class("cdesc"); box.pack_start(l, False, False, 0)
+            b.add(box); b.connect("clicked", lambda _b, f=f: self.set_wall(f)); self.wall_flow.add(b); todo.append((img, f))
+        self.wall_flow.show_all()
+        def step():
+            if gen != self.wall_gen or not todo: return False
+            img, f = todo.pop(0)
+            try: img.set_from_pixbuf(self.thumb(f))
+            except Exception: pass
+            return True
+        GLib.idle_add(step, priority=GLib.PRIORITY_LOW)
+    def set_wall(self, f): self.queue("carpatic-theme", "set", self.st().get("THEME", "carpatic"), "--wallpaper", f)
+    def choose_wall(self, *_):
+        d = Gtk.FileChooserDialog(title="Choose a wallpaper", parent=self, action=Gtk.FileChooserAction.OPEN)
+        d.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Open", Gtk.ResponseType.OK)
+        if d.run() == Gtk.ResponseType.OK: self.set_wall(d.get_filename())
+        d.destroy()
+
+if __name__ == "__main__":
+    start = None
+    if "--page" in sys.argv: start = sys.argv[sys.argv.index("--page") + 1]
+    w = App(); w.show_all()
+    if start: w.stack.set_visible_child_name(start)
+    Gtk.main()

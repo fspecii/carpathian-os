@@ -1,0 +1,80 @@
+diff --git a/configurator/templates/tint2/ubuntu-dock.tint2rc.tpl b/configurator/templates/tint2/ubuntu-dock.tint2rc.tpl
+index aa9246e..ced8efb 100644
+--- a/configurator/templates/tint2/ubuntu-dock.tint2rc.tpl
++++ b/configurator/templates/tint2/ubuntu-dock.tint2rc.tpl
+@@ -22,9 +22,9 @@ border_color = {{ accent }} 100
+ background_color_hover = {{ mix bar_bg accent 30 }} 100
+ border_color_hover = {{ accent }} 100
+ 
+-panel_items = LT
++panel_items = LTFP
+ panel_size = 100% 56
+-panel_margin = 0 36
++panel_margin = 6 48
+ panel_padding = 4 8 6
+ panel_background_id = 1
+ panel_position = center left vertical
+@@ -39,7 +39,6 @@ launcher_padding = 0 0 8
+ launcher_background_id = 0
+ launcher_icon_size = 40
+ launcher_icon_theme = {{ @ICONTHEME }}
+-launcher_item_app = {{ @HOME }}/.local/share/applications/carpatic-start.desktop
+ launcher_item_app = /usr/share/applications/thunar.desktop
+ launcher_item_app = /usr/local/share/applications/carpatic-terminal.desktop
+ launcher_item_app = /usr/local/share/applications/carpatic-store.desktop
+@@ -57,3 +56,10 @@ task_background_id = 2
+ task_active_background_id = 3
+ mouse_left = toggle_iconify
+ mouse_right = close
++
++# Show applications (bottom of the dock)
++button = new
++button_icon = view-app-grid-symbolic
++button_background_id = 0
++button_padding = 8 6 0
++button_lclick_command = carpatic-launch grid
+diff --git a/configurator/templates/tint2/ubuntu-top.tint2rc.tpl b/configurator/templates/tint2/ubuntu-top.tint2rc.tpl
+index c073bdd..9ac62c9 100644
+--- a/configurator/templates/tint2/ubuntu-top.tint2rc.tpl
++++ b/configurator/templates/tint2/ubuntu-top.tint2rc.tpl
+@@ -13,8 +13,17 @@ background_color_hover = {{ hover }} 100
+ border_color_hover = {{ hover }} 100
+ background_color_pressed = {{ hover }} 100
+ border_color_pressed = {{ hover }} 100
++# 3 system menu pill (right): rounded, hover plate
++rounded = 14
++border_width = 0
++background_color = {{ hover }} 100
++border_color = {{ hover }} 100
++background_color_hover = {{ mix hover accent 25 }} 100
++border_color_hover = {{ mix hover accent 25 }} 100
++background_color_pressed = {{ mix hover accent 35 }} 100
++border_color_pressed = {{ mix hover accent 35 }} 100
+ 
+-panel_items = FCFS
++panel_items = PFCFSP
+ panel_size = 100% 28
+ panel_margin = 0 0
+ panel_padding = 4 0 4
+@@ -41,3 +50,21 @@ clock_rclick_command = carpatic-flyout quick
+ clock_tooltip = Power menu
+ clock_padding = 14 0
+ clock_background_id = 0
++
++# Activities (left)
++button = new
++button_text = Activities
++button_font = {{ @HEAD }} Bold {{ @SZ }}
++button_font_color = {{ foreground }} 100
++button_background_id = 2
++button_padding = 14 0 0
++button_lclick_command = carpatic-launch grid
++# System menu pill (right): network, volume, power glyphs in one rounded pill; opens the quick settings flyout
++button = new
++button_text =       
++button_font = Symbols Nerd Font Mono 11
++button_font_color = {{ foreground }} 100
++button_background_id = 3
++button_padding = 12 0 0
++button_lclick_command = carpatic-flyout quick
++button_rclick_command = carpatic-flyout quick

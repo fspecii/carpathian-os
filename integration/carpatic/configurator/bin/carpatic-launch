@@ -1,0 +1,30 @@
+#!/bin/sh
+# carpatic-launch [drun|run|power|menu]   - profile-styled launcher (rofi; dmenu fallback)
+[ -r "$HOME/.config/carpatic/profile.env" ] && . "$HOME/.config/carpatic/profile.env"
+CUR=${CARPATIC_STATE:-$HOME/.local/state/carpatic}/current
+[ -r "$HOME/.config/carpatic/appearance.env" ] && . "$HOME/.config/carpatic/appearance.env"
+[ -r "$HOME/.config/carpatic/env.sh" ] && . "$HOME/.config/carpatic/env.sh"   # QT_STYLE_OVERRIDE etc. for the apps started from here
+mode=${1:-drun}
+# style packs with their own start menu (LAUNCHER=zen|kylin, see stylepacks/): the app menu is carpatic-startmenu, run/window/power stay on rofi
+case ${LAUNCHER:-} in zen|kylin) [ "$mode" = drun ] && command -v carpatic-startmenu >/dev/null 2>&1 && exec carpatic-startmenu --skin "$LAUNCHER"; LAUNCHER=windows;; esac
+pkill -x rofi 2>/dev/null && [ "$mode" = drun ] && exit 0   # toggle
+case "${PROFILE:-}:$mode" in windows:drun|beginner:drun) exec carpatic-flyout start;; esac
+RASI=$CUR/rofi/${LAUNCHER:-tiling}.rasi
+command -v rofi >/dev/null 2>&1 || { dmenu_run; exit; }
+case $mode in
+  drun) exec rofi -icon-theme "${ROFI_ICONS:-Papirus}" -show drun -theme "$RASI" ;;
+  run)  exec rofi -icon-theme "${ROFI_ICONS:-Papirus}" -show run -theme "$RASI" ;;
+  grid) exec rofi -icon-theme "${ROFI_ICONS:-Papirus}" -show drun -theme "$CUR/rofi/ubuntu.rasi" ;;
+  window) exec rofi -icon-theme "${ROFI_ICONS:-Papirus}" -show window -theme "$RASI" ;;
+  power) exec carpatic-powermenu ;;
+  menu)
+    # the full keyboard menu from the geek tools; the small built-in one below is the fallback
+    command -v carpatic-menu >/dev/null 2>&1 && exec carpatic-menu
+    c=$(printf 'Apps\nCarpatic Settings\nTheme\nProfile\nKeybindings\nStore\nPower\n' | rofi -dmenu -i -p menu -theme "$RASI")
+    case $c in
+      Apps) exec carpatic-launch ;; "Carpatic Settings") exec carpatic-settings ;;
+      Theme) t=$(carpatic-theme list | awk '{print $1}' | rofi -dmenu -i -p theme -theme "$RASI") && [ -n "$t" ] && carpatic-theme set "$t" ;;
+      Profile) p=$(carpatic-profile list | awk '{print $1}' | rofi -dmenu -i -p profile -theme "$RASI") && [ -n "$p" ] && carpatic-profile set "$p" ;;
+      Keybindings) exec carpatic-keys ;; Store) exec carpatic-store ;; Power) exec carpatic-launch power ;;
+    esac ;;
+esac

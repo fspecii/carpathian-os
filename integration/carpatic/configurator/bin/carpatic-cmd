@@ -1,0 +1,13 @@
+#!/bin/sh
+# carpatic-cmd <key>  : macOS profile. Super acts as "Cmd": send the Ctrl equivalent to the focused window.
+# In terminals Ctrl+C is SIGINT, so copy/paste use Ctrl+Shift+C/V there and other keys are ignored.
+k=$1
+cls=$(xdotool getactivewindow getwindowclassname 2>/dev/null)
+term=0; case $cls in St|st|st-256color|Alacritty|XTerm|URxvt|kitty|Dwmterm) term=1;; esac
+send() { exec xdotool key --clearmodifiers "$@"; }
+case $k in
+  c|v) [ $term = 1 ] && send ctrl+shift+$k; send ctrl+$k ;;
+  home) send Home ;; end) send End ;; delword) send ctrl+BackSpace ;;
+  redo) send ctrl+shift+z ;; prevtab) send ctrl+Prior ;; nexttab) send ctrl+Next ;;
+  *) [ $term = 1 ] && exit 0; send ctrl+$k ;;
+esac

@@ -1,0 +1,67 @@
+# Carpatic store catalog: Creative
+[category]
+id = "creative"
+name = "Creative"
+icon = "applications-graphics"
+order = 5
+blurb = "Draw, edit video, record audio and stream"
+
+[[app]]
+id = "obs"
+name = "OBS Studio"
+pkg = "obs-studio"
+source = "apk"
+icon = "obs-studio"
+newcomer = false
+size_mb = 60
+description = "Record and stream your screen."
+
+[[app]]
+id = "kdenlive"
+name = "Kdenlive"
+pkg = "kdenlive"
+source = "apk"
+icon = "kdenlive"
+newcomer = false
+size_mb = 120
+description = "Video editor."
+
+[[app]]
+id = "audacity"
+name = "Audacity"
+pkg = "audacity"
+source = "apk"
+icon = "audacity"
+newcomer = false
+size_mb = 25
+description = "Record and edit audio."
+
+[[app]]
+id = "gimp"
+name = "GIMP"
+pkg = "gimp"
+source = "apk"
+icon = "gimp"
+newcomer = true
+size_mb = 150
+description = "Powerful image editor."
+
+[[app]]
+id = "inkscape"
+name = "Inkscape"
+pkg = "inkscape"
+source = "apk"
+icon = "inkscape"
+newcomer = false
+size_mb = 80
+description = "Vector graphics editor."
+
+[[app]]
+id = "krita"
+name = "Krita"
+pkg = "krita"
+source = "apk"
+icon = "krita"
+newcomer = false
+size_mb = 100
+description = "Digital painting."

@@ -1,0 +1,88 @@
+#!/bin/sh
+# carpatic-display: monitors that plug and unplug (docks, HDMI, projectors) without opening a terminal.
+#
+#   carpatic-display status                 outputs, which are on, where
+#   carpatic-display auto                   set up what is plugged in now: laptop screen first, every other screen to its right; screens
+#                                           that were unplugged are switched off, the laptop screen comes back when the last one goes
+#   carpatic-display extend | mirror        put external screens beside, or on top of, the laptop screen
+#   carpatic-display external | internal    use only the external screens / only the laptop screen
+#   carpatic-display watch                  session helper: runs `auto` whenever a screen is plugged in or removed (unless auto is off)
+#   carpatic-display set auto on|off        turn the automatic handling on or off (default on)
+#
+# Closing the lid with an external screen attached turns the laptop screen off (when the lid state is readable).
+# Works with any RandR driver (modesetting, amdgpu, intel). Needs xrandr. License: MIT. POSIX sh + awk.
+set -u
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}/carpatic"; ENV="$CFG/display.env"
+XR=${CARPATIC_XRANDR:-xrandr}
+say() { printf '%s\n' "$*"; }
+die() { printf 'carpatic-display: %s\n' "$*" >&2; exit 1; }
+getv() { [ -f "$ENV" ] && sed -n "s/^$1=//p" "$ENV" | tail -1 | tr -d '"'; }
+
+# parse "xrandr --query": prints  name state(on|off|unplugged) internal(1|0) primary(1|0)
+outputs() {
+  $XR --query 2>/dev/null | awk '
+    / connected| disconnected/ { n = $1
+      if ($2 == "disconnected") { print n, "unplugged", internal(n), 0; next }
+      on = ($3 ~ /^[0-9]+x[0-9]+\+/ || $4 ~ /^[0-9]+x[0-9]+\+/) ? "on" : "off"
+      pr = ($3 == "primary") ? 1 : 0
+      print n, on, internal(n), pr }
+    function internal(n) { return (n ~ /^(eDP|LVDS|DSI)/) ? 1 : 0 }'
+}
+
+lid_closed() { for f in ${CARPATIC_LID_FILE:-/proc/acpi/button/lid/*/state}; do [ -f "$f" ] && grep -q closed "$f" && return 0; done; return 1; }
+
+layout() { # layout <extend|mirror|external|internal>
+  mode=$1; prev=""; first=""; args=""
+  list=$(outputs); [ -n "$list" ] || die "no screens found (is the desktop running?)"
+  internal=$(echo "$list" | awk '$3 == 1 && $2 != "unplugged" {print $1; exit}')
+  externals=$(echo "$list" | awk '$3 == 0 && $2 != "unplugged" {print $1}')
+  # outputs that are unplugged but still configured go off
+  for o in $(echo "$list" | awk '$2 == "unplugged" {print $1}'); do args="$args --output $o --off"; done
+  if [ -z "$externals" ]; then mode=internal; fi
+  if [ "$mode" = extend ] && lid_closed && [ -n "$externals" ]; then mode=external; fi
+  case "$mode" in
+    internal) [ -n "$internal" ] || internal=$(echo "$list" | awk '$2 != "unplugged" {print $1; exit}')
+              args="$args --output $internal --auto --primary --pos 0x0"
+              for o in $externals; do [ "$o" = "$internal" ] || args="$args --output $o --off"; done;;
+    external) if [ -n "$internal" ]; then args="$args --output $internal --off"; fi; first=""
+              for o in $externals; do
+                if [ -z "$first" ]; then args="$args --output $o --auto --primary --pos 0x0"; first=$o; else args="$args --output $o --auto --right-of $prev"; fi; prev=$o
+              done;;
+    mirror)   base=${internal:-$(echo "$externals" | head -1)}; args="$args --output $base --auto --primary --pos 0x0"
+              for o in $externals; do [ "$o" = "$base" ] || args="$args --output $o --auto --same-as $base"; done;;
+    extend)   base=${internal:-$(echo "$externals" | head -1)}; args="$args --output $base --auto --primary --pos 0x0"; prev=$base
+              for o in $externals; do [ "$o" = "$base" ] || { args="$args --output $o --auto --right-of $prev"; prev=$o; }; done;;
+  esac
+  # shellcheck disable=SC2086
+  $XR $args
+}
+
+case "${1:-status}" in
+  status)
+    outputs | while read -r n st i p; do
+      d=""; [ "$i" = 1 ] && d=" (laptop screen)"; [ "$p" = 1 ] && d="$d, main"
+      printf '%-10s %s%s\n' "$n" "$st" "$d"; done;;
+  auto) layout extend || exit $?;;
+  extend|mirror|external|internal) layout "$1" || exit $?;;
+  set) [ "${2:-}" = auto ] && case "${3:-}" in on|off) mkdir -p "$CFG"; grep -v '^AUTO=' "$ENV" > "$ENV.new" 2>/dev/null; echo "AUTO=\"$3\"" >> "$ENV.new"; mv "$ENV.new" "$ENV";; *) die "say on or off";; esac || die "usage: carpatic-display set auto on|off";;
+  watch)
+    last=""
+    while :; do
+      cur=$($XR --query 2>/dev/null | grep -E ' (dis)?connected' | awk '{print $1, $2}' | tr '\n' ';')
+      if [ -n "$last" ] && [ "$cur" != "$last" ] && [ "$(getv AUTO)" != off ]; then
+        sleep 1; layout extend >/dev/null 2>&1
+        # a different screen may want a different scale (SCALE=auto): re-apply the desktop at the size carpatic-scale picks for it
+        command -v carpatic-scale >/dev/null 2>&1 && sleep 1 && carpatic-scale sync >/dev/null 2>&1
+        command -v notify-send >/dev/null 2>&1 && notify-send -a "Display" "Screens changed" "Carpatic set up your screens. Change it with: carpatic-display mirror | external | internal"
+        cur=$($XR --query 2>/dev/null | grep -E ' (dis)?connected' | awk '{print $1, $2}' | tr '\n' ';')
+      fi
+      # the resolution changed (Settings > Displays, or a monitor switched mode): the auto scale may follow it
+      geo=$($XR --query 2>/dev/null | awk '/ connected/ && $0 ~ /[0-9]+x[0-9]+\+/ {print $1, $3, $4}' | tr '\n' ';')
+      [ -n "${lastgeo:-}" ] && [ "$geo" != "$lastgeo" ] && command -v carpatic-scale >/dev/null 2>&1 && carpatic-scale sync >/dev/null 2>&1
+      lastgeo=$geo
+      last=$cur; sleep 2
+    done;;
+  -h|--help|help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//';;
+  *) die "unknown command '$1' (try: carpatic-display help)";;
+esac
+exit 0

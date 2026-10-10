@@ -1,0 +1,20 @@
+#!/bin/sh
+# carpatic-genkeys DEFAULT_HOTKEYS.toml PROFILE_KEYS... > hotkeys.toml
+# Merges profile bindings over the desktop defaults: same mod+key = profile wins; "unbind MODS KEY" removes a default.
+def=$1; shift
+cat "$@" | awk -v DEF="$def" '
+function norm(mods, key,   n,a,i,j,t,r){ n=split(mods,a," "); for(i=2;i<=n;i++){t=a[i];for(j=i-1;j>=1&&a[j]>t;j--)a[j+1]=a[j];a[j+1]=t} r=""; for(i=1;i<=n;i++)r=r a[i] "+"; return r tolower(key) }
+function bindid(line,   m,k,x){ m="";k=""; if(match(line,/mod="[^"]*"/)){x=substr(line,RSTART+5,RLENGTH-6);m=x} if(match(line,/key="[^"]*"/)){k=substr(line,RSTART+5,RLENGTH-6)} return norm(m,k) }
+/^[ \t]*$/ {next}
+/^unbind / { m=$2; k=$NF; if(NF==4){m=$2" "$3} else if(NF==3){m=$2} DROP[norm(m,k)]=1; next }
+/^[ \t]*\{/ { id=bindid($0); DROP[id]=1; ADD[++n]=$0; next }
+END{
+  inkeys=0
+  while((getline line < DEF)>0){
+    if(line ~ /^terminal *=/){ print "terminal = \"carpatic-term\""; continue }
+    if(line ~ /^keys *= *\[/){ inkeys=1; print line; continue }
+    if(inkeys && line ~ /^\]/){ for(i=1;i<=n;i++){ l=ADD[i]; sub(/^[ \t]*/,"",l); sub(/,?[ \t]*$/,"",l); print "  " l "," } inkeys=0; print line; continue }
+    if(inkeys && line ~ /^[ \t]*\{/){ if(bindid(line) in DROP) continue }
+    print line
+  }
+}'

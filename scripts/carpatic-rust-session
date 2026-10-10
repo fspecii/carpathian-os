@@ -1,0 +1,167 @@
+#!/bin/sh
+# Run only from a dedicated X11 login or a nested test display.
+set -eu
+if [ -z "${DISPLAY:-}" ]; then
+    printf 'Carpatic Rust needs an X11 session. Start with: startx /usr/local/bin/carpatic-rust-session\n' >&2
+    exit 1
+fi
+if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_CURRENT_DESKTOP:-}" = COSMIC ]; then
+    printf 'Start Carpatic Rust in its own login or test VM, outside the COSMIC session.\n' >&2
+    exit 1
+fi
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+    exec dbus-run-session -- "$0" "$@"
+fi
+export CARPATIC_SESSION=1 XDG_CURRENT_DESKTOP=CarpaticRust
+if command -v xsetroot >/dev/null 2>&1; then
+    xsetroot -solid '#0f1624'
+    xsetroot -cursor_name left_ptr
+fi
+[ -r "$HOME/.config/carpatic/env.sh" ] && . "$HOME/.config/carpatic/env.sh"
+export XDG_SESSION_TYPE=x11
+export XDG_DATA_DIRS="$HOME/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share"
+if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+    XDG_RUNTIME_DIR=/tmp/carpatic-runtime-$(id -u); export XDG_RUNTIME_DIR
+    (umask 077; mkdir -p "$XDG_RUNTIME_DIR")
+fi
+# Keep login diagnostics private and writable by this user. Never chmod or
+# write through an existing symlink or a runtime directory owned by another uid.
+case "$XDG_RUNTIME_DIR" in /*) ;; *) echo 'XDG_RUNTIME_DIR must be absolute' >&2; exit 1;; esac
+if [ -L "$XDG_RUNTIME_DIR" ] || [ ! -d "$XDG_RUNTIME_DIR" ] ||
+   [ "$(stat -c %u "$XDG_RUNTIME_DIR")" != "$(id -u)" ]; then
+    echo 'XDG_RUNTIME_DIR must be an owned directory' >&2; exit 1
+fi
+chmod 700 "$XDG_RUNTIME_DIR"
+session_logs=$(umask 077; mktemp -d "$XDG_RUNTIME_DIR/carpatic-session-XXXXXX")
+[ -r "$HOME/.Xresources" ] && xrdb -merge "$HOME/.Xresources" 2>/dev/null || :
+# The installed Rust hook is updated with the component; an old per-user dwm
+# hook must not silently bypass the animation controller on an upgrade.
+autostart=/usr/local/share/carpatic-rust/autostart.sh
+[ -x "$autostart" ] || autostart="$HOME/.local/share/dwm-titus/scripts/autostart.sh"
+# Supervise this login's descendants, including helpers which daemonize out of
+# their original process group. A unique inherited marker isolates other logins.
+export CARPATIC_AUTOSTART="$autostart" CARPATIC_SESSION_LOGS="$session_logs"
+exec python3 - "$@" <<'PY'
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
+import uuid
+import ctypes
+
+# Adopt daemonized grandchildren so logout can reap them instead of leaving
+# their zombies to an unrelated init process.
+libc = ctypes.CDLL(None, use_errno=True)
+if libc.prctl(36, 1, 0, 0, 0) != 0:  # Linux PR_SET_CHILD_SUBREAPER
+    raise OSError(ctypes.get_errno(), 'cannot supervise session descendants')
+
+token = uuid.uuid4().hex
+os.environ['CARPATIC_SESSION_ID'] = token
+marker = ('CARPATIC_SESSION_ID=' + token).encode()
+display = ('DISPLAY=' + os.environ['DISPLAY']).encode()
+uid = os.getuid()
+wm = None
+hook = None
+stopping = False
+
+def owned(pid):
+    try:
+        proc = Path('/proc') / str(pid)
+        if pid == os.getpid() or proc.stat().st_uid != uid:
+            return False
+        raw = (proc / 'stat').read_text()
+        if raw[raw.rindex(')') + 2:].split()[0] == 'Z':
+            return False
+        env = (proc / 'environ').read_bytes().split(b'\0')
+        return marker in env and display in env
+    except (OSError, ValueError):
+        return False
+
+def signal_owned(pid, sig):
+    fd = None
+    try:
+        fd = os.pidfd_open(pid) if hasattr(os, 'pidfd_open') else None
+        if owned(pid):
+            if fd is not None and hasattr(signal, 'pidfd_send_signal'):
+                signal.pidfd_send_signal(fd, sig)
+            else:
+                os.kill(pid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+def descendants():
+    return [int(p.name) for p in Path('/proc').glob('[0-9]*') if owned(int(p.name))]
+
+def reap_adopted():
+    direct = {child.pid for child in (wm, hook) if child is not None}
+    try:
+        children = Path(f'/proc/self/task/{os.getpid()}/children').read_text().split()
+        for text in children:
+            pid = int(text)
+            if pid not in direct:
+                try:
+                    os.waitpid(pid, os.WNOHANG)
+                except ChildProcessError:
+                    pass
+    except OSError:
+        pass
+
+def stop(_sig, _frame):
+    global stopping
+    stopping = True
+    if wm is not None and wm.poll() is None:
+        wm.terminate()
+
+for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+    signal.signal(sig, stop)
+
+code = 1
+try:
+    autostart = Path(os.environ['CARPATIC_AUTOSTART'])
+    args = [str(autostart)] if os.access(autostart, os.X_OK) else ['carpatic-session', 'start']
+    import shutil
+    if os.access(autostart, os.X_OK) or shutil.which('carpatic-session'):
+        name = 'autostart.log' if os.access(autostart, os.X_OK) else 'profile.log'
+        log_path = Path(os.environ['CARPATIC_SESSION_LOGS']) / name
+        fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'wb') as log:
+            hook = subprocess.Popen(args, stdout=log, stderr=log, stdin=subprocess.DEVNULL,
+                                    start_new_session=True)
+    wm = subprocess.Popen(['carpatic-wm', *sys.argv[1:]], stdin=subprocess.DEVNULL,
+                          start_new_session=True)
+    while wm.poll() is None and not stopping:
+        time.sleep(.05)
+    code = wm.returncode if wm.returncode is not None else 0
+finally:
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            if wm is not None:
+                wm.poll()
+            if hook is not None:
+                hook.poll()
+            reap_adopted()
+            children = descendants()
+            if not children:
+                break
+            for pid in children:
+                signal_owned(pid, sig)
+            time.sleep(.05)
+    for child in (wm, hook):
+        if child is not None:
+            try:
+                child.wait(timeout=.5)
+            except subprocess.TimeoutExpired:
+                pass
+    reap_adopted()
+    remaining = descendants()
+    if remaining:
+        print('Carpatic session: owned helpers failed to stop: ' + str(remaining), file=sys.stderr)
+        code = 1
+raise SystemExit(code if code >= 0 else 128 - code)
+PY

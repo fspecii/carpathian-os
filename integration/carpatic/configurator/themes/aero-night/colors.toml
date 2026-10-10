@@ -1,0 +1,36 @@
+# Aero Night (dark): glass windows over a black glass taskbar. Era of Windows Vista "Aero Glass".
+# The dark partner of the Aero palette: pick "aero" for the 7-era light look, this for the night one.
+# Palette data from the LinPad desktop-themes collection (CC0 1.0),
+# upstream/themes/desktop-themes/colors/aero-night/colors.toml @ 01246414fe9517d883b9489ba3e9e9f3780f479e.
+# Wallpapers in this folder are original Carpatic artwork (procedural, CC0; port of the upstream "aurora-night" scene).
+mode = "dark"
+
+accent = "#4cc2ff"
+selection = "#264f78"
+muted = "#5b6b7a"
+
+background = "#14181f"
+dark_background = "#0e1116"
+darker_background = "#090b0f"
+lighter_background = "#1d232c"
+
+foreground = "#e6edf5"
+dark_foreground = "#7d8a98"
+light_foreground = "#c9d3de"
+bright_foreground = "#ffffff"
+
+red = "#ff6b6b"
+yellow = "#f5c542"
+orange = "#ff9e57"
+green = "#5fd38d"
+cyan = "#4cc2ff"
+blue = "#5b9cff"
+magenta = "#c38bff"
+brown = "#8a6040"
+
+bright_red = "#ff8a8a"
+bright_yellow = "#ffd76a"
+bright_green = "#7ee6a6"
+bright_cyan = "#7fd6ff"
+bright_blue = "#86b6ff"
+bright_magenta = "#d6a8ff"

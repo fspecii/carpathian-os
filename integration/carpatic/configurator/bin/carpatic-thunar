@@ -1,0 +1,46 @@
+#!/bin/sh
+# carpatic-thunar [STYLE] : give Thunar the layout of a Carpatic GTK style (gtktheme/): headerbar or toolbar, menubar, icon size and colour,
+# default view. Written to the xfconf channel "thunar" (live for a running Thunar except the headerbar/menubar switch, which needs a new window).
+# 2nd argument "titlebars": dwm already draws a title bar for every window, so Thunar must not add its own headerbar (a double title bar): CSD is then off.
+# STYLE: macos windows ubuntu zen kylin nothing carpatic (default: GTK_STYLE from settings.conf / the profile). Safe without a session bus (does nothing).
+. "$(dirname "$0")/carpatic-lib" 2>/dev/null
+style=${1:-}
+[ -n "$style" ] || { style=$(get_setting GTK_STYLE ""); [ -n "$style" ] || style=carpatic; }
+tb=${2:-}
+command -v xfconf-query >/dev/null 2>&1 || exit 0
+# csd menubar symbolic-sidepane side-size small-toolbar-icons view zoom text-beside thumbnails
+case $style in
+  macos)    set -- true  false true  16 false ThunarIconView    THUNAR_ZOOM_LEVEL_100_PERCENT false ;;
+  windows)  set -- false false false 24 true  ThunarDetailsView THUNAR_ZOOM_LEVEL_100_PERCENT false ;;
+  ubuntu)   set -- true  false true  16 true  ThunarIconView    THUNAR_ZOOM_LEVEL_150_PERCENT false ;;
+  zen)      set -- true  false false 24 false ThunarIconView    THUNAR_ZOOM_LEVEL_150_PERCENT false ;;
+  kylin)    set -- false true  false 24 true  ThunarIconView    THUNAR_ZOOM_LEVEL_100_PERCENT true ;;
+  nothing)  set -- false false true  16 true  ThunarCompactView THUNAR_ZOOM_LEVEL_75_PERCENT false ;;
+  *)        set -- true  false true  16 true  ThunarIconView    THUNAR_ZOOM_LEVEL_100_PERCENT false ;;
+esac
+[ "$tb" = titlebars ] && set -- false "$2" "$3" "$4" "$5" "$6" "$7" "$8"  # never a second title bar under dwm title bars
+# display scale: icon sizes and zoom move to the nearest step Thunar offers, the window starts at a proportional size (a size the user set by hand is kept)
+SC=$({ "$(dirname "$0")/carpatic-scale" effective || carpatic-scale effective; } 2>/dev/null); case $SC in ''|*[!0-9]*) SC=100;; esac
+near() { # value step... -> the step closest to value
+  v=$1; shift; best=$1; for x in "$@"; do d=$(( x > v ? x - v : v - x )); b=$(( best > v ? best - v : v - best )); [ "$d" -lt "$b" ] && best=$x; done; echo "$best"; }
+zl=${7#THUNAR_ZOOM_LEVEL_}; zl=${zl%_PERCENT}; set -- "$1" "$2" "$3" "$(near $(( $4 * SC / 100 )) 16 24 32 48 64 96 128)" "$5" "$6" "THUNAR_ZOOM_LEVEL_$(near $(( zl * SC / 100 )) 25 38 50 75 100 150 200 300 400)_PERCENT" "$8"
+sz() { echo "THUNAR_ICON_SIZE_$1"; }
+q() { xfconf-query -c thunar -p "/$1" -n -t "$2" -s "$3" 2>/dev/null; }
+q misc-use-csd bool "$1"
+q last-menubar-visible bool "$2"
+q misc-symbolic-icons-in-sidepane bool "$3"
+q misc-symbolic-icons-in-toolbar bool "$3"
+q shortcuts-icon-size string "$(sz "$4")"
+q tree-icon-size string "$(sz "$4")"
+q misc-small-toolbar-icons bool "$5"
+q last-view string "$6"
+q default-view string "$6"
+q last-icon-view-zoom-level string "$7"
+q last-details-view-zoom-level string "$7"
+q last-compact-view-zoom-level string "$7"
+q misc-text-beside-icons bool "$8"
+# first-run window size 900 x 600 design px; follows the scale unless the user resized the window
+W=$(( 900 * SC / 100 )); H=$(( 600 * SC / 100 )); mem=$CFG_DIR/thunar-window-size
+cur=$(xfconf-query -c thunar -p /last-window-width 2>/dev/null); last=$(cat "$mem" 2>/dev/null)
+if [ -z "$cur" ] || [ "$cur" = "${last%x*}" ]; then q last-window-width int "$W"; q last-window-height int "$H"; echo "${W}x${H}" > "$mem"; fi
+exit 0

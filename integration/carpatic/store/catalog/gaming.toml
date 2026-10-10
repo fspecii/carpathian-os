@@ -1,0 +1,103 @@
+# Carpatic store catalog: Gaming
+# Each [[app]]: id (unique), name, description, source (apk|flatpak|ai|compat), pkg (apk package or Flathub app id),
+# icon (icon-theme name), newcomer (good for newcomers), optional: size_mb, note, detail (long text), exec (launch cmd), term (run in a terminal), launch="none" (daemon, no Open button)
+[category]
+id = "gaming"
+name = "Games"
+icon = "applications-games"
+order = 2
+blurb = "Play games on Linux"
+
+[[app]]
+id = "steam"
+name = "Steam"
+pkg = "com.valvesoftware.Steam"
+source = "flatpak"
+icon = "steam"
+newcomer = true
+size_mb = 36
+description = "The biggest PC game store and launcher (Flatpak: needs glibc, so it cannot run from apk)."
+note = "Downloads about 1 GB runtime on first start. Best with a real GPU."
+
+[[app]]
+id = "lutris"
+name = "Lutris"
+pkg = "net.lutris.Lutris"
+source = "flatpak"
+icon = "lutris"
+newcomer = false
+size_mb = 334
+description = "Play games from GOG, Epic, Battle.net and more through Wine."
+
+[[app]]
+id = "protonplus"
+name = "ProtonPlus"
+pkg = "com.vysp3r.ProtonPlus"
+source = "flatpak"
+icon = "protonplus"
+newcomer = true
+size_mb = 3
+description = "Install and update Proton-GE and Wine builds for Steam and Lutris."
+
+[[app]]
+id = "protonupqt"
+name = "ProtonUp-Qt"
+pkg = "net.davidotek.pupgui2"
+source = "flatpak"
+icon = "protonup"
+newcomer = true
+size_mb = 106
+description = "Alternative manager for Proton-GE, Wine-GE and DXVK."
+
+[[app]]
+id = "heroic"
+name = "Heroic Launcher"
+pkg = "com.heroicgameslauncher.hgl"
+source = "flatpak"
+icon = "heroic"
+newcomer = false
+size_mb = 326
+description = "Open client for Epic Games, GOG and Amazon Prime Gaming."
+
+[[app]]
+id = "prism"
+name = "Prism Launcher"
+pkg = "org.prismlauncher.PrismLauncher"
+source = "flatpak"
+icon = "prismlauncher"
+newcomer = false
+size_mb = 42
+description = "Minecraft launcher with many instances and mods."
+
+[[app]]
+id = "gamemode"
+name = "GameMode"
+pkg = "gamemode"
+source = "apk"
+icon = "gamemode"
+newcomer = false
+size_mb = 1
+launch = "none"
+description = "Temporarily boosts CPU/GPU performance while a game runs."
+
+[[app]]
+id = "mangohud"
+name = "MangoHud"
+pkg = "mangohud"
+source = "apk"
+icon = "mangohud"
+newcomer = false
+size_mb = 3
+launch = "none"
+description = "FPS and performance overlay for games."
+
+[[app]]
+id = "steam-devices"
+name = "Game controller rules"
+pkg = "steam-devices"
+source = "apk"
+icon = "input-gaming"
+newcomer = true
+size_mb = 1
+launch = "none"
+description = "udev rules so controllers work in Steam and other games."

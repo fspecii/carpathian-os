@@ -1,0 +1,42 @@
+#!/bin/sh
+# carpatic-applets watch : keeps the tray applets (network: nm-applet, bluetooth: blueman-applet) running and docked.
+#  - starts them if they are missing (crash, killed, not started yet)
+#  - re-launches them when the tray changes (dwm's built-in tray or tint2 appears, restarts or is replaced), so the icons always re-dock
+#  - dwm tray up with no icon for several seconds while nm-applet runs: restart nm-applet once
+# Log: ~/.cache/carpatic/applets.log
+LOG=${XDG_CACHE_HOME:-$HOME/.cache}/carpatic/applets.log
+mkdir -p "$(dirname "$LOG")"
+log() { printf '%s %s\n' "$(date +%T)" "$*" >> "$LOG"; }
+run() { pgrep -u "$(id -u)" -x "$1" >/dev/null 2>&1 && return 0; command -v "$1" >/dev/null 2>&1 || return 0; log "start $1"; "$@" >/dev/null 2>&1 & }
+restart_nm() { log "restart nm-applet ($1)"; pkill -u "$(id -u)" -x nm-applet 2>/dev/null; sleep 1; run nm-applet; }
+tray_id() {
+  p=$(xprop -root _CARPATIC_SYSTRAY 2>/dev/null | sed -n 's/.*= \([0-9][0-9]*\), \([0-9][0-9]*\)$/\1 \2/p')
+  if [ -n "$p" ]; then echo "dwm:${p% *}"; return; fi
+  t=$(pgrep -u "$(id -u)" -x tint2 2>/dev/null | head -1)
+  [ -n "$t" ] && echo "tint2:$t" || echo none
+}
+tray_icons() { xprop -root _CARPATIC_SYSTRAY 2>/dev/null | sed -n 's/.*= [0-9][0-9]*, \([0-9][0-9]*\)$/\1/p'; }
+case ${1:-watch} in
+  watch) ;;
+  *) echo "usage: carpatic-applets watch" >&2; exit 2 ;;
+esac
+last=; empty=0; cool=0
+while :; do
+  cur=$(tray_id)
+  if [ "$cur" != "$last" ]; then
+    if [ "$cur" != none ] && [ -n "$last" ]; then restart_nm "tray changed $last -> $cur"; fi
+    if [ "$cur" != none ] && [ -z "$last" ]; then run nm-applet; fi
+    last=$cur; empty=0
+  fi
+  run nm-applet
+  # no Bluetooth controller (desktops, VMs): do not run the Bluetooth applet (two Python processes, about 115 MB); it starts when a dongle appears
+  [ -n "$(ls /sys/class/bluetooth 2>/dev/null)" ] && run blueman-applet
+  case $cur in
+    dwm:*)
+      n=$(tray_icons)
+      if [ "${n:-0}" = 0 ] && pgrep -u "$(id -u)" -x nm-applet >/dev/null 2>&1; then empty=$((empty + 1)); else empty=0; fi
+      if [ "$empty" -ge 5 ] && [ "$cool" -le 0 ]; then restart_nm "dwm tray has no icon"; empty=0; cool=10; fi ;;
+  esac
+  [ "$cool" -gt 0 ] && cool=$((cool - 1))
+  sleep 2
+done

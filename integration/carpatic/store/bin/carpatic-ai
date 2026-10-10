@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""carpatic-ai: install and manage AI tools (agents, local models, GPU) on Carpatic."""
+import argparse
+import signal
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+import os
+import re
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "lib"))
+sys.path.insert(0, "/usr/local/lib/carpatic-store")
+import carpatic_store as cs  # noqa: E402
+import carpatic_ai as ai  # noqa: E402
+import carpatic_drivers as drv  # noqa: E402
+
+TTY = sys.stdout.isatty()
+
+
+def say(m=""):
+    print(m, flush=True)
+
+
+def printer():
+    last = {"p": False}
+    def cb(line):
+        prog = bool(re.search(r"\d+%\s*$", line.strip()))
+        if TTY and prog:
+            sys.stdout.write("\r  " + line.strip()[:76].ljust(76)); sys.stdout.flush(); last["p"] = True
+            return
+        if last["p"]:
+            sys.stdout.write("\n"); last["p"] = False
+        if not TTY and prog and not line.strip().endswith(("0%", "100%")):
+            return
+        say("  " + line.strip()[:200])
+    return cb
+
+
+def cmd_status(a):
+    say(f'{"TOOL":<17}{"STATE":<12}{"VERSION":<18}DOWNLOAD SHA256')
+    for tid, name, inst, ver in ai.status():
+        d = ai.details(tid) if inst else {}
+        state = ("pinned" if d.get("pinned") else "installed") if inst else "-"
+        say(f'{tid:<17}{state:<12}{(ver if inst else ""):<18}{(d.get("sha256") or "")[:16]}')
+    say("\nTools follow the vendor's latest release and are never updated by themselves: 'carpatic-ai update <tool>' updates, 'carpatic-ai pin <tool>' keeps this version.")
+    g = drv.gpus()
+    say("\nGPU: " + (", ".join(f'{x["vendor_name"]} [{x["driver"] or "no driver"}]' for x in g) or "none detected"))
+    say(f'Ollama service: {"running" if ai.ollama_up() else "not running"}')
+    return 0
+
+
+def cmd_install(a):
+    rc = 0
+    for tid in a.tools:
+        t = ai.get_tool(tid)
+        say(f'Installing {t["name"]} (about {t["size_mb"]} MB, licence: {t["license"]})...')
+        try:
+            ai.install(t, printer(), force=a.force)
+        except cs.StoreError as e:
+            say(f"  ERROR: {e}"); rc = 1
+    return rc
+
+
+def cmd_remove(a):
+    rc = 0
+    for tid in a.tools:
+        try:
+            ai.remove(ai.get_tool(tid), printer()); say("  OK")
+        except cs.StoreError as e:
+            say(f"  ERROR: {e}"); rc = 1
+    return rc
+
+
+def cmd_update(a):
+    ids = a.tools or [t for t, _, inst, _ in ai.status() if inst]
+    rc = 0
+    for tid in ids:
+        try:
+            say(f"{tid}: {ai.update(ai.get_tool(tid), printer())}")
+        except cs.StoreError as e:
+            say(f"  ERROR: {e}"); rc = 1
+    return rc
+
+
+def cmd_pin(a):
+    rc = 0
+    for tid in a.tools:
+        try:
+            ai.set_pinned(tid, a.cmd == "pin"); say(f"{tid}: {'pinned (updates skip it)' if a.cmd == 'pin' else 'unpinned'}")
+        except cs.StoreError as e:
+            say(f"  ERROR: {e}"); rc = 1
+    return rc
+
+
+def cmd_models(a):
+    if a.sub == "list":
+        try:
+            have = dict(ai.local_models())
+        except cs.StoreError as e:
+            have = None
+            say(f"(Installed models unknown: {e})")
+        say(f'{"MODEL":<26}{"SIZE":>8}  {"RAM":>5}  KIND        STATE')
+        for m in ai.models():
+            st = "" if have is None else ("installed" if m["id"] in have else "")
+            say(f'{m["id"]:<26}{m["size_mb"]:>6}MB  {m["ram_gb"]:>3}GB  {m["kind"]:<11} {st}' + ("  *" if m.get("good") else ""))
+        if have:
+            extra = [n for n in have if n not in {m["id"] for m in ai.models()}]
+            for n in extra:
+                say(f"{n:<26}{have[n]:>6}MB  (yours)")
+        say("\n* = recommended for newcomers. Pull one: carpatic-ai models pull llama3.2:1b")
+        return 0
+    if a.sub == "pull":
+        ai.pull_model(a.name, printer()); say("Done."); return 0
+    if a.sub == "run":
+        return ai.run_model(a.name, " ".join(a.prompt) if a.prompt else None)
+    if a.sub == "rm":
+        ai.remove_model(a.name); say("Removed."); return 0
+    return 1
+
+
+def cmd_gpu(a):
+    g = drv.gpus()
+    if not g:
+        say("No GPU found on the PCI bus.")
+    for x in g:
+        say(f'{x["vendor_name"]}  device {x["device"]}  kernel driver: {x["driver"] or "none"}')
+    vd = drv.vulkan_devices()
+    say("Vulkan: " + ("vulkan-tools not installed (carpatic-ai install llama-cpp)" if vd is None else (", ".join(vd) or "no device")))
+    if vd and all("llvmpipe" in d for d in vd):
+        say("  Only the CPU (llvmpipe) renders Vulkan: AI runs on the CPU. On real hardware run: carpatic-drivers install")
+    for f in drv.detect():
+        if f["id"].startswith("gpu-") and f["honest"]:
+            say("\n" + f["title"] + "\n  " + f["honest"])
+    return 0
+
+
+def cmd_llama(a):
+    if not os.path.exists(a.model):
+        raise cs.StoreError(f"Model file not found: {a.model}. Download a GGUF file first (e.g. from huggingface.co).")
+    if not ai.which("llama-server"):
+        raise cs.StoreError("llama.cpp is not installed. Install it with: carpatic-ai install llama-cpp")
+    say(f"Serving {a.model} on http://127.0.0.1:{a.port} (Ctrl+C to stop)")
+    return subprocess.call(["llama-server", "-m", a.model, "--host", "127.0.0.1", "--port", str(a.port)])
+
+
+def cmd_webui(a):
+    say(ai.webui(a.sub))
+    if a.sub == "open":
+        subprocess.Popen(["xdg-open", "http://127.0.0.1:3000"])
+    return 0
+
+
+def cmd_compat(a):
+    """Thin wrapper: the glibc box is managed by carpatic-compat."""
+    exe = ai.which("carpatic-compat")
+    if not exe:
+        raise cs.StoreError("carpatic-compat is not installed. Install it with: doas sh compat/install.sh")
+    if a.sub == "enter":
+        return subprocess.call([exe, "shell"])
+    if a.sub == "run":
+        return subprocess.call([exe, "run"] + a.args)
+    return subprocess.call([exe, "status"])
+
+
+def cmd_doctor(a):
+    bad = 0
+    for name, ok, d in ai.doctor(a.deep):
+        say(f'{"OK  " if ok else "WARN" if ok is None else "FAIL"} {name}: {d}')
+        bad += ok is False
+    return 1 if bad else 0
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="carpatic-ai", description="AI tools for Carpatic: agents, local models, GPU.")
+    sub = ap.add_subparsers(dest="cmd")
+    sub.add_parser("status")
+    p = sub.add_parser("install"); p.add_argument("tools", nargs="+"); p.add_argument("--force", action="store_true")
+    p = sub.add_parser("remove"); p.add_argument("tools", nargs="+")
+    p = sub.add_parser("update"); p.add_argument("tools", nargs="*")
+    p = sub.add_parser("pin"); p.add_argument("tools", nargs="+")
+    p = sub.add_parser("unpin"); p.add_argument("tools", nargs="+")
+    m = sub.add_parser("models"); ms = m.add_subparsers(dest="sub", required=True)
+    ms.add_parser("list"); q = ms.add_parser("pull"); q.add_argument("name")
+    q = ms.add_parser("run"); q.add_argument("name"); q.add_argument("prompt", nargs="*")
+    q = ms.add_parser("rm"); q.add_argument("name")
+    sub.add_parser("gpu")
+    p = sub.add_parser("llama"); ls = p.add_subparsers(dest="sub", required=True); q = ls.add_parser("serve"); q.add_argument("model"); q.add_argument("--port", type=int, default=8080)
+    p = sub.add_parser("webui"); p.add_argument("sub", choices=["start", "stop", "status", "open"])
+    p = sub.add_parser("compat"); cs_ = p.add_subparsers(dest="sub", required=True); cs_.add_parser("enter"); cs_.add_parser("status"); q = cs_.add_parser("run"); q.add_argument("args", nargs=argparse.REMAINDER)
+    p = sub.add_parser("doctor"); p.add_argument("--deep", action="store_true", help="also pulls a 258 MB tiny model and generates text")
+    a = ap.parse_args()
+    if not a.cmd:
+        ap.print_help(); return 0
+    f = {"status": cmd_status, "install": cmd_install, "remove": cmd_remove, "update": cmd_update, "pin": cmd_pin, "unpin": cmd_pin, "models": cmd_models,
+         "gpu": cmd_gpu, "llama": cmd_llama, "webui": cmd_webui, "compat": cmd_compat, "doctor": cmd_doctor}[a.cmd]
+    try:
+        return f(a)
+    except cs.StoreError as e:
+        print(f"Error: {e}", file=sys.stderr); return 1
+    except KeyboardInterrupt:
+        print("\nCancelled.", file=sys.stderr); return 130
+
+
+if __name__ == "__main__":
+    sys.exit(main())

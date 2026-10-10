@@ -1,0 +1,125 @@
+#!/bin/sh
+# carpatic-a11y: accessibility switches for the Carpatic desktop. Used by the Accessibility page of Carpatic System and by the session.
+#
+#   carpatic-a11y status                         what is on
+#   carpatic-a11y large-text on|off              bigger UI font, mono font and mouse pointer
+#   carpatic-a11y high-contrast on|off           white-on-black theme with a yellow accent (contrast 21:1); "off" restores your theme
+#   carpatic-a11y screen-reader on|off           Orca (speaks the interface, needs speech-dispatcher + espeak-ng)
+#   carpatic-a11y keyboard on|off                on-screen keyboard (Onboard)
+#   carpatic-a11y sticky|slow|bounce|mousekeys on|off
+#                                                sticky keys (press modifiers one at a time), slow keys, bounce keys (ignore double
+#                                                presses), keypad-moves-the-pointer
+#   carpatic-a11y session                        apply everything saved (called at login)
+#
+# State lives in ~/.config/carpatic/a11y.env. License: MIT. POSIX sh (+ python3 for the X keyboard controls).
+set -u
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}/carpatic"; ENV="$CFG/a11y.env"
+mkdir -p "$CFG"; [ -f "$ENV" ] || : > "$ENV"
+say() { printf '%s\n' "$*"; }
+die() { printf 'carpatic-a11y: %s\n' "$*" >&2; exit 1; }
+get() { sed -n "s/^$1=//p" "$ENV" | tail -1 | tr -d '"'; }
+put() { grep -v "^$1=" "$ENV" > "$ENV.new" 2>/dev/null; printf '%s="%s"\n' "$1" "$2" >> "$ENV.new"; mv "$ENV.new" "$ENV"; }
+del() { grep -v "^$1=" "$ENV" > "$ENV.new" 2>/dev/null; mv "$ENV.new" "$ENV"; }
+onoff() { case "${1:-}" in on|off) :;; *) die "say 'on' or 'off' (example: carpatic-a11y $CMD on)";; esac; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+xkb() { # xkb <mask> on|off : change an AccessX control on the core keyboard
+  [ -n "${DISPLAY:-}" ] || return 0
+  python3 - "$1" "$2" <<'PY'
+import ctypes, sys
+mask = int(sys.argv[1]); on = sys.argv[2] == "on"
+x = ctypes.CDLL("libX11.so.6")
+x.XOpenDisplay.restype = ctypes.c_void_p
+d = x.XOpenDisplay(None)
+if not d: sys.exit(0)
+a = [ctypes.c_int() for _ in range(5)]
+x.XkbQueryExtension.argtypes = [ctypes.c_void_p] + [ctypes.c_void_p] * 5
+a[3].value, a[4].value = 1, 0
+x.XkbQueryExtension(d, *[ctypes.byref(i) for i in a])
+x.XkbChangeEnabledControls.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint]
+x.XkbChangeEnabledControls(d, 0x100, mask, mask if on else 0)
+x.XFlush.argtypes = [ctypes.c_void_p]; x.XFlush(d)
+PY
+}
+xkb_enabled() { # print the AccessX controls the X server really has on (bitmask), 0 when there is no display
+  [ -n "${DISPLAY:-}" ] || { echo 0; return; }
+  python3 - <<'PY'
+import ctypes
+x = ctypes.CDLL("libX11.so.6")
+x.XOpenDisplay.restype = ctypes.c_void_p
+d = x.XOpenDisplay(None)
+if not d: print(0); raise SystemExit
+a = [ctypes.c_int() for _ in range(5)]
+x.XkbQueryExtension.argtypes = [ctypes.c_void_p] + [ctypes.c_void_p] * 5
+a[3].value, a[4].value = 1, 0
+x.XkbQueryExtension(d, *[ctypes.byref(i) for i in a])
+x.XkbAllocKeyboard.restype = ctypes.c_void_p
+x.XkbGetControls.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_void_p]
+desc = x.XkbAllocKeyboard()
+x.XkbGetControls(d, 0xF8001FFF, desc)      # XkbAllControlsMask
+ctrls = ctypes.c_void_p.from_address(desc + 16).value
+print(ctypes.c_uint.from_address(ctrls + 12).value)   # XkbControlsRec.enabled_ctrls
+PY
+}
+mask_of() { case "$1" in slow) echo 2;; bounce) echo 4;; sticky) echo 8;; mousekeys) echo 16;; esac; }
+
+proc_running() { ps | grep -v grep | grep -q "$1"; }
+
+set_large() {
+  have carpatic-appearance || die "the Appearance tools are not installed"
+  if [ "$1" = on ]; then
+    [ -n "$(get LARGE_PREV)" ] || put LARGE_PREV "$(carpatic-appearance get 2>/dev/null | tr '\n' ' ')"
+    carpatic-appearance set ui-size 14 mono-size 13 cursor-size 40 >/dev/null 2>&1
+  else
+    carpatic-appearance set ui-size default mono-size default cursor-size default >/dev/null 2>&1; del LARGE_PREV
+  fi
+  put LARGE_TEXT "$1"
+}
+set_contrast() {
+  have carpatic-theme || die "the theme tools are not installed"
+  if [ "$1" = on ]; then
+    cur=$(carpatic-theme current 2>/dev/null)
+    [ "$cur" = high-contrast ] || put CONTRAST_PREV "$cur"
+    carpatic-theme set high-contrast >/dev/null 2>&1 || die "the high-contrast theme is not installed"
+  else
+    prev=$(get CONTRAST_PREV); carpatic-theme set "${prev:-carpatic}" >/dev/null 2>&1; del CONTRAST_PREV
+  fi
+  put HIGH_CONTRAST "$1"
+}
+set_reader() {
+  if [ "$1" = on ]; then
+    have orca || die "the screen reader (orca) is not installed. Install it with: doas apk add orca speech-dispatcher espeak-ng"
+    proc_running "[o]rca" || { orca >/dev/null 2>&1 & }
+  else pkill -x orca 2>/dev/null; pkill -f '/usr/bin/orca' 2>/dev/null; fi
+  put SCREEN_READER "$1"
+}
+set_keyboard() {
+  if [ "$1" = on ]; then
+    have onboard || die "the on-screen keyboard (onboard) is not installed. Install it with: doas apk add onboard"
+    proc_running "[o]nboard" || { onboard >/dev/null 2>&1 & }
+  else pkill -f '/usr/bin/onboard' 2>/dev/null; fi
+  put ONSCREEN_KEYBOARD "$1"
+}
+
+CMD=${1:-status}; [ $# -gt 0 ] && shift
+case "$CMD" in
+  status)
+    for k in LARGE_TEXT HIGH_CONTRAST SCREEN_READER ONSCREEN_KEYBOARD; do
+      printf '%-18s %s\n' "$(printf '%s' "$k" | tr 'A-Z_' 'a-z-')" "$(v=$(get $k); echo "${v:-off}")"; done
+    en=$(xkb_enabled)
+    for c in sticky slow bounce mousekeys; do
+      m=$(mask_of "$c"); if [ $((en & m)) -ne 0 ]; then v=on; else v=off; fi; n="$c-keys"; [ "$c" = mousekeys ] && n=mouse-keys; printf '%-18s %s\n' "$n" "$v"; done;;
+  large-text)    onoff "${1:-}"; set_large "$1";;
+  high-contrast) onoff "${1:-}"; set_contrast "$1";;
+  screen-reader) onoff "${1:-}"; set_reader "$1";;
+  keyboard)      onoff "${1:-}"; set_keyboard "$1";;
+  sticky|slow|bounce|mousekeys) onoff "${1:-}"; xkb "$(mask_of "$CMD")" "$1"; put "$(printf '%s' "$CMD" | tr a-z A-Z)" "$1";;
+  session)
+    for c in sticky slow bounce mousekeys; do v=$(get "$(printf '%s' "$c" | tr a-z A-Z)"); [ "$v" = on ] && xkb "$(mask_of "$c")" on; done
+    [ "$(get SCREEN_READER)" = on ] && have orca && ! proc_running "[o]rca" && { orca >/dev/null 2>&1 & }
+    [ "$(get ONSCREEN_KEYBOARD)" = on ] && have onboard && ! proc_running "[o]nboard" && { onboard >/dev/null 2>&1 & }
+    ;;
+  -h|--help|help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//';;
+  *) die "unknown command '$CMD' (try: carpatic-a11y help)";;
+esac
+exit 0

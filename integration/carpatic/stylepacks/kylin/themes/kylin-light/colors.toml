@@ -1,0 +1,32 @@
+# Kylin. Tokens from the UKUI 4 design spec (LinPad themes/kylin/DESIGN-SPEC.md section 1): KGray ramp, daybreak-blue brand, status colours.
+mode = "light"
+
+accent = "#2f7ee0"
+selection = "#c9def8"
+muted = "#737373"
+
+background = "#f6f6f6"
+dark_background = "#ffffff"
+darker_background = "#e6e6e6"
+lighter_background = "#eeeeee"
+
+foreground = "#262626"
+dark_foreground = "#737373"
+light_foreground = "#595959"
+bright_foreground = "#ffffff"
+
+red = "#d93636"
+green = "#0f9a2c"
+yellow = "#b07d00"
+blue = "#3676f5"
+magenta = "#8926eb"
+cyan = "#0a9ea5"
+orange = "#d4690a"
+brown = "#8a6a4a"
+
+bright_red = "#f04943"
+bright_green = "#14a621"
+bright_yellow = "#c48f00"
+bright_blue = "#3790fa"
+bright_magenta = "#a050f0"
+bright_cyan = "#06c0c7"

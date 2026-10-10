@@ -1,0 +1,55 @@
+# Kylin design tokens as DATA for other components (widgets skin, lock screen, greeter). Values are facts from the UKUI 4 design spec
+# (LinPad themes/kylin/DESIGN-SPEC.md, section numbers in brackets). Colours per mode live in themes/kylin-{light,dark}/colors.toml.
+[radius]               # [1.5]
+min = 4                # checkbox, chips, list rows
+normal = 6             # buttons, inputs, taskbar tiles
+menu = 8               # menus, tooltips, quick-settings tiles, notification cards
+window = 12            # windows, start menu, sidebar
+
+[spacing]              # [1.6] 8 pt grid with a 4 pt half step
+min = 4
+normal = 8
+big = 16
+window = 24
+
+[motion]               # [1.5]
+control_ms = 100
+default_ms = 150
+shell_ms = 300         # menu, sidebar, notifications: InOutQuad
+
+[panel]                # [2]
+height = 48
+tile = 40
+indicator_single = 8
+indicator_multi = 16
+show_desktop_width = 17
+preview = [272, 192]
+
+[start_menu]           # [3]
+size = [766, 688]
+columns = [312, 396, 56]
+row_height = 40
+icon = 32
+favorite_cell = [88, 100]
+
+[sidebar]              # [6, 7]
+width = 396
+toggle_tile = [80, 72]
+toggle_columns = 4
+slider_row = 56
+notification_width = 374
+notification_timeout_ms = 6000
+
+[widgets]              # suggestion for the widgets agent: a widget card is a notification-card: radius 8, 1 px line, 16 px padding, header row 24 px
+card_radius = 8
+card_padding = 16
+card_line = 1
+header_height = 24
+accent_list = ["#3790fa", "#8926eb", "#e44ae8", "#f2b527", "#14a621", "#f04943", "#fa7d0f", "#3676f5", "#06c0c7"]
+
+[window]               # [4]
+title_height = 38
+button_size = [30, 30]
+button_hover_radius = 6
+close_hover = "#e7202b"
+close_pressed = "#c21b24"

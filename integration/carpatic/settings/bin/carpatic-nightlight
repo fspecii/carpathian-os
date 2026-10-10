@@ -1,0 +1,33 @@
+#!/bin/sh
+# carpatic-nightlight: warmer screen colours in the evening (sct, redshift or gammastep, whichever is installed).
+#   carpatic-nightlight status        "on 4000" or "off", plus "tool <name>" ("none" when no tool is installed)
+#   carpatic-nightlight on [KELVIN]   warm the screen now (default 4000; 2500 = very warm .. 6500 = neutral)
+#   carpatic-nightlight off | apply   (the session calls apply at login: applies the saved state)
+#   carpatic-nightlight schedule <always|sunset|HH:MM-HH:MM>   when it is on; sunset needs a location, so a time window is the default
+# Saved in ~/.config/carpatic/nightlight.env. License: MIT. POSIX sh.
+set -u
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}/carpatic"; ENV="$CFG/nightlight.env"
+mkdir -p "$CFG"; [ -f "$ENV" ] || : > "$ENV"
+die() { printf 'carpatic-nightlight: %s\n' "$*" >&2; exit 1; }
+get() { sed -n "s/^$1=//p" "$ENV" | tail -1 | tr -d '"'; }
+put() { grep -v "^$1=" "$ENV" > "$ENV.new" 2>/dev/null; printf '%s="%s"\n' "$1" "$2" >> "$ENV.new"; mv "$ENV.new" "$ENV"; }
+tool() { for t in sct redshift gammastep; do command -v $t >/dev/null 2>&1 && { echo $t; return; }; done; echo none; }
+set_temp() { case $(tool) in sct) sct "$1";; redshift) redshift -P -O "$1" >/dev/null 2>&1;; gammastep) gammastep -P -O "$1" >/dev/null 2>&1;; esac; }
+reset() { case $(tool) in sct) sct 6500;; redshift) redshift -x >/dev/null 2>&1;; gammastep) gammastep -x >/dev/null 2>&1;; esac; }
+tom() { h=${1%:*}; m=${1#*:}; h=${h#0}; m=${m#0}; echo $(( ${h:-0} * 60 + ${m:-0} )); }
+in_window() { w=$(get SCHEDULE); case "$w" in ""|always) return 0;; esac
+  s=$(tom "${w%-*}"); e=$(tom "${w#*-}"); n=$(tom "$(date +%H:%M)")
+  if [ "$s" -lt "$e" ]; then [ "$n" -ge "$s" ] && [ "$n" -lt "$e" ]; else [ "$n" -ge "$s" ] || [ "$n" -lt "$e" ]; fi; }
+apply() { [ -n "${DISPLAY:-}" ] || return 0; if [ "$(get ENABLED)" = on ] && in_window; then set_temp "$(get KELVIN || echo 4000)"; else reset; fi; }
+CMD=${1:-status}; [ $# -gt 0 ] && shift
+case "$CMD" in
+  status) printf '%s %s\ntool %s\nschedule %s\n' "$( [ "$(get ENABLED)" = on ] && echo on || echo off)" "$(get KELVIN)" "$(tool)" "$(get SCHEDULE)";;
+  on) k=${1:-$(get KELVIN)}; k=${k:-4000}; case "$k" in ''|*[!0-9]*) die "give a temperature in Kelvin, like 4000";; esac; [ "$k" -ge 1500 ] && [ "$k" -le 6500 ] || die "temperature must be between 1500 and 6500"
+    [ "$(tool)" != none ] || die "no night light tool installed (apk add redshift)"; put KELVIN "$k"; put ENABLED on; apply;;
+  off) put ENABLED off; apply;;
+  schedule) case "${1:-}" in always) put SCHEDULE always;; [0-2][0-9]:[0-5][0-9]-[0-2][0-9]:[0-5][0-9]) put SCHEDULE "$1";; *) die "always or HH:MM-HH:MM";; esac; apply;;
+  apply) apply;;
+  watch) while :; do apply; sleep 60; done;;
+  *) die "unknown command '$CMD' (status, on, off, schedule, apply, watch)";;
+esac
+exit 0

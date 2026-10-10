@@ -1,0 +1,20 @@
+#!/bin/sh
+# carpatic-greeter-scale: lightdm greeter-setup-script (root, X is up, DISPLAY/XAUTHORITY set by lightdm; runs before the greeter starts).
+# The login screen is shown before anybody is logged in, so it picks its scale itself: the first user's SCALE setting when it is a number, else the
+# policy for this screen (carpatic-scale). It writes the greeter's xft-dpi / cursor size and a gtk.css whose px values are multiplied by the scale.
+SHARE=/usr/local/share/carpatic/lightdm
+U=$(awk -F: '$3>=1000 && $3<60000 {print $1; exit}' /etc/passwd)
+H=$(getent passwd "${U:-nobody}" | cut -d: -f6)
+S=$(CARPATIC_CONFIG="$H/.config/carpatic" carpatic-scale effective 2>/dev/null); case $S in ''|*[!0-9]*) S=100;; esac
+gh=$(getent passwd lightdm | cut -d: -f6); [ -n "$gh" ] || gh=/var/lib/lightdm
+[ -f "$SHARE/greeter-gtk.css" ] && [ -d "$gh/.config/gtk-3.0" ] || exit 0
+awk -v s="$S" '{ r=$0; out=""
+  while (match(r, /[0-9]+(\.[0-9]+)?px/)) { n=substr(r,RSTART,RLENGTH-2)+0
+    if (n >= 1 && n < 200) { v=int(n*s/100+0.5); if (v<1) v=1 } else v=n
+    out=out substr(r,1,RSTART-1) v "px"; r=substr(r,RSTART+RLENGTH) }
+  print out r }' "$SHARE/greeter-gtk.css" > "$gh/.config/gtk-3.0/gtk.css.new" && mv "$gh/.config/gtk-3.0/gtk.css.new" "$gh/.config/gtk-3.0/gtk.css"
+chown lightdm:lightdm "$gh/.config/gtk-3.0/gtk.css" 2>/dev/null
+f=/etc/lightdm/lightdm-gtk-greeter.conf
+[ -f "$SHARE/lightdm-gtk-greeter.conf" ] || exit 0
+{ cat "$SHARE/lightdm-gtk-greeter.conf"; printf 'xft-dpi = %s\n' $((96 * S / 100)); } > "$f.new" && mv "$f.new" "$f"
+exit 0

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Power
+Comment=Lock, sleep, restart or shut down
+Exec=carpatic-powermenu
+Icon=gnome-shutdown
+Terminal=false
+Categories=System;

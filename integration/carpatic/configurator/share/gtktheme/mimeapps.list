@@ -1,0 +1,30 @@
+# Carpatic system-wide default applications (installed as /etc/xdg/mimeapps.list; a user's ~/.config/mimeapps.list always wins).
+[Default Applications]
+inode/directory=thunar.desktop
+text/plain=org.xfce.mousepad.desktop
+text/markdown=org.xfce.mousepad.desktop
+text/x-log=org.xfce.mousepad.desktop
+text/x-csrc=org.xfce.mousepad.desktop
+text/x-python=org.xfce.mousepad.desktop
+text/x-shellscript=org.xfce.mousepad.desktop
+application/x-shellscript=org.xfce.mousepad.desktop
+application/json=org.xfce.mousepad.desktop
+application/xml=org.xfce.mousepad.desktop
+application/pdf=org.gnome.Evince.desktop
+application/postscript=org.gnome.Evince.desktop
+image/vnd.djvu=org.gnome.Evince.desktop
+application/epub+zip=org.gnome.Evince.desktop
+image/jpeg=org.gnome.eog.desktop
+image/png=org.gnome.eog.desktop
+image/gif=org.gnome.eog.desktop
+image/webp=org.gnome.eog.desktop
+image/bmp=org.gnome.eog.desktop
+image/svg+xml=org.gnome.eog.desktop
+image/tiff=org.gnome.eog.desktop
+application/zip=xarchiver.desktop
+application/x-tar=xarchiver.desktop
+application/x-compressed-tar=xarchiver.desktop
+application/x-xz-compressed-tar=xarchiver.desktop
+application/gzip=xarchiver.desktop
+application/x-7z-compressed=xarchiver.desktop
+application/x-rar=xarchiver.desktop

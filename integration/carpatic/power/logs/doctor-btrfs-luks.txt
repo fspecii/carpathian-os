@@ -1,0 +1,36 @@
+# carpatic-power doctor  (Btrfs + LUKS2 + Limine, QEMU)
+Carpatic power doctor: can this machine hibernate?
+
+Kernel and firmware
+  [ ok ] the kernel offers hibernation ('disk' sleep state: freeze mem disk)
+  [ ok ] kernel lockdown is off, so nothing blocks hibernation
+  [ ok ] suspend modes available: s2idle [deep]
+  [ ok ] hibernate modes: platform shutdown reboot [suspend] test_resume
+
+Swap space
+  [ ok ] swap 1971 MiB covers all RAM (1971 MiB), so the image always fits
+
+Where the system resumes from
+  [ ok ] boot line has resume=/dev/mapper/carpatic_root resume_offset=664832
+  [ ok ] resume_offset matches the swap file's real location
+  [ ok ] the boot loader config (limine) matches the running boot line
+
+Early boot (initramfs)
+  [ ok ] the initramfs knows how to resume
+  [ ok ] encrypted root (LUKS): the initramfs unlocks the disk first, then resumes (the passphrase is asked on resume, as on boot)
+
+Services
+  [ ok ] elogind is running (lid, power key and 'loginctl hibernate' work)
+  [ ok ] lid and power-key policy installed
+
+Result: hibernate should work.
+Not testable in software: whether your graphics, Wi-Fi and USB devices come back cleanly; see power/HARDWARE-TEST-PLAN.md.
+
+# carpatic-power status
+Carpatic power 0.1
+battery   : none (desktop)
+profile   : auto (currently performance)
+cpu       : governor n/a
+sleep     : suspend [s2idle [deep]]  hibernate [yes]
+swap      : 1971 MiB on disk, RAM 1971 MiB, zram 984.996 MiB
+hibernate : ready

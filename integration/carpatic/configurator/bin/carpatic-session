@@ -1,0 +1,90 @@
+#!/bin/sh
+# carpatic-session start|restart : (re)start the per-profile helpers (bars, hotkey daemon, super-tap, focus log).
+# Called from the dwm autostart (start) and from carpatic-apply --restart (restart).
+[ -n "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ] || { echo 'Carpatic helpers require their own X11 session.' >&2; exit 1; }
+export CARPATIC_SESSION=1
+command -v carpatic-session-process >/dev/null 2>&1 || { echo 'Missing carpatic-session-process; reinstall desktop tools.' >&2; exit 1; }
+present_name() { carpatic-session-process present --name "$1"; }
+present_script() { carpatic-session-process present --script "$1"; }
+stop_name() { carpatic-session-process stop --name "$1"; }
+stop_script() { carpatic-session-process stop --script "$1"; }
+CFG=$HOME/.config/carpatic
+CUR=${CARPATIC_STATE:-$HOME/.local/state/carpatic}/current
+bg() { "$@" >/dev/null 2>&1 & }
+mode=${1:-start}
+# the everyday folders (Documents, Downloads ...) and their Files sidebar entries, created once; harmless to repeat
+[ "$mode" = start ] && command -v carpatic-userdirs >/dev/null 2>&1 && carpatic-userdirs
+# login counter (a gentle reminder on the 2nd login only). A login is one dwm process: the first-run Welcome starts this script a second time
+# in the same X session, which used to count as the "2nd login" and showed the second tip minutes after the first.
+if [ "$mode" = start ]; then
+  dwmpid=$(carpatic-session-process pid --name carpatic-wm 2>/dev/null | head -n1)
+  if [ -z "$dwmpid" ] || [ "$dwmpid" != "$(cat "$CFG/logins.pid" 2>/dev/null)" ]; then
+    mkdir -p "$CFG"; [ -n "$dwmpid" ] && echo "$dwmpid" > "$CFG/logins.pid"
+    n=$(cat "$CFG/logins" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$CFG/logins"
+    # -a Carpatic: the notification centre shows the sender's name ("notify-send" is not a name for a person)
+    if [ "$n" = 1 ] && command -v notify-send >/dev/null; then
+      (sleep 60; notify-send -a Carpatic -i input-keyboard "Every shortcut, one key away" "Press Super+K any time to see all keyboard shortcuts, and Super+T to turn auto-tiling on or off.") >/dev/null 2>&1 &
+    fi
+    if [ "$n" = 2 ] && command -v notify-send >/dev/null; then
+      (sleep 8; notify-send -a Carpatic -i preferences-desktop-theme "Make it feel like home" "You can change your desktop style, colours, fonts and icons any time: press Super+F2 (Settings) and open Appearance.") >/dev/null 2>&1 &
+    fi
+  fi
+fi
+[ -n "${CARPATIC_LOGIN_COUNT_ONLY:-}" ] && exit 0
+
+if [ ! -f "$CFG/settings.conf" ]; then
+  # fresh install: nothing chosen yet, the Welcome wizard decides
+  [ -f "$CFG/welcome-done" ] || { sleep 3; carpatic-apply; exec carpatic-welcome; }  # defaults (tiling/carpatic) + floating rule for the wizard
+  exit 0
+fi
+[ "$mode" = start ] && { sleep 3; carpatic-apply; }   # let autostart finish; re-assert generated configs
+. "$CFG/profile.env"
+export CARPATIC_SESSION=1   # GUI helpers (panel, flyouts, Quick Look ...) refuse to run outside a Carpatic session
+
+# GTK live settings daemon (themes, icons, fonts, cursors without restarting apps)
+command -v xsettingsd >/dev/null && ! present_name xsettingsd >/dev/null && bg xsettingsd
+command -v fc-cache >/dev/null && bg fc-cache -f
+# carpatic-panel is the bar when the profile asks for it; without the program the style's tint2 templates (or the dwm bar) take over
+USEBAR=$BAR
+if [ "$BAR" = panel ] && ! command -v carpatic-panel >/dev/null 2>&1; then USEBAR=dwm; [ -n "$BAR_TEMPLATES" ] && USEBAR=tint2; fi
+[ "$USEBAR" = panel ] || carpatic-panel stop >/dev/null 2>&1
+stop_name tint2 2>/dev/null; stop_name sxhkd 2>/dev/null; stop_script carpatic-supertap 2>/dev/null; stop_script carpatic-focuslog 2>/dev/null
+sleep 0.3
+if [ "$USEBAR" = tint2 ]; then
+  stop_name stalonetray 2>/dev/null; stop_script carpatic-status 2>/dev/null
+  for t in $BAR_TEMPLATES; do bg tint2 -c "$CUR/tint2/$t.tint2rc"; sleep 1; done
+elif [ "$USEBAR" = panel ]; then
+  # carpatic-panel (panel/): own bar, dock, tray and flyouts; falls back to the dwm bar below if it is not installed
+  stop_name stalonetray 2>/dev/null; stop_script carpatic-status 2>/dev/null
+  carpatic-panel stop >/dev/null 2>&1; sleep 0.3
+  [ -n "$PANEL_DESIGN" ] && carpatic-panel set design "$PANEL_DESIGN" >/dev/null 2>&1
+  # per-style panel tuning (PANEL_OPTS="size 64 labels on ..."), applied once when the style changes so the user's own tweaks in Settings survive restarts
+  if [ "$(cat "$CFG/panel-style" 2>/dev/null)" != "$PROFILE" ]; then
+    for kv in "size 0" "icon_size 0" "labels auto" "show_taskview auto" "tags auto"; do carpatic-panel set $kv >/dev/null 2>&1; done
+    set -- $PANEL_OPTS; while [ $# -ge 2 ]; do carpatic-panel set "$1" "$2" >/dev/null 2>&1; shift 2; done
+    echo "$PROFILE" > "$CFG/panel-style"
+  fi
+  bg carpatic-panel run
+else
+  # built-in dwm bar: bring back the status text and the tray (same command as desktop/session/autostart.sh)
+  present_script carpatic-status >/dev/null || bg "$HOME/.local/share/dwm-titus/scripts/carpatic-status"
+  # system tray: dwm's native tray (no helper to start)
+fi
+[ -s "$CUR/sxhkdrc" ] && bg sxhkd -c "$HOME/.config/sxhkd/sxhkdrc"
+[ "$SUPERTAP" = yes ] && command -v carpatic-supertap >/dev/null && bg carpatic-supertap carpatic-launch
+bg carpatic-focuslog
+# desktop widgets: OFF unless the user turned them on (Settings > Widgets or `carpatic widgets enable` creates this flag file)
+[ -f "$CFG/widgets/enabled" ] && command -v carpatic-widgets >/dev/null 2>&1 && bg carpatic-widgets run   # a second copy exits at once (lock file), and no pgrep race with the host of the previous X session
+# theme picker: a small resident helper so Super+Ctrl+Shift+Space opens at once (carpatic-theme-picker works without it, a little slower)
+command -v carpatic-theme-picker >/dev/null 2>&1 && [ "$mode" = start ] && bg carpatic-theme-picker daemon
+# wallpaper timer / "change at login" (does nothing unless the user turned rotation on)
+command -v carpatic-wallpaper >/dev/null 2>&1 && [ "$mode" = start ] && bg carpatic-wallpaper rotate resume
+# Quick Look: the Space key in Thunar needs its custom action + accelerator in the user's Thunar config. Idempotent and cheap; done here, before any
+# Thunar starts (Thunar rewrites accels.scm when it quits), so the first Space press already works. The daemon itself starts on that first press.
+command -v carpatic-quicklook >/dev/null 2>&1 && bg carpatic-quicklook --setup   # also on restart: the first login ends in the Welcome wizard, whose Finish restarts the session
+# geek tools (when installed): clipboard history in memory, and the `login` hook
+command -v carpatic-clipd >/dev/null 2>&1 && ! present_script carpatic-clipd >/dev/null 2>&1 && bg carpatic-clipd
+[ "$mode" = start ] && command -v carpatic-hook >/dev/null 2>&1 && bg carpatic-hook run login
+# first run: wizard (once; flag file written by the wizard)
+if [ "$mode" = start ] && [ ! -f "$CFG/welcome-done" ]; then exec carpatic-welcome; fi
+exit 0

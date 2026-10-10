@@ -1,0 +1,14 @@
+#!/bin/sh
+# Called by acpid on the power button (root). With a desktop session: open the power menu there (like macOS);
+# on a locked screen, ignore a short press; with no session (login screen, console): shut down cleanly.
+u=$(ps -o user=,args= 2>/dev/null | awk '/[X]org :[0-9]/ && $1 != "root" {print $1; exit}')
+if [ -n "$u" ]; then
+  pgrep -x i3lock >/dev/null 2>&1 && exit 0
+  pgrep -x slock >/dev/null 2>&1 && exit 0
+  pgrep -x carpatic-powermenu >/dev/null 2>&1 && exit 0
+  pgrep -x rofi >/dev/null 2>&1 && pkill -x rofi
+  n=$(ps -o args= | sed -n 's/.*[X]org :\([0-9]*\).*/\1/p' | head -1)
+  su -s /bin/sh "$u" -c "export PATH=/usr/local/bin:/usr/bin:/bin DISPLAY=:${n:-0}; xa=\$(ls \$HOME/.serverauth.* 2>/dev/null | head -1); [ -n \"\$xa\" ] && export XAUTHORITY=\$xa; export XDG_RUNTIME_DIR=/run/user/\$(id -u); setsid carpatic-powermenu >/dev/null 2>&1 &" &
+  exit 0
+fi
+exec loginctl poweroff

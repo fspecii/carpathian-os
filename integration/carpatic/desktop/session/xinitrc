@@ -1,0 +1,19 @@
+#!/bin/sh
+# Carpatic X session
+[ -f /etc/profile ] && . /etc/profile
+export XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP=dwm
+# make Flatpak/user .desktop entries visible to rofi and xdg tools
+export XDG_DATA_DIRS="$HOME/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share"
+export BROWSER=firefox
+[ -r "$HOME/.Xresources" ] && xrdb -merge "$HOME/.Xresources" 2>/dev/null
+# display scale: first login on this screen, or a different screen than last time -> re-apply the desktop at the size the policy picks (configurator/bin/carpatic-scale)
+if command -v carpatic-scale >/dev/null 2>&1; then
+  carpatic-scale sync >/dev/null 2>&1
+  eval "$(carpatic-scale env 2>/dev/null)"
+fi
+setxkbmap us 2>/dev/null
+# dbus session bus (dbus-run-session is in dbus package)
+if command -v dbus-run-session >/dev/null 2>&1 && [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+  exec dbus-run-session -- dwm
+fi
+exec dwm

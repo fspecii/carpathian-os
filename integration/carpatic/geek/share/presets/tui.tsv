@@ -1,0 +1,17 @@
+# Name|Command|Alpine package|What it is
+btop|btop|btop|Processes, CPU, memory and network
+lazygit|lazygit|lazygit|Git in the terminal
+lazydocker|lazydocker|lazydocker|Docker and Podman in the terminal
+k9s|k9s|k9s|Kubernetes in the terminal
+Yazi|yazi|yazi|File manager
+Ranger|ranger|ranger|File manager
+ncdu|ncdu|ncdu|What uses my disk
+NetworkManager|nmtui|networkmanager-tui|Wi-Fi and connections
+Bluetooth|bluetoothctl|bluez|Bluetooth devices
+Audio mixer|alsamixer|alsa-utils|Volume and devices
+Midnight Commander|mc|mc|Classic two-panel file manager
+tmux|tmux|tmux|Terminal sessions
+Calendar|calcurse|calcurse|Calendar and to-dos
+Newsboat|newsboat|newsboat|RSS reader
+WeeChat|weechat|weechat|IRC chat
+cmus|cmus|cmus|Music player

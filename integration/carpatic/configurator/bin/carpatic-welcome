@@ -1,0 +1,317 @@
+#!/usr/bin/env python3
+"""Carpatic Welcome / Theme Configurator (GTK3). All real work is done by the carpatic-profile / carpatic-theme CLI tools."""
+import os, re, subprocess, sys, shutil, threading, json, time
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, Gdk, GLib
+
+sys.path.insert(0, "/usr/local/lib/carpatic"); sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+from carpatic_ui import *
+import carpatic_mail as cm
+import carpatic_looks as looks   # the style and theme galleries are shared with Carpatic Settings (Appearance) and use the theme picker's previews
+
+class Wizard(Gtk.Window):
+    def debug_event(self, event, **values):
+        path = os.environ.get("CARPATIC_WELCOME_LOG")
+        if path:
+            try:
+                with open(path, "a") as log:
+                    log.write(json.dumps(dict(time=time.time(), event=event, **values)) + "\n")
+            except OSError: pass
+
+    def __init__(self):
+        super().__init__(title="Carpatic Welcome")
+        self.set_default_size(980, 640); self.set_position(Gtk.WindowPosition.CENTER)
+        self.profile = sh("carpatic-profile", "current") if os.path.exists(f"{CFG}/settings.conf") else "windows"
+        self.theme = "carpatic" if not os.path.exists(f"{CFG}/settings.conf") else sh("carpatic-theme", "current")
+        self.mode = read_colors(self.theme).get("mode", "dark")
+        self.accent = ""
+        self.applying = False
+        self.closed = False
+        self.preview_pending = None
+        self.preview_timer = None
+        self.preview_running = False
+        self.restyle_source = None
+        self.has_store = shutil.which("carpatic-store") is not None
+        self.css = Gtk.CssProvider()
+        install_css(self.css)
+        self.restyle()
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL); self.add(root)
+        self.title = Gtk.Label(); self.title.get_style_context().add_class("h1"); self.title.set_xalign(0)
+        self.sub = Gtk.Label(); self.sub.get_style_context().add_class("sub"); self.sub.set_xalign(0); self.sub.set_line_wrap(True); self.sub.set_max_width_chars(90)
+        head = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4); head.set_margin_top(28); head.set_margin_start(36); head.set_margin_end(36)
+        head.pack_start(self.title, False, False, 0); head.pack_start(self.sub, False, False, 0)
+        root.pack_start(head, False, False, 0)
+        self.stack = Gtk.Stack(); self.stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
+        self.stack.set_hhomogeneous(False); self.stack.set_vhomogeneous(False)   # the window's minimum size is the current page's, so it fits small screens
+        self.stack.set_margin_start(36); self.stack.set_margin_end(36); self.stack.set_margin_top(16)
+        root.pack_start(self.stack, True, True, 0)
+        self.lang = ""
+        self.layout = "tile"
+        self.pages = [self.page_profile(), self.page_layout(), self.page_theme(), self.page_language()] + ([self.page_apps()] if True else [])
+        titles = [("Pick a look", "Pick the desktop that feels most familiar. Not sure? Choose the closest one. A style sets the dock or bar, the window buttons and the shortcuts; change it any time in Settings (Super+F2), under Appearance, and fine-tune the dock under Desktop & Dock."),
+                  ("How should windows behave?", "Auto-tiling is on by default. You can switch at any time: Super+T flips the current workspace, or use Settings, under Desktop & Dock. Press Super+K whenever you want to see every keyboard shortcut."),
+                  ("Pick a theme", "Dark or light, a colour theme, an accent and a wallpaper. Changes show straight away. Press Super+Ctrl+Shift+Space any time to try themes with the arrow keys. Fonts and icons are in Settings, under Appearance."),
+                  ("Typing in another language?", "Carpatic's menus are in English for now; more languages are planned. If you write Chinese, Japanese, Korean or Vietnamese, Carpatic can add the keyboard and fonts for it. Everyone else can skip this."),
+                  ("Do you want a mail client?", "Nothing is installed unless you choose it. You can change this any time in Settings, under Default Apps.")]
+        self.titles = titles
+        for i, p in enumerate(self.pages): self.stack.add_named(p, str(i))
+        bar = Gtk.Box(spacing=10); bar.set_margin_start(36); bar.set_margin_end(36); bar.set_margin_bottom(24); bar.set_margin_top(12)
+        self.dots = Gtk.Label(); self.dots.get_style_context().add_class("sub")
+        self.status = Gtk.Label(xalign=0); self.status.set_line_wrap(True)
+        self.back = Gtk.Button(label="Back"); self.next = Gtk.Button(label="Next")
+        self.next.get_style_context().add_class("suggested-action")
+        self.back.connect("clicked", lambda *_: self.go(self.idx - 1)); self.next.connect("clicked", self.on_next)
+        bar.pack_start(self.dots, False, False, 0); bar.pack_end(self.next, False, False, 0); bar.pack_end(self.back, False, False, 0)
+        bar.pack_start(self.status, True, True, 0)
+        root.pack_start(bar, False, False, 0)
+        self.idx = 0; self.go(0); self.connect("destroy", self.on_destroy)
+
+    def on_destroy(self, *_):
+        self.closed = True
+        if self.preview_timer: GLib.source_remove(self.preview_timer)
+        if self.restyle_source: GLib.source_remove(self.restyle_source)
+        Gtk.main_quit()
+
+    def queue_preview(self, *command):
+        """Coalesce rapid choices; never regenerate several themes at once."""
+        self.preview_pending = command
+        self.next.set_sensitive(False); self.back.set_sensitive(False)
+        self.status.set_text("Updating preview…")
+        if self.preview_timer: GLib.source_remove(self.preview_timer)
+        self.preview_timer = GLib.timeout_add(150, self.start_preview)
+
+    def start_preview(self):
+        self.preview_timer = None
+        if self.closed or self.preview_running or not self.preview_pending: return False
+        command, self.preview_pending = self.preview_pending, None
+        self.preview_running = True
+        def finish(error):
+            if self.closed: return False
+            self.preview_running = False
+            if self.preview_pending: self.start_preview()
+            else:
+                self.next.set_sensitive(True); self.back.set_sensitive(self.idx > 0)
+                self.status.set_text(error)
+            return False
+        def work():
+            error = ""
+            try:
+                result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+                if result.returncode:
+                    error = "Could not update the preview. Try your choice again."
+                    print(result.stderr, file=sys.stderr)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                error = "Could not update the preview. Try your choice again."
+                print(exc, file=sys.stderr)
+            GLib.idle_add(finish, error)
+        threading.Thread(target=work, daemon=True).start()
+        return False
+
+    def apply_commands(self, commands, done):
+        """Keep GTK drawing/input alive while profile regeneration runs."""
+        if self.applying: return
+        self.applying = True
+        self.back.set_sensitive(False); self.next.set_sensitive(False)
+        self.stack.set_sensitive(False); self.status.set_text("Applying your choices…")
+        def finish(error):
+            if self.closed: return False
+            self.applying = False; self.stack.set_sensitive(True)
+            self.back.set_sensitive(self.idx > 0); self.next.set_sensitive(True)
+            self.status.set_text(error or "")
+            if not error: done()
+            return False
+        def work():
+            error = ""
+            try:
+                for command in commands:
+                    # Language setup may download packages on a slow link.
+                    timeout = None if command[0] == "carpatic-input-method" else 120
+                    result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+                    if result.returncode:
+                        error = "Could not apply your choices. Please try again."
+                        print(result.stderr, file=sys.stderr)
+                        break
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                error = "Could not apply your choices. Please try again."
+                print(exc, file=sys.stderr)
+            GLib.idle_add(finish, error)
+        threading.Thread(target=work, daemon=True).start()
+
+    def restyle(self):
+        self.css.load_from_data(card_css(self.theme, self.accent).encode())
+        for g in (getattr(self, "style_gal", None), getattr(self, "tflow", None)):
+            if g is not None: g.set_palette(self.look_palette())
+
+    def queue_restyle(self):
+        if self.restyle_source: GLib.source_remove(self.restyle_source)
+        def update():
+            self.restyle_source = None
+            if not self.closed: self.restyle()
+            return False
+        self.restyle_source = GLib.timeout_add(40, update)
+
+    # ---------- pages ----------
+    def look_palette(self): return looks.palette_from_colors(read_colors(self.theme), self.accent)
+
+    def page_profile(self):
+        self.style_gal = looks.LookGallery(self.look_palette(), cols=3, preview_w=200, on_pick=self.on_profile)
+        for pid, title, blurb in looks.style_choices():
+            self.style_gal.add_item(pid, title, blurb, looks.painter_mock(self.theme, pid))
+        self.style_gal.select(self.profile)
+        sw = Gtk.ScrolledWindow(); sw.add(self.style_gal); sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC); sw.get_style_context().add_class("page")
+        return sw
+
+    def on_profile(self, pid):
+        self.profile = pid; self.style_gal.select(pid)
+        self.debug_event("profile-picked", profile=pid)
+
+    def page_layout(self):
+        row = Gtk.Box(spacing=18, homogeneous=True); row.set_valign(Gtk.Align.START)
+        self.lbuttons = {}; group = None
+        for lid, title, blurb in (("tile", "Auto-tiling", "Windows arrange themselves: the first on the left, the rest stacked on the right. Drag one out to move it freely; drop it back to tile it again."),
+                                  ("float", "Floating", "Windows go where you put them, like Windows or macOS. Snap with Super+arrows. Nothing rearranges itself.")):
+            b = Gtk.RadioButton.new_from_widget(group) if group else Gtk.RadioButton()
+            group = group or b; b.set_mode(False); b.get_style_context().add_class("card")
+            v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            da = Gtk.DrawingArea(); da.set_size_request(240, 130); da.connect("draw", self.draw_layout, lid); da.set_halign(Gtk.Align.CENTER); v.pack_start(da, False, False, 0)
+            for txt, cls in ((title, "ctitle"), (blurb, "cdesc")):
+                l = Gtk.Label(label=txt); l.get_style_context().add_class(cls); l.set_line_wrap(True); l.set_max_width_chars(34); l.set_justify(Gtk.Justification.CENTER); v.pack_start(l, False, False, 0)
+            b.add(v); b.set_active(lid == self.layout); b.connect("toggled", self.on_layout, lid); self.lbuttons[lid] = b; row.pack_start(b, True, True, 0)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL); outer.set_valign(Gtk.Align.CENTER); outer.pack_start(row, False, False, 0)
+        return outer
+
+    def on_layout(self, b, lid):
+        if b.get_active(): self.layout = lid
+
+    def draw_layout(self, w, cr, lid):
+        c = read_colors(self.theme)
+        def rgb(h): h = h.lstrip("#"); return tuple(int(h[i:i+2], 16)/255 for i in (0, 2, 4))
+        W, H = w.get_allocated_width(), w.get_allocated_height()
+        cr.set_source_rgb(*rgb(c.get("background", "#202020"))); cr.rectangle(0, 0, W, H); cr.fill()
+        cr.set_source_rgb(*rgb(c.get("dark_background", "#101010"))); cr.rectangle(0, H-14, W, 14); cr.fill()
+        acc = rgb(c.get("accent", "#6cb4f0")); fg = rgb(c.get("foreground", "#ffffff"))
+        def win(x, y, ww, hh, focus=False):
+            cr.set_source_rgb(*rgb(c.get("lighter_background", "#333333"))); cr.rectangle(x, y, ww, hh); cr.fill()
+            cr.set_source_rgb(*(acc if focus else fg)); cr.set_line_width(1.5 if focus else 0.6); cr.rectangle(x+.5, y+.5, ww-1, hh-1); cr.stroke()
+            cr.set_source_rgb(*fg); cr.rectangle(x+6, y+6, ww*0.4, 3); cr.fill()
+        g = 8; ah = H - 14 - 2*g
+        if lid == "tile":
+            mw = (W - 3*g) * 0.55; sw = W - 3*g - mw
+            win(g, g, mw, ah, True); win(2*g + mw, g, sw, (ah - g)/2); win(2*g + mw, 2*g + (ah - g)/2, sw, (ah - g)/2)
+        else:
+            win(14, 14, 120, 70); win(96, 38, 124, 66, True)
+
+    def page_theme(self):
+        v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        row = Gtk.Box(spacing=8)
+        self.mbtn = {}
+        g = None
+        for m, lab in (("dark", "☾  Dark"), ("light", "☀  Light")):
+            b = Gtk.RadioButton.new_with_label_from_widget(g, lab) if g else Gtk.RadioButton.new_with_label(None, lab)
+            g = g or b; b.set_mode(False); b.get_style_context().add_class("pill"); b.set_active(m == self.mode)
+            b.connect("toggled", self.on_mode, m); row.pack_start(b, False, False, 0); self.mbtn[m] = b
+        self.acc_row = Gtk.Box(spacing=8); row.pack_start(Gtk.Label(label="   Accent"), False, False, 0); row.pack_start(self.acc_row, False, False, 0)
+        self.fill_accents()
+        v.pack_start(row, False, False, 0)
+        self.tflow = looks.LookGallery(self.look_palette(), cols=4, preview_w=170, on_pick=self.set_theme)
+        sw = Gtk.ScrolledWindow(); sw.add(self.tflow); sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        v.pack_start(sw, True, True, 0)
+        wr = Gtk.Box(spacing=8); wr.pack_start(Gtk.Label(label="Wallpaper"), False, False, 0)
+        for lab, fn in (("Theme wallpaper", lambda *_: self.set_wall("default")), ("Carpatic default", lambda *_: self.set_wall("/usr/local/share/carpatic/wallpaper.png")), ("Choose file...", self.choose_wall)):
+            b = Gtk.Button(label=lab); b.connect("clicked", fn); wr.pack_start(b, False, False, 0)
+        v.pack_start(wr, False, False, 0)
+        self.fill_themes(); return v
+
+    def fill_accents(self):
+        for ch in self.acc_row.get_children(): self.acc_row.remove(ch)
+        for name, dk, lt in ACCENT_SETS:
+            val = dk if self.mode == "dark" else lt
+            b = Gtk.Button(); b.get_style_context().add_class("swatch"); b.set_tooltip_text(name)
+            p = Gtk.CssProvider(); p.load_from_data(f"button {{ background-color: {val}; background-image: none; }}".encode()); b.get_style_context().add_provider(p, Gtk.STYLE_PROVIDER_PRIORITY_USER)
+            b.connect("clicked", lambda _b, v=val: self.set_accent(v)); self.acc_row.pack_start(b, False, False, 0)
+        d = Gtk.Button(label="Theme default"); d.connect("clicked", lambda *_: self.set_accent("")); self.acc_row.pack_start(d, False, False, 0)
+        self.acc_row.show_all()
+    def fill_themes(self):
+        self.tflow.clear()
+        for tid, name, c in looks.theme_choices(self.mode):
+            self.tflow.add_item(tid, name, "", looks.painter_mock(tid, self.profile))
+        self.tflow.select(self.theme); self.tflow.show_all()
+
+    def on_mode(self, b, m):
+        if b.get_active():
+            self.mode = m; self.accent = ""; self.fill_accents(); self.set_theme("carpatic" if m == "dark" else "carpatic-light"); self.fill_themes()
+
+    def set_theme(self, t):
+        self.theme = t; self.queue_preview("carpatic-theme", "set", t, "--accent", self.accent or "default"); self.queue_restyle(); self.tflow.select(t)
+
+    def set_accent(self, a):
+        self.accent = a; self.queue_preview("carpatic-theme", "set", self.theme, "--accent", a or "default"); self.queue_restyle()
+
+    def set_wall(self, w): self.queue_preview("carpatic-theme", "set", self.theme, "--accent", self.accent or "default", "--wallpaper", w)
+
+    def choose_wall(self, *_):
+        d = Gtk.FileChooserDialog(title="Choose a wallpaper", parent=self, action=Gtk.FileChooserAction.OPEN)
+        d.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Open", Gtk.ResponseType.OK)
+        if d.run() == Gtk.ResponseType.OK: self.set_wall(d.get_filename())
+        d.destroy()
+
+    def page_language(self):
+        v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8); v.set_valign(Gtk.Align.CENTER)
+        group = None
+        for key, label in (("", "English or another language that needs no extra keyboard"), ("chinese", "Chinese"), ("japanese", "Japanese"), ("korean", "Korean"), ("vietnamese", "Vietnamese")):
+            b = Gtk.RadioButton.new_with_label_from_widget(group, label) if group else Gtk.RadioButton.new_with_label(None, label)
+            group = group or b; b.connect("toggled", lambda w, k=key: setattr(self, "lang", k) if w.get_active() else None); v.pack_start(b, False, False, 0)
+        n = Gtk.Label(label="Choosing a language installs it (about 100 MB) and asks for your password. You can add more later in Carpatic Settings, under Typing in other languages.", xalign=0, wrap=True)
+        n.get_style_context().add_class("sub"); v.pack_start(n, False, False, 12)
+        return v
+
+    def page_apps(self):
+        v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        cur, prov = cm.current()
+        self.mail_box, self.get_mail = cm.build_widget(cur or "webmail", prov)
+        v.pack_start(self.mail_box, False, False, 0)
+        row = Gtk.Box(spacing=12); row.set_margin_top(6)
+        if self.has_store:
+            b = Gtk.Button(label="Open the app picker"); b.connect("clicked", lambda *_: run("carpatic-store", "firstrun")); row.pack_start(b, False, False, 0)
+            t = Gtk.Label(label="for a browser, office suite, Steam and more. Already on your desktop: Files, Text Editor, Document Viewer, Image Viewer, Calculator, Archive Manager.", xalign=0, wrap=True)
+        else:
+            t = Gtk.Label(label="The App Store is not installed yet. You can add more apps later. Already on your desktop: Files, Text Editor, Document Viewer, Image Viewer, Calculator, Archive Manager.", xalign=0, wrap=True)
+        t.get_style_context().add_class("sub"); row.pack_start(t, True, True, 0)
+        v.pack_start(row, False, False, 0)
+        return v
+
+    # ---------- navigation ----------
+    def go(self, i):
+        self.idx = max(0, min(i, len(self.pages) - 1)); self.stack.set_visible_child_name(str(self.idx))
+        self.title.set_text(self.titles[self.idx][0]); self.sub.set_text(self.titles[self.idx][1])
+        self.back.set_sensitive(self.idx > 0); last = self.idx == len(self.pages) - 1
+        self.next.set_label("Finish" if last else "Next")
+        self.dots.set_text("  ".join("●" if k == self.idx else "○" for k in range(len(self.pages))))
+        self.show_all()
+        self.debug_event("page-shown", page=self.idx)
+
+    def on_next(self, *_):
+        self.debug_event("next-clicked", page=self.idx)
+        if self.applying or self.preview_running or self.preview_pending: return
+        if self.idx == 0:
+            self.apply_commands([["carpatic-profile", "set", self.profile],
+                                 ["carpatic-theme", "set", self.theme]], lambda: self.go(1))
+            return
+        if self.idx == 1:
+            self.apply_commands([["carpatic-layout", "set", self.layout]], lambda: self.go(2))
+            return
+        if self.idx == 3 and self.lang:
+            self.apply_commands([["carpatic-input-method", "install", self.lang]], lambda: self.go(4))
+            return
+        if self.idx == len(self.pages) - 1:
+            cid, prov = self.get_mail(); self.next.set_sensitive(False)
+            def done(ok):
+                if ok:
+                    os.makedirs(CFG, exist_ok=True); open(f"{CFG}/welcome-done", "w").write("1\n"); Gtk.main_quit()
+                else: self.next.set_sensitive(True)   # the error was shown; pick another choice (or None) and press Finish again
+            cm.run_apply_with_progress(self, cid, prov, done); return
+        self.go(self.idx + 1)
+
+if __name__ == "__main__":
+    w = Wizard(); w.show_all(); Gtk.main()

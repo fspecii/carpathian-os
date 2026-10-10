@@ -1,0 +1,48 @@
+[00:38:13] === Carpatic install engine started: /dev/vda -> btrfs+LUKS2 (bios) ===
+[00:38:13] > Preparing live environment
+[00:38:18]   done in 5s
+[00:38:18] > Partitioning disk
+[00:38:19] partitions: boot/ESP=/dev/vda2 root=/dev/vda3 (boot mode: bios)
+[00:38:19]   done in 1s
+[00:38:19] > Encrypting root partition
+[00:38:26] LUKS2 container on /dev/vda3, uuid 4cf69981-bc69-438f-b1bc-31d37975fe60
+[00:38:26]   done in 7s
+[00:38:26] > Creating filesystems
+[00:38:27] root fs btrfs uuid 01450e57-e1a1-4c7b-bc2c-c2502e924d30; boot vfat uuid 6025-C401
+[00:38:27]   done in 1s
+[00:38:27] > Installing Alpine base system
+[00:38:27] bootstrapping: alpine-base linux-lts limine bash openssh e2fsprogs dosfstools kbd-bkeymaps tzdata eudev udev-init-scripts doas acpid btrfs-progs cryptsetup intel-ucode linux-firmware-none
+[00:38:48]   done in 21s
+[00:38:48] > Configuring system
+[00:38:48] console keymap us
+[00:38:48]   done in 0s
+[00:38:48] > Installing bootloader
+[00:38:48] cmdline: root=/dev/mapper/carpatic_root ro rootfstype=btrfs modules=sd-mod,usb-storage,virtio_blk,virtio_pci rootflags=subvol=@,noatime,compress=zstd cryptroot=UUID=4cf69981-bc69-438f-b1bc-31d37975fe60 cryptdm=carpatic_root keymap=us/us quiet console=tty0 console=ttyS0,115200
+[00:38:48]   done in 0s
+[00:38:48] > Running Carpatic setup
+[00:38:48] running carpatic-install stages in the target (desktop=no, containers=none)
+[00:39:26]   done in 38s
+[00:39:26] > Finalizing user
+[00:39:26] user tester (wheel, sudo/doas) and root password set from hashes
+[00:39:26]   done in 0s
+[00:39:26] > Validating boot setup
+[00:39:26]   ok   kernel /boot/vmlinuz-lts
+[00:39:26]   ok   initramfs /boot/initramfs-lts
+[00:39:27]   ok   initramfs has the root filesystem module
+[00:39:27]   ok   initramfs has cryptsetup + dm-crypt
+[00:39:27]   ok   limine.conf has an entry
+[00:39:27]   ok   limine.conf cmdline names the root
+[00:39:27]   ok   limine-bios.sys
+[00:39:27]   ok   MBR boot code present on /dev/vda
+[00:39:27]   ok   fstab has / and /boot
+[00:39:27]   ok   os-release
+[00:39:27]   ok   openrc runlevels populated
+[00:39:27]   ok   btrfs subvolumes @ @home @log @pkg
+[00:39:27]   ok   user tester in passwd
+[00:39:27]   done in 1s
+[00:39:27] > Unmounting target
+[00:39:29] LUKS container carpatic_root closed
+[00:39:29]   done in 2s
+[00:39:29] === Installation complete in 76s. Reboot into the new system. ===
+ENGINE_RC=0
+rc=0

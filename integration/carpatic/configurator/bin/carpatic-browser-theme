@@ -1,0 +1,68 @@
+#!/bin/sh
+# carpatic-browser-theme HEX dark|light OUTDIR     Chromium / Chrome colour (Preferences, when the browser is closed)
+# carpatic-browser-theme --firefox OUTDIR dark|light   Firefox userChrome/userContent + prefs (user.js block), all profiles found
+# carpatic-browser-theme --install-policy              copy the managed policy (BrowserThemeColor) to /etc, asks for the password (doas)
+#
+# What works without extensions and without root:
+#  Chromium/Chrome: the seed colour lives in the profile's Preferences (browser.theme.user_color2 + color_scheme2); it is written while the browser is not running
+#     (a running browser would overwrite it on exit). The managed-policy route (BrowserThemeColor, live) needs a root-owned file: --install-policy.
+#  Firefox: toolkit.legacyUserProfileCustomizations.stylesheets + chrome/userChrome.css colour the window; takes effect at the next start.
+#  Flatpak and the Ubuntu compat box: their profiles are found under ~/.var/app/<id>/ (Flatpak) and the shared $HOME (distrobox).
+if [ "$1" = --install-policy ]; then
+  P=${CARPATIC_CONFIG:-$HOME/.config/carpatic}/chromium-policy.json
+  [ -f "$P" ] || { echo "no policy yet: apply a theme first" >&2; exit 1; }
+  for d in /etc/chromium/policies/managed /etc/opt/chrome/policies/managed /etc/brave/policies/managed; do
+    doas sh -c "mkdir -p $d && cp '$P' $d/carpatic.json && chmod 644 $d/carpatic.json" || exit 1
+  done; echo "installed: restart the browser"; exit 0
+fi
+if [ "$1" = --firefox ]; then
+  OUT=$2; MODE=$3; [ "$MODE" = light ] && PREF=1 || PREF=0
+  for base in "$HOME/.mozilla/firefox" "$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox" "$HOME/.librewolf" "$HOME/.floorp"; do
+    [ -d "$base" ] || continue
+    for prof in "$base"/*/; do
+      [ -f "$prof/prefs.js" ] || [ -f "$prof/times.json" ] || continue
+      mkdir -p "$prof/chrome"
+      cp "$OUT/userChrome.css" "$prof/chrome/userChrome.css"; cp "$OUT/userContent.css" "$prof/chrome/userContent.css"
+      uj=$prof/user.js; touch "$uj"
+      sed -i '/^\/\/ >>> carpatic$/,/^\/\/ <<< carpatic$/d' "$uj"
+      cat >> "$uj" <<EOT
+// >>> carpatic
+user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
+user_pref("browser.theme.content-theme", $PREF);
+user_pref("browser.theme.toolbar-theme", $PREF);
+user_pref("layout.css.prefers-color-scheme.content-override", $PREF);
+// <<< carpatic
+EOT
+    done
+  done; exit 0
+fi
+HEX=$1; MODE=$2; case $MODE in light) CS=1;; *) CS=2;; esac
+command -v python3 >/dev/null 2>&1 || exit 0
+python3 - "$HEX" "$CS" <<'PY'
+import glob, json, os, subprocess, sys
+hexv, cs = sys.argv[1].lstrip("#"), int(sys.argv[2])
+rgb = int(hexv, 16) | 0xFF000000
+color = rgb - (1 << 32) if rgb >= (1 << 31) else rgb
+H = os.path.expanduser("~")
+bases = [f"{H}/.config/chromium", f"{H}/.config/google-chrome", f"{H}/.config/BraveSoftware/Brave-Browser", f"{H}/.config/microsoft-edge",
+         f"{H}/.var/app/org.chromium.Chromium/config/chromium", f"{H}/.var/app/com.google.Chrome/config/google-chrome"]
+running = subprocess.run(["pgrep", "-x", "chromium|chrome|brave|msedge"], capture_output=True).stdout  # exact names handled below
+def is_running():
+    if os.environ.get("CARPATIC_ASSUME_BROWSER_CLOSED") == "1": return False
+    for n in ("chromium", "chrome", "brave", "msedge", "chromium-browser"):
+        if subprocess.run(["pgrep", "-x", n], capture_output=True).returncode == 0: return True
+    return False
+for b in bases:
+    for prof in glob.glob(b + "/Default") + glob.glob(b + "/Profile *"):
+        p = prof + "/Preferences"
+        if not os.path.exists(p): continue
+        if is_running():
+            print(f"{p}: browser is running, skipped (close it, or install the managed policy)", file=sys.stderr); continue
+        try:
+            d = json.load(open(p))
+            t = d.setdefault("browser", {}).setdefault("theme", {})
+            t["user_color2"] = color; t["color_scheme2"] = cs; t["color_variant2"] = 1; t["is_grayscale2"] = False
+            tmp = p + ".tmp"; json.dump(d, open(tmp, "w"), separators=(",", ":")); os.replace(tmp, p)
+        except Exception as e:
+            print(f"{p}: {e}", file=sys.stderr)
+PY

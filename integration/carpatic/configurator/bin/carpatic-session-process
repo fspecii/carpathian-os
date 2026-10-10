@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""Inspect/stop owned helpers on this X display; never scan by shell regex."""
+import argparse
+import os
+from pathlib import Path
+import signal
+
+
+def display_key(value):
+    return value[:-2] if value.endswith('.0') else value
+
+
+def matches(pid, name, script, display):
+    try:
+        proc = Path('/proc') / str(pid)
+        if proc.stat().st_uid != os.getuid():
+            return False
+        env = (proc / 'environ').read_bytes().split(b'\0')
+        value = next((v[8:].decode() for v in env if v.startswith(b'DISPLAY=')), '')
+        if display_key(value) != display_key(display):
+            return False
+        argv = [v.decode(errors='replace') for v in (proc / 'cmdline').read_bytes().split(b'\0') if v]
+        if not argv:
+            return False
+        executable = Path(argv[0]).name
+        if name:
+            return executable == name
+        if executable == script:
+            return True
+        return (executable in ('sh', 'bash', 'python3', 'python', 'python3.14', 'python3.13')
+                and len(argv) > 1 and Path(argv[1]).name == script)
+    except (OSError, UnicodeError):
+        return False
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('present', 'pid', 'stop'))
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--name')
+    group.add_argument('--script')
+    parser.add_argument('--signal', choices=('TERM', 'HUP', 'USR1'), default='TERM')
+    args = parser.parse_args()
+    display = os.environ.get('DISPLAY', '')
+    if not display or os.environ.get('WAYLAND_DISPLAY') or os.environ.get('CARPATIC_SESSION') != '1':
+        parser.error('an owned Carpatic X11 session is required')
+    label = args.name or args.script
+    if '/' in label or not label or label.startswith('-'):
+        parser.error('provide an exact executable or script basename')
+    found = False
+    for proc in Path('/proc').glob('[0-9]*'):
+        pid = int(proc.name)
+        if pid == os.getpid():
+            continue
+        descriptor = None
+        try:
+            # Open before inspection, then signal that same process identity.
+            descriptor = os.pidfd_open(pid) if hasattr(os, 'pidfd_open') else None
+            if not matches(pid, args.name, args.script, display):
+                continue
+            found = True
+            if args.action == 'pid':
+                print(pid)
+            elif args.action == 'stop':
+                sig = getattr(signal, 'SIG' + args.signal)
+                if descriptor is not None and hasattr(signal, 'pidfd_send_signal'):
+                    signal.pidfd_send_signal(descriptor, sig)
+                elif matches(pid, args.name, args.script, display):
+                    os.kill(pid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+    return 0 if found or args.action == 'stop' else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

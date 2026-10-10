@@ -1,0 +1,6 @@
+{
+  "name": "carpathian-os-web",
+  "compatibility_date": "2026-10-10",
+  "assets": { "directory": "./dist" },
+  "routes": [{ "pattern": "carpathianos.com", "custom_domain": true }]
+}
