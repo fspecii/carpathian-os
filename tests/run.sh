@@ -31,6 +31,7 @@ for suite do
         *) printf 'Unknown suite: %s\n' "$suite" >&2; exit 2;;
     esac
 done
+mkdir -p "$PWD/artifacts"
 results=$(mktemp -d "$PWD/artifacts/test-run-$(date +%Y%m%d-%H%M%S)-XXXXXX")
 export CARPATIC_RESULTS_DIR=$results CARPATIC_TEST_VM=$vm
 printf 'TAP version 13\n' >"$results/results.tap"
