@@ -73,10 +73,13 @@ class WindowAnimations(unittest.TestCase):
         self.assertNotEqual(first, second)
     def test_signaling_tracks_real_owned_process_and_rejects_stale_pid(self):
         import signal
+        import select
         env = dict(os.environ, DISPLAY=":97")
-        child = subprocess.Popen(["picom", "-c", "import time; time.sleep(10)",
-                                  str(self.cfg / "window-animations.conf")], executable=sys.executable, env=env)
+        child = subprocess.Popen(["picom", "-c", "import os,time; os.write(1,b'READY\\n'); time.sleep(10)",
+                                  str(self.cfg / "window-animations.conf")], executable=sys.executable, env=env, stdout=subprocess.PIPE)
         try:
+            self.assertTrue(select.select([child.stdout], [], [], 3)[0], "owned fixture did not reach exec readiness")
+            self.assertEqual(child.stdout.readline(), b"READY\n")
             with patch.dict(os.environ, DISPLAY=":97"):
                 runtime = motion.runtime_dir(); runtime.mkdir(parents=True, exist_ok=True)
                 (runtime / "pid").write_text(str(child.pid))
@@ -86,6 +89,7 @@ class WindowAnimations(unittest.TestCase):
         finally:
             if child.poll() is None: child.terminate()
             child.wait(timeout=3)
+            child.stdout.close()
 
     def test_unrelated_pid_is_not_owned(self):
         runtime = motion.runtime_dir(); runtime.mkdir(parents=True)

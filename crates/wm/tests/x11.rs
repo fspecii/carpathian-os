@@ -1171,8 +1171,18 @@ fn window_states_csd_shapes_and_restart() -> Result<()> {
             .contains(&fullscreen)
     });
     use x11rb::protocol::shape::ConnectionExt as _;
-    assert!(conn.shape_query_extents(id)?.reply()?.bounding_shaped);
-    println!("PASS configured rounded client shape");
+    wait("rounded native frame shape ready", || {
+        let frame = root_surface(&conn, id);
+        frame != id
+            && conn
+                .shape_query_extents(frame)
+                .unwrap()
+                .reply()
+                .unwrap()
+                .bounding_shaped
+    });
+    assert!(!conn.shape_query_extents(id)?.reply()?.bounding_shaped);
+    println!("PASS rounded native frame preserves application-owned shape");
     wait("managed native chrome metadata ready", || {
         native_chrome(&conn, root, id).is_some()
     });
@@ -2948,5 +2958,600 @@ fn workspace_title_height_relayouts_body_with_unchanged_outer_frame() -> Result<
     conn.flush()?;
     xdotool(&["key", "super+shift+q"]);
     assert!(wm.0.wait()?.success());
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires private Xvfb; run tests/run.sh"]
+fn native_frame_preserves_client_shapes_and_click_through_holes() -> Result<()> {
+    use x11rb::protocol::{
+        shape::{ConnectionExt as _, SK, SO},
+        xtest::ConnectionExt as _,
+        Event,
+    };
+    assert_eq!(
+        std::env::var("CARPATIC_WM_TEST_DISPLAY").as_deref(),
+        Ok("1")
+    );
+    assert!(std::env::var_os("WAYLAND_DISPLAY").is_none());
+    let dir = std::path::PathBuf::from(std::env::var("CARPATIC_CONFIG_DIR")?);
+    let _config = ConfigRestore::new(&dir);
+    std::fs::write(dir.join("themes.toml"), "[appearance]\nworkspaces=4\ndefault_layout='float'\nborderpx=2\nborder_highlight=0\ncorner_radius=0\n[titlebar]\nenabled=1\nheight=32\nbutton_style='windows'\n")?;
+    std::fs::write(dir.join("window-rules.toml"), "rules=[]\n")?;
+    std::fs::write(
+        dir.join("hotkeys.toml"),
+        "keys=[{mod='SUPER SHIFT',key='q',func='quit'}]\n",
+    )?;
+    let (conn, screen) = x11rb::connect(None)?;
+    let root = conn.setup().roots[screen].root;
+    assert!(conn.shape_query_version()?.reply()?.minor_version >= 1);
+    let mut wm = start_with_policy(false, false)?;
+    wait("shape-hole WM ready", || ready(&conn, root, &wm));
+    let receiver = conn.generate_id()?;
+    conn.create_window(
+        0,
+        receiver,
+        root,
+        0,
+        0,
+        1280,
+        800,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &CreateWindowAux::new()
+            .override_redirect(1)
+            .background_pixel(0x00dd22cc)
+            .event_mask(EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE),
+    )?;
+    conn.map_window(receiver)?;
+    let client = conn.generate_id()?;
+    conn.create_window(
+        0,
+        client,
+        root,
+        200,
+        200,
+        400,
+        260,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &CreateWindowAux::new()
+            .background_pixel(0x0025a9df)
+            .event_mask(EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE),
+    )?;
+    let ring = |hole_x: i16| {
+        vec![
+            Rectangle {
+                x: 0,
+                y: 0,
+                width: 400,
+                height: 60,
+            },
+            Rectangle {
+                x: 0,
+                y: 60,
+                width: hole_x as u16,
+                height: 40,
+            },
+            Rectangle {
+                x: hole_x + 40,
+                y: 60,
+                width: 400 - hole_x as u16 - 40,
+                height: 40,
+            },
+            Rectangle {
+                x: 0,
+                y: 100,
+                width: 400,
+                height: 160,
+            },
+        ]
+    };
+    for kind in [SK::BOUNDING, SK::INPUT] {
+        conn.shape_rectangles(
+            SO::SET,
+            kind,
+            ClipOrdering::UNSORTED,
+            client,
+            0,
+            0,
+            &ring(60),
+        )?
+        .check()?;
+    }
+    conn.map_window(client)?;
+    conn.flush()?;
+    wait("shape-hole native metadata ready", || {
+        native_chrome(&conn, root, client).is_some()
+    });
+    let frame = root_surface(&conn, client);
+    let caption = native_chrome(&conn, root, client).unwrap();
+    assert_ne!(frame, client);
+    conn.configure_window(
+        receiver,
+        &ConfigureWindowAux::new().stack_mode(StackMode::BELOW),
+    )?;
+    conn.flush()?;
+    let contains = |window: Window, kind: SK, x: i16, y: i16| -> bool {
+        conn.shape_get_rectangles(window, kind)
+            .unwrap()
+            .reply()
+            .unwrap()
+            .rectangles
+            .iter()
+            .any(|r| {
+                i32::from(x) >= i32::from(r.x)
+                    && i32::from(y) >= i32::from(r.y)
+                    && i32::from(x) < i32::from(r.x) + i32::from(r.width)
+                    && i32::from(y) < i32::from(r.y) + i32::from(r.height)
+            })
+    };
+    let translated = |x: i16, y: i16| {
+        conn.translate_coordinates(client, frame, x, y)
+            .unwrap()
+            .reply()
+            .unwrap()
+    };
+    let mut failures = Vec::new();
+    let mut check = |label: &str, yes: bool| {
+        println!("SHAPE_HOLE {label}: {yes}");
+        if !yes {
+            failures.push(label.to_owned());
+        }
+    };
+    let initial = translated(80, 80);
+    println!("SHAPE_HOLE ids client={client:#x} frame={frame:#x} receiver={receiver:#x}; translated hole=({}, {})", initial.dst_x, initial.dst_y);
+    check(
+        "pre-map client bounding hole preserved",
+        !contains(client, SK::BOUNDING, 80, 80),
+    );
+    check(
+        "pre-map client input hole preserved",
+        !contains(client, SK::INPUT, 80, 80),
+    );
+    check(
+        "pre-map frame bounding excludes hole",
+        !contains(frame, SK::BOUNDING, initial.dst_x, initial.dst_y),
+    );
+    check(
+        "pre-map frame input excludes hole",
+        !contains(frame, SK::INPUT, initial.dst_x, initial.dst_y),
+    );
+    let click = |x: i16, y: i16| -> Result<(usize, usize)> {
+        while conn.poll_for_event()?.is_some() {}
+        let at = conn.translate_coordinates(client, root, x, y)?.reply()?;
+        conn.xtest_fake_input(MOTION_NOTIFY_EVENT, 0, 0, root, at.dst_x, at.dst_y, 0)?
+            .check()?;
+        conn.xtest_fake_input(BUTTON_PRESS_EVENT, 1, 0, root, 0, 0, 0)?
+            .check()?;
+        conn.xtest_fake_input(BUTTON_RELEASE_EVENT, 1, 0, root, 0, 0, 0)?
+            .check()?;
+        conn.flush()?;
+        let until = Instant::now() + Duration::from_millis(200);
+        let mut received = (0, 0);
+        while Instant::now() < until {
+            while let Some(event) = conn.poll_for_event()? {
+                if let Event::ButtonPress(e) = event {
+                    if e.event == client {
+                        received.0 += 1;
+                    }
+                    if e.event == receiver {
+                        received.1 += 1;
+                    }
+                }
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        println!(
+            "SHAPE_HOLE actual click ({x},{y}) -> client={}, receiver={}",
+            received.0, received.1
+        );
+        Ok(received)
+    };
+    check("solid client positive control", click(200, 150)? == (1, 0));
+    check(
+        "pre-map hole actual click-through",
+        click(80, 80)? == (0, 1),
+    );
+    // Input-only holes must pass clicks while retaining the visible app body.
+    conn.shape_mask(SO::SET, SK::BOUNDING, client, 0, 0, 0u32)?
+        .check()?;
+    conn.shape_rectangles(
+        SO::SET,
+        SK::INPUT,
+        ClipOrdering::UNSORTED,
+        client,
+        0,
+        0,
+        &ring(140),
+    )?
+    .check()?;
+    conn.flush()?;
+    thread::sleep(Duration::from_millis(200));
+    let dynamic = translated(160, 80);
+    check(
+        "dynamic input-only bounding stays full",
+        contains(client, SK::BOUNDING, 160, 80),
+    );
+    check(
+        "dynamic frame input hole propagated",
+        !contains(frame, SK::INPUT, dynamic.dst_x, dynamic.dst_y),
+    );
+    check(
+        "dynamic input-only actual click-through",
+        click(160, 80)? == (0, 1),
+    );
+    // A client-owned visual shape changes with no geometry movement.
+    conn.shape_rectangles(
+        SO::SET,
+        SK::BOUNDING,
+        ClipOrdering::UNSORTED,
+        client,
+        0,
+        0,
+        &ring(140),
+    )?
+    .check()?;
+    conn.flush()?;
+    thread::sleep(Duration::from_millis(200));
+    check(
+        "dynamic frame bounding hole propagated",
+        !contains(frame, SK::BOUNDING, dynamic.dst_x, dynamic.dst_y),
+    );
+    check(
+        "dynamic visual hole actual click-through",
+        click(160, 80)? == (0, 1),
+    );
+    let at = conn.translate_coordinates(client, root, 160, 80)?.reply()?;
+    let pixel = conn
+        .get_image(
+            ImageFormat::Z_PIXMAP,
+            root,
+            at.dst_x,
+            at.dst_y,
+            1,
+            1,
+            u32::MAX,
+        )?
+        .reply()?;
+    println!("SHAPE_HOLE visual pixel bytes={:?}", pixel.data);
+    check(
+        "visual hole exposes lower magenta receiver",
+        pixel.data.get(..3) == Some(&[0xcc, 0x22, 0xdd]),
+    );
+    // Fullscreen changes body origin and border but must retain app-owned masks.
+    let fullscreen = atom(&conn, "_NET_WM_STATE_FULLSCREEN")?;
+    for enabled in [true, false] {
+        message(
+            &conn,
+            root,
+            client,
+            "_NET_WM_STATE",
+            [u32::from(enabled), fullscreen, 0, 0, 0],
+        )?;
+        wait("shape-hole fullscreen state settles", || {
+            property(&conn, client, "_NET_WM_STATE")
+                .unwrap_or_default()
+                .contains(&fullscreen)
+                == enabled
+        });
+        thread::sleep(Duration::from_millis(200));
+        let hole = conn
+            .translate_coordinates(client, frame, 160, 80)?
+            .reply()?;
+        println!(
+            "SHAPE_HOLE fullscreen={enabled} frame={frame:#x} translated hole=({}, {})",
+            hole.dst_x, hole.dst_y
+        );
+        check(
+            "fullscreen transition preserves client bounding",
+            !contains(client, SK::BOUNDING, 160, 80),
+        );
+        check(
+            "fullscreen transition preserves client input",
+            !contains(client, SK::INPUT, 160, 80),
+        );
+        check(
+            "fullscreen transition frame bounding excludes translated hole",
+            !contains(frame, SK::BOUNDING, hole.dst_x, hole.dst_y),
+        );
+        check(
+            "fullscreen transition frame input excludes translated hole",
+            !contains(frame, SK::INPUT, hole.dst_x, hole.dst_y),
+        );
+        check(
+            "fullscreen transition actual click-through",
+            click(160, 80)? == (0, 1),
+        );
+        check(
+            "fullscreen caption visibility",
+            (conn.get_window_attributes(caption)?.reply()?.map_state == MapState::VIEWABLE)
+                != enabled,
+        );
+    }
+    // Both shutdown paths must leave live foreign clients and their masks intact.
+    for crash in [false, true] {
+        if crash {
+            wm.0.kill()?;
+            let _ = wm.0.wait()?;
+        } else {
+            xdotool(&["key", "super+shift+q"]);
+            assert!(wm.0.wait()?.success());
+        }
+        wait("shaped client survives WM exit on root", || {
+            conn.query_tree(client).unwrap().reply().unwrap().parent == root
+        });
+        check(
+            "WM exit preserves original client bounding hole",
+            !contains(client, SK::BOUNDING, 160, 80),
+        );
+        check(
+            "WM exit preserves original client input hole",
+            !contains(client, SK::INPUT, 160, 80),
+        );
+        wm = start_with_policy(false, false)?;
+        wait("restart adopts shaped client and publishes caption", || {
+            ready(&conn, root, &wm)
+                && native_chrome(&conn, root, client).is_some()
+                && property(&conn, root, "_NET_CLIENT_LIST")
+                    .unwrap_or_default()
+                    .contains(&client)
+        });
+        thread::sleep(Duration::from_millis(200));
+        let adopted = root_surface(&conn, client);
+        let hole = conn
+            .translate_coordinates(client, adopted, 160, 80)?
+            .reply()?;
+        println!("SHAPE_HOLE restart crash={crash} logical={client:#x} frame={adopted:#x} translated hole=({}, {})", hole.dst_x, hole.dst_y);
+        check("restart uses common root frame", adopted != client);
+        check(
+            "restart frame bounding excludes translated hole",
+            !contains(adopted, SK::BOUNDING, hole.dst_x, hole.dst_y),
+        );
+        check(
+            "restart frame input excludes translated hole",
+            !contains(adopted, SK::INPUT, hole.dst_x, hole.dst_y),
+        );
+        check("restart actual click-through", click(160, 80)? == (0, 1));
+    }
+    let frame = root_surface(&conn, client);
+    let caption = native_chrome(&conn, root, client).unwrap();
+    let dynamic = conn
+        .translate_coordinates(client, frame, 160, 80)?
+        .reply()?;
+    for kind in [SK::BOUNDING, SK::INPUT] {
+        conn.shape_mask(SO::SET, kind, client, 0, 0, 0u32)?
+            .check()?;
+    }
+    conn.flush()?;
+    thread::sleep(Duration::from_millis(200));
+    check(
+        "removed hole frame input restored",
+        contains(frame, SK::INPUT, dynamic.dst_x, dynamic.dst_y),
+    );
+    check(
+        "removed hole solid click control",
+        click(160, 80)? == (1, 0),
+    );
+    let before = geometry(&conn, frame);
+    let cg = geometry(&conn, caption);
+    let x = i32::from(cg.x) + i32::from(cg.width) / 2;
+    let y = i32::from(cg.y) + 16;
+    xdotool(&[
+        "mousemove",
+        &x.to_string(),
+        &y.to_string(),
+        "mousedown",
+        "1",
+        "sleep",
+        "0.1",
+        "mousemove",
+        &(x + 30).to_string(),
+        &(y + 20).to_string(),
+        "sleep",
+        "0.1",
+        "mouseup",
+        "1",
+    ]);
+    thread::sleep(Duration::from_millis(100));
+    let after = geometry(&conn, frame);
+    check(
+        "native caption drag remains usable",
+        after.x != before.x || after.y != before.y,
+    );
+    check(
+        "logical IDs remain application IDs",
+        property(&conn, root, "_NET_CLIENT_LIST")?.contains(&client)
+            && !property(&conn, root, "_NET_CLIENT_LIST")?.contains(&frame),
+    );
+    conn.destroy_window(client)?;
+    conn.destroy_window(receiver)?;
+    conn.flush()?;
+    xdotool(&["key", "super+shift+q"]);
+    assert!(wm.0.wait()?.success());
+    assert!(
+        failures.is_empty(),
+        "missing native client shape behavior: {failures:?}"
+    );
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires private Xvfb; run tests/run.sh"]
+fn argb_native_border_keeps_opaque_alpha_across_focus_states() -> Result<()> {
+    assert_eq!(
+        std::env::var("CARPATIC_WM_TEST_DISPLAY").as_deref(),
+        Ok("1")
+    );
+    assert!(std::env::var_os("WAYLAND_DISPLAY").is_none());
+    let dir = std::path::PathBuf::from(std::env::var("CARPATIC_CONFIG_DIR")?);
+    let _config = ConfigRestore::new(&dir);
+    std::fs::write(dir.join("themes.toml"), "[active]\ntheme='alpha-proof'\n[appearance]\nworkspaces=4\ndefault_layout='float'\nborderpx=2\nborder_highlight=0\ncorner_radius=0\n[theme.alpha-proof]\nselbordercolor='#e95420'\nnormbordercolor='#3a4455'\nterm_color1='#cc3355'\n[titlebar]\nenabled=1\nheight=32\n")?;
+    std::fs::write(dir.join("window-rules.toml"), "rules=[]\n")?;
+    std::fs::write(
+        dir.join("hotkeys.toml"),
+        "keys=[{mod='SUPER SHIFT',key='q',func='quit'}]\n",
+    )?;
+    let (conn, screen) = x11rb::connect(None)?;
+    let root = conn.setup().roots[screen].root;
+    let visual = conn.setup().roots[screen]
+        .allowed_depths
+        .iter()
+        .find(|d| d.depth == 32)
+        .and_then(|d| d.visuals.first())
+        .expect("private Xvfb must provide ARGB32");
+    let colormap = conn.generate_id()?;
+    conn.create_colormap(ColormapAlloc::NONE, colormap, root, visual.visual_id)?;
+    let client = conn.generate_id()?;
+    conn.create_window(
+        32,
+        client,
+        root,
+        180,
+        190,
+        300,
+        180,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        visual.visual_id,
+        &CreateWindowAux::new()
+            .colormap(colormap)
+            .background_pixel(0x8025a9df)
+            .border_pixel(0),
+    )?
+    .check()?;
+    conn.map_window(client)?;
+    conn.flush()?;
+    let mut wm = start_with_policy(false, false)?;
+    wait("ARGB border client adopted and focused", || {
+        ready(&conn, root, &wm)
+            && native_chrome(&conn, root, client).is_some()
+            && property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![client]
+    });
+    let raw_pixel = |window: Window, x: i16, y: i16| -> Result<u32> {
+        let reply = conn
+            .get_image(ImageFormat::Z_PIXMAP, window, x, y, 1, 1, u32::MAX)?
+            .reply()?;
+        assert_eq!(reply.depth, 32);
+        let bytes: [u8; 4] = reply.data[..4].try_into()?;
+        Ok(if conn.setup().image_byte_order == ImageOrder::LSB_FIRST {
+            u32::from_le_bytes(bytes)
+        } else {
+            u32::from_be_bytes(bytes)
+        })
+    };
+    let mut failures = Vec::new();
+    let mut check = |label: &str, expected: u32| -> Result<()> {
+        thread::sleep(Duration::from_millis(100));
+        // GetImage may include a window border; x=-1 selects its inner border pixel.
+        let observed = raw_pixel(client, -1, 40)?;
+        let parent = root_surface(&conn, client);
+        let local = conn.get_geometry(client)?.reply()?;
+        let framed = raw_pixel(
+            parent,
+            local.x + 1,
+            local.y + i16::try_from(local.border_width)? + 40,
+        )?;
+        let body = raw_pixel(client, 30, 40)?;
+        println!("ARGB_BORDER {label} client={client:#x} frame={parent:#x} border={observed:#010x} frame_border={framed:#010x} expected={expected:#010x} body={body:#010x}");
+        if observed != expected || framed != expected {
+            failures.push(label.to_owned());
+        }
+        assert_eq!(
+            body, 0x8025a9df,
+            "application-owned translucent body must retain alpha"
+        );
+        Ok(())
+    };
+    check("initial active", 0xffe95420)?;
+    let other = conn.generate_id()?;
+    conn.create_window(
+        0,
+        other,
+        root,
+        700,
+        190,
+        250,
+        160,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &CreateWindowAux::new(),
+    )?;
+    conn.map_window(other)?;
+    conn.flush()?;
+    wait("second client takes focus", || {
+        property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![other]
+    });
+    check("inactive after another app focus", 0xff3a4455)?;
+    x11rb::properties::WmHints {
+        urgent: true,
+        ..x11rb::properties::WmHints::new()
+    }
+    .set(&conn, client)?;
+    conn.flush()?;
+    let attention = atom(&conn, "_NET_WM_STATE_DEMANDS_ATTENTION")?;
+    wait("ARGB inactive client urgent", || {
+        property(&conn, client, "_NET_WM_STATE")
+            .unwrap_or_default()
+            .contains(&attention)
+    });
+    check("urgent inactive", 0xffcc3355)?;
+    message(&conn, root, client, "_NET_ACTIVE_WINDOW", [1, 0, 0, 0, 0])?;
+    wait("ARGB client refocused", || {
+        property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![client]
+    });
+    check("refocused after urgency", 0xffe95420)?;
+    let desktop = conn.generate_id()?;
+    conn.create_window(
+        0,
+        desktop,
+        root,
+        0,
+        0,
+        1280,
+        800,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &CreateWindowAux::new(),
+    )?;
+    conn.change_property32(
+        PropMode::REPLACE,
+        desktop,
+        atom(&conn, "_NET_WM_WINDOW_TYPE")?,
+        AtomEnum::ATOM,
+        &[atom(&conn, "_NET_WM_WINDOW_TYPE_DESKTOP")?],
+    )?;
+    conn.map_window(desktop)?;
+    conn.flush()?;
+    wait("ARGB desktop receiver managed", || {
+        property(&conn, root, "_NET_CLIENT_LIST")
+            .unwrap_or_default()
+            .contains(&desktop)
+    });
+    message(&conn, root, desktop, "_NET_ACTIVE_WINDOW", [1, 0, 0, 0, 0])?;
+    wait("desktop receives logical focus", || {
+        property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![desktop]
+    });
+    check("inactive after desktop focus", 0xff3a4455)?;
+    message(&conn, root, client, "_NET_ACTIVE_WINDOW", [1, 0, 0, 0, 0])?;
+    wait("ARGB focus recovered from desktop", || {
+        property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![client]
+    });
+    check("refocused after desktop", 0xffe95420)?;
+    conn.destroy_window(client)?;
+    conn.destroy_window(other)?;
+    conn.destroy_window(desktop)?;
+    conn.free_colormap(colormap)?;
+    conn.flush()?;
+    xdotool(&["key", "super+shift+q"]);
+    assert!(wm.0.wait()?.success());
+    assert!(
+        failures.is_empty(),
+        "ARGB native border alpha failures: {failures:?}"
+    );
     Ok(())
 }

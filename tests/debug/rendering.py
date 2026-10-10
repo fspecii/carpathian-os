@@ -6,6 +6,8 @@ This measures correctness, not animation frame rate. Never run on a host desktop
 """
 import argparse
 import ctypes as c
+import fcntl
+import stat
 import json
 import os
 from pathlib import Path
@@ -47,37 +49,87 @@ def hidden(output):
     return map_state(output) in ('IsUnMapped', 'IsUnviewable')
 
 
+class ProbeLease:
+    """Kernel-held, nonblocking lease; persistent inode, no PID/staleness guesses."""
+    def __init__(self, path=None):
+        self.fd = None
+        self.path = Path(path) if path is not None else Path(f'/tmp/carpatic-xorg-probe-{os.getuid()}-0.lock')
+        fd = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK, 0o600)
+        try:
+            info = os.fstat(fd)
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                    or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
+                raise RuntimeError(f'Unsafe probe lease file: {self.path}')
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise RuntimeError(f'Another probe owns this Xorg display: {self.path}') from error
+            self.fd = fd
+        except BaseException:
+            os.close(fd)
+            raise
+
+    def close(self):
+        if self.fd is not None:
+            fd, self.fd = self.fd, None
+            os.close(fd)  # Kernel releases the lease; never unlink its inode.
+
+
+def fixture_lease_required():
+    return (os.environ.get('CARPATIC_VM_TEST') == '1'
+            and os.environ.get('DISPLAY') == ':0'
+            and 'WAYLAND_DISPLAY' not in os.environ
+            and Path('/etc/alpine-release').is_file())
+
+
 class Display:
     def __init__(self):
-        self.x = c.CDLL('libX11.so.6')
-        pointer, window, integer = c.c_void_p, c.c_ulong, c.c_int
-        signatures = {
-            'XOpenDisplay': (pointer, [c.c_char_p]),
-            'XDefaultRootWindow': (window, [pointer]),
-            'XCreateSimpleWindow': (window, [pointer, window, integer, integer, c.c_uint, c.c_uint, c.c_uint, window, window]),
-            'XInternAtom': (window, [pointer, c.c_char_p, integer]),
-            'XChangeProperty': (integer, [pointer, window, window, window, integer, integer, pointer, integer]),
-            'XStoreName': (integer, [pointer, window, c.c_char_p]),
-            'XChangeWindowAttributes': (integer, [pointer, window, window, pointer]),
-            'XSendEvent': (integer, [pointer, window, integer, c.c_long, pointer]),
-            'XMapWindow': (integer, [pointer, window]),
-            'XUnmapWindow': (integer, [pointer, window]),
-            'XClearWindow': (integer, [pointer, window]),
-            'XSync': (integer, [pointer, integer]),
-            'XGetImage': (pointer, [pointer, window, integer, integer, c.c_uint, c.c_uint, window, integer]),
-            'XGetPixel': (window, [pointer, integer, integer]),
-            'XDestroyImage': (integer, [pointer]),
-            'XDestroyWindow': (integer, [pointer, window]),
-            'XCloseDisplay': (integer, [pointer]),
-        }
-        for name, (result, arguments) in signatures.items():
-            function = getattr(self.x, name)
-            function.restype, function.argtypes = result, arguments
-        self.handle = self.x.XOpenDisplay(None)
-        if not self.handle:
-            raise RuntimeError('Xorg display is unavailable')
-        self.root = self.x.XDefaultRootWindow(self.handle)
+        self.handle = None
         self.windows = []
+        self.lease = ProbeLease() if fixture_lease_required() else None
+        try:
+            self.x = c.CDLL('libX11.so.6')
+            pointer, window, integer = c.c_void_p, c.c_ulong, c.c_int
+            signatures = {
+                'XOpenDisplay': (pointer, [c.c_char_p]),
+                'XDefaultRootWindow': (window, [pointer]),
+                'XCreateSimpleWindow': (window, [pointer, window, integer, integer, c.c_uint, c.c_uint, c.c_uint, window, window]),
+                'XInternAtom': (window, [pointer, c.c_char_p, integer]),
+                'XChangeProperty': (integer, [pointer, window, window, window, integer, integer, pointer, integer]),
+                'XStoreName': (integer, [pointer, window, c.c_char_p]),
+                'XChangeWindowAttributes': (integer, [pointer, window, window, pointer]),
+                'XSendEvent': (integer, [pointer, window, integer, c.c_long, pointer]),
+                'XMapWindow': (integer, [pointer, window]),
+                'XUnmapWindow': (integer, [pointer, window]),
+                'XClearWindow': (integer, [pointer, window]),
+                'XSync': (integer, [pointer, integer]),
+                'XGetImage': (pointer, [pointer, window, integer, integer, c.c_uint, c.c_uint, window, integer]),
+                'XGetPixel': (window, [pointer, integer, integer]),
+                'XDestroyImage': (integer, [pointer]),
+                'XDestroyWindow': (integer, [pointer, window]),
+                'XCloseDisplay': (integer, [pointer]),
+            }
+            for name, (result, arguments) in signatures.items():
+                function = getattr(self.x, name)
+                function.restype, function.argtypes = result, arguments
+            self.handle = self.x.XOpenDisplay(None)
+            if not self.handle:
+                raise RuntimeError('Xorg display is unavailable')
+            self.root = self.x.XDefaultRootWindow(self.handle)
+        except BaseException as original:
+            try:
+                if self.handle:
+                    self.x.XCloseDisplay(self.handle)
+                    self.handle = None
+            except BaseException as cleanup:
+                original.add_note(f'Display cleanup also failed: {cleanup}')
+            finally:
+                if self.lease:
+                    try:
+                        self.lease.close()
+                    except BaseException as cleanup:
+                        original.add_note(f'Lease cleanup also failed: {cleanup}')
+            raise
 
     def create(self, name, color, width, height, kind_name='_NET_WM_WINDOW_TYPE_DIALOG', override=False):
         w = self.x.XCreateSimpleWindow(self.handle, self.root, 100, 100, width, height, 0, 0, color)
@@ -130,10 +182,28 @@ class Display:
         return pixels, g
 
     def close(self):
-        for w in reversed(self.windows):
-            self.x.XDestroyWindow(self.handle, w)
-        self.sync()
-        self.x.XCloseDisplay(self.handle)
+        failures = []
+        def attempt(operation):
+            try:
+                operation()
+            except BaseException as error:
+                failures.append(error)
+        try:
+            if self.handle:
+                handle = self.handle
+                windows, self.windows = self.windows, []
+                for window in reversed(windows):
+                    attempt(lambda window=window: self.x.XDestroyWindow(handle, window))
+                attempt(lambda: self.x.XSync(handle, 0))
+                attempt(lambda: self.x.XCloseDisplay(handle))
+                self.handle = None
+        finally:
+            if self.lease:
+                attempt(self.lease.close)
+        if failures:
+            for extra in failures[1:]:
+                failures[0].add_note(f'Additional display cleanup failure: {extra}')
+            raise failures[0]
 
 
 def main():

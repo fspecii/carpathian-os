@@ -11,7 +11,7 @@ case "$build_dir" in *[!a-zA-Z0-9/-]*) echo 'Invalid native source characters' >
 cleanup() { scripts/vm-test.sh --name "$vm" ssh "rm -rf '$build_dir'" >/dev/null 2>&1 || :; }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
-tar --exclude=__pycache__ -cf "$results/source.tar" Cargo.toml Cargo.lock crates config scripts alpine tests development \
+tar --exclude=__pycache__ -cf "$results/source.tar" Cargo.toml Cargo.lock crates config scripts alpine tests \
     integration/carpatic/motion/lib/window_animations.py \
     integration/carpatic/panel/lib/carpatic_panel/popup.py \
     integration/carpatic/panel/lib/carpatic_panel/motion.py \

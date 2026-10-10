@@ -72,7 +72,7 @@ def create_argb(x):
         raise RuntimeError('Depth-32 visual is not the verified A8R8G8B8 format')
     colormap = x.x.XCreateColormap(x.handle, x.root, visual.visual, 0)
     try:
-        attributes = WindowAttributes(background_pixel=0x8025a9df, border_pixel=0, colormap=colormap)
+        attributes = WindowAttributes(background_pixel=0x80405060, border_pixel=0, colormap=colormap)
         client = x.x.XCreateWindow(x.handle, x.root, 100, 100, 420, 280, 0,
                                   32, 1, visual.visual, (1 << 1) | (1 << 3) | (1 << 13),
                                   c.byref(attributes))
@@ -260,7 +260,13 @@ def main():
     previous = None
     colormap = None
     try:
+        body_color = 0x405060 if args.argb else COLOR
         if args.argb:
+            # Premultiplied A8R8G8B8 over an owned solid backdrop gives a known
+            # root-pixel blend, independent of the user's wallpaper.
+            backdrop = x.create('Carpatic alpha backdrop', 0x204060, 1280, 800, override=True)
+            x.x.XMapWindow(x.handle, backdrop)
+            x.sync()
             client, colormap = create_argb(x)
         else:
             client = x.create('Carpatic frame-surface probe', COLOR, 420, 280)
@@ -300,10 +306,10 @@ def main():
         frame_image = capture(x, pixmap, pw, ph)
         body = [(pw * i // 4, ph * j // 4) for i in (1, 2, 3) for j in (1, 2, 3)]
         body_samples = {f'{px},{py}': f'{pixel(x, frame_image, px, py):06x}' for px, py in body}
-        body_ok = all(v == f'{COLOR:06x}' for v in body_samples.values())
+        body_ok = all(v == f'{body_color:06x}' for v in body_samples.values())
         body_argb = {f'{px},{py}': f'{x.x.XGetPixel(frame_image, px, py) & 0xffffffff:08x}'
                      for px, py in body} if args.argb else None
-        alpha_ok = not args.argb or all(v == '8025a9df' for v in body_argb.values())
+        alpha_ok = not args.argb or all(v == '80405060' for v in body_argb.values())
         tx, ty = tg['X'] - fg['X'], tg['Y'] - fg['Y']
         title_image = capture(x, title, tg['WIDTH'], tg['HEIGHT'])
         th, tw = tg['HEIGHT'], tg['WIDTH']
@@ -311,6 +317,28 @@ def main():
             root_image = x.x.XGetImage(x.handle, x.root, fg['X'], fg['Y'], pw, ph, 0xffffffff, 2)
             if not root_image:
                 raise RuntimeError('Cannot capture visible ARGB frame rectangle from root')
+        root_body_samples = {}
+        root_body_ok = True
+        if args.argb:
+            expected = tuple(((body_color >> shift) & 255) + (((0x204060 >> shift) & 255) * 127 + 127) // 255 for shift in (16, 8, 0))
+            for px, py in body:
+                actual = pixel(x, root_image, px, py)
+                root_body_samples[f'{px},{py}'] = f'{actual:06x}'
+                root_body_ok = root_body_ok and all(abs(((actual >> shift) & 255) - value) <= 3 for shift, value in zip((16, 8, 0), expected))
+        border_samples = {}
+        border_ok = True
+        def check_border(state):
+            samples, good = {}, True
+            for px, py in ((1, ph // 2), (pw - 2, ph // 2)):
+                raw = x.x.XGetPixel(frame_image, px, py) & 0xffffffff
+                visible = pixel(x, root_image, px, py)
+                yes = (raw >> 24) == 255 and all(abs(((raw >> shift) & 255) - ((visible >> shift) & 255)) <= 3 for shift in (0, 8, 16))
+                samples[f'{px},{py}'] = dict(named_argb=f'{raw:08x}', root_rgb=f'{visible:06x}', opaque_visible=bool(yes))
+                good = good and yes
+            border_samples[state] = samples
+            return good
+        if args.argb:
+            border_ok = check_border('focused')
         root_caption_ok = True
         title_samples, title_ok = {}, True
         for sx in dict.fromkeys((8, tw // 2, max(tw - 8, 0))):
@@ -334,6 +362,23 @@ def main():
                                                matches=same, distinct_from_body_and_zero=distinct,
                                                named_alpha=named_alpha if args.argb else None,
                                                root_caption=f'{root_caption:06x}' if args.argb else None)
+        if args.argb:
+            focus_control = x.create('Carpatic ARGB border focus control', COLOR, 200, 120)
+            x.x.XMapWindow(x.handle, focus_control)
+            wait_for_frame(x, focus_control)
+            command('xdotool', 'windowmove', str(focus_control), '30', '80')
+            for state, target in (('unfocused', focus_control), ('refocused', client)):
+                x.message(target, '_NET_ACTIVE_WINDOW', [1, 0, 0, 0, 0])
+                time.sleep(.3)
+                x.x.XDestroyImage(frame_image)
+                frame_image = None
+                frame_image = capture(x, pixmap, pw, ph)
+                x.x.XDestroyImage(root_image)
+                root_image = None
+                root_image = x.x.XGetImage(x.handle, x.root, fg['X'], fg['Y'], pw, ph, 0xffffffff, 2)
+                if not root_image:
+                    raise RuntimeError('Cannot capture root during ARGB border focus test')
+                border_ok = check_border(state) and border_ok
         # Negative control: strictly body-only crop of the named FRAME pixmap must
         # show no distinct title; the detector must still find the real title band.
         cx0, cy0 = cg['X'] - fg['X'], cg['Y'] - fg['Y']
@@ -341,12 +386,12 @@ def main():
         # distinct colour near the bottom corners and is not a title band.
         body_crop = (cx0 + cg['WIDTH'] // 4, cx0 + 3 * cg['WIDTH'] // 4,
                      cy0 + cg['HEIGHT'] // 4, cy0 + 3 * cg['HEIGHT'] // 4)
-        body_only = distinct_rows(x, frame_image, *body_crop, COLOR)
-        title_band = distinct_rows(x, frame_image, cx0 + 2, cx0 + cg['WIDTH'] - 2, ty, ty + th, COLOR)
+        body_only = distinct_rows(x, frame_image, *body_crop, body_color)
+        title_band = distinct_rows(x, frame_image, cx0 + 2, cx0 + cg['WIDTH'] - 2, ty, ty + th, body_color)
         control_ok = not body_only and bool(title_band)
         if args.output:
             write_ppm(args.output, x, frame_image, pw, ph)
-        ok = body_ok and title_ok and control_ok and alpha_ok and root_caption_ok
+        ok = body_ok and title_ok and control_ok and alpha_ok and root_caption_ok and root_body_ok and border_ok
         print(json.dumps(dict(guarded=True, compositor=dict(version=composite.version, selection=CM_ATOM),
                               parentage=dict(client=f'{client:#x}', frame=f'{frame:#x}', title=f'{title:#x}',
                                              frame_parent=f'{root:#x}', client_parent=f'{frame:#x}'),
@@ -354,11 +399,13 @@ def main():
                               pixmap=dict(size=[pw, ph], depth=depth),
                               body_samples=body_samples, body_argb_samples=body_argb,
                               window_depths=depths, argb=args.argb, alpha_ok=alpha_ok, root_caption_ok=root_caption_ok,
+                              root_body_ok=root_body_ok, root_body_samples=root_body_samples,
+                              border_ok=border_ok, border_samples=border_samples,
                               title_samples=title_samples,
                               negative_control=dict(body_only_distinct_rows=len(body_only),
                                                     title_band_distinct_rows=len(title_band)),
                               artifact=str(args.output) if args.output else None,
-                              summary=dict(ok=ok, failures=sum(not part for part in (body_ok, title_ok, control_ok, alpha_ok, root_caption_ok))))),
+                              summary=dict(ok=ok, failures=sum(not part for part in (body_ok, title_ok, control_ok, alpha_ok, root_caption_ok, root_body_ok, border_ok))))),
                              flush=True)
         if not ok:
             raise RuntimeError('Frame surface probe failed: body/title/control checks above')

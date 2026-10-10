@@ -60,6 +60,8 @@ struct Client {
     titlebar: Window,
     frame: Option<Window>,
     original_border: u16,
+    depth: u8,
+    shape_dirty: bool,
     title: String,
     icon: Option<Icon>,
     minimized: bool,
@@ -83,6 +85,10 @@ struct Client {
 }
 
 impl Client {
+    fn border_pixel(&self, color: u32) -> u32 {
+        opaque_border_pixel(self.depth, color)
+    }
+
     fn surface(&self) -> Window {
         self.frame.unwrap_or(self.id)
     }
@@ -2237,8 +2243,12 @@ impl Wm {
                         | EventMask::PROPERTY_CHANGE
                         | EventMask::POINTER_MOTION,
                 )
-                .border_pixel(self.config.border_inactive),
+                .border_pixel(opaque_border_pixel(g.depth, self.config.border_inactive)),
         )?;
+        {
+            use x11rb::protocol::shape::ConnectionExt as _;
+            self.conn.shape_select_input(id, true)?;
+        }
         self.grab_mouse_buttons(id)?;
         self.conn.configure_window(
             id,
@@ -2354,6 +2364,8 @@ impl Wm {
             titlebar,
             frame,
             original_border: g.border_width,
+            depth: g.depth,
+            shape_dirty: true,
             title,
             icon: self.window_icon(id),
             minimized,
@@ -2719,13 +2731,15 @@ impl Wm {
         for c in &mut self.clients {
             self.conn.change_window_attributes(
                 c.id,
-                &ChangeWindowAttributesAux::new().border_pixel(if Some(c.id) == self.focused {
-                    self.config.border_active
-                } else if c.urgent {
-                    self.config.red
-                } else {
-                    self.config.border_inactive
-                }),
+                &ChangeWindowAttributesAux::new().border_pixel(c.border_pixel(
+                    if Some(c.id) == self.focused {
+                        self.config.border_active
+                    } else if c.urgent {
+                        self.config.red
+                    } else {
+                        self.config.border_inactive
+                    },
+                )),
             )?;
             let m = &self.monitors[c.monitor.min(self.monitors.len() - 1)];
             let layout = m.layouts[m.slot()];
@@ -2840,17 +2854,6 @@ impl Wm {
                     AtomEnum::CARDINAL,
                     &[rect.x as u32, rect.y as u32, rect.width, rect.height],
                 )?;
-                shape_window(
-                    &self.conn,
-                    c.id,
-                    width,
-                    height,
-                    border,
-                    self.config.radius,
-                    title_height == 0,
-                    true,
-                    c.fullscreen || c.dock,
-                )?;
                 self.conn.configure_window(
                     c.id,
                     &ConfigureWindowAux::new()
@@ -2896,17 +2899,20 @@ impl Wm {
                             .width(rect.width)
                             .height(rect.height),
                     )?;
-                    shape_window(
+                }
+                if geometry_changed || c.shape_dirty {
+                    shape_app_frame(
                         &self.conn,
                         frame,
+                        c.id,
                         rect.width,
                         rect.height,
-                        0,
+                        border,
+                        title_height,
                         self.config.radius,
-                        true,
-                        true,
                         c.fullscreen || c.has_csd,
                     )?;
+                    c.shape_dirty = false;
                 }
                 publish_frames.push(frame);
             }
@@ -3285,6 +3291,13 @@ impl Wm {
         Ok(())
     }
 
+    fn client_border_pixel(&self, id: Window, color: u32) -> u32 {
+        self.clients
+            .iter()
+            .find(|c| c.id == id)
+            .map_or(color, |c| c.border_pixel(color))
+    }
+
     fn focus(&mut self, id: Window) -> Result<()> {
         if self.desktop_surfaces.contains(&id) {
             if let Some(old) = self.focused {
@@ -3293,7 +3306,8 @@ impl Wm {
                 }
                 self.conn.change_window_attributes(
                     old,
-                    &ChangeWindowAttributesAux::new().border_pixel(self.config.border_inactive),
+                    &ChangeWindowAttributesAux::new()
+                        .border_pixel(self.client_border_pixel(old, self.config.border_inactive)),
                 )?;
             }
             self.focused = None;
@@ -3383,7 +3397,8 @@ impl Wm {
             }
             self.conn.change_window_attributes(
                 old,
-                &ChangeWindowAttributesAux::new().border_pixel(self.config.border_inactive),
+                &ChangeWindowAttributesAux::new()
+                    .border_pixel(self.client_border_pixel(old, self.config.border_inactive)),
             )?;
         }
         let changed = self.focused != Some(id);
@@ -3402,7 +3417,8 @@ impl Wm {
         }
         self.conn.change_window_attributes(
             id,
-            &ChangeWindowAttributesAux::new().border_pixel(self.config.border_active),
+            &ChangeWindowAttributesAux::new()
+                .border_pixel(self.client_border_pixel(id, self.config.border_active)),
         )?;
         if self
             .clients
@@ -3882,6 +3898,12 @@ impl Wm {
             Event::MapNotify(e) => {
                 self.track_overlay(e.window)?;
                 self.enforce_lock_stack()?;
+            }
+            Event::ShapeNotify(e) => {
+                if let Some(c) = self.clients.iter_mut().find(|c| c.id == e.affected_window) {
+                    c.shape_dirty = true;
+                    self.arrange()?;
+                }
             }
             Event::MapRequest(e) => {
                 if self.showing_desktop {
@@ -4691,6 +4713,78 @@ impl Wm {
         self.conn.flush()?;
         Ok(())
     }
+}
+
+fn opaque_border_pixel(depth: u8, color: u32) -> u32 {
+    // RGB configuration colours need opaque alpha in a depth-32 ARGB border.
+    // Zero-alpha RGB would be invalid premultiplied colour and produce halos.
+    if depth == 32 {
+        color | 0xff00_0000
+    } else {
+        color
+    }
+}
+
+// Applications own their shapes. Compose their server-side regions into the
+// frame instead of replacing the client's bounding, clip or input masks.
+#[allow(clippy::too_many_arguments)]
+fn shape_app_frame(
+    conn: &RustConnection,
+    frame: Window,
+    client: Window,
+    width: u32,
+    height: u32,
+    border: u32,
+    title: u32,
+    radius: u32,
+    square: bool,
+) -> Result<()> {
+    use x11rb::protocol::shape::{ConnectionExt as _, SK, SO};
+    shape_window(conn, frame, width, height, 0, radius, true, true, square)?;
+    let caption = Rectangle {
+        x: 0,
+        y: 0,
+        width: width as u16,
+        height: (title + border) as u16,
+    };
+    for kind in [SK::BOUNDING, SK::INPUT] {
+        conn.shape_combine(
+            SO::SET,
+            kind,
+            kind,
+            frame,
+            border as i16,
+            (title + border) as i16,
+            client,
+        )?;
+        if title > 0 {
+            conn.shape_rectangles(
+                SO::UNION,
+                kind,
+                ClipOrdering::UNSORTED,
+                frame,
+                0,
+                0,
+                &[caption],
+            )?;
+        }
+        // CLIP still holds the rounded outer region created above. Input also
+        // intersects the composed bounding region so visual holes pass clicks.
+        conn.shape_combine(
+            SO::INTERSECT,
+            kind,
+            if kind == SK::BOUNDING {
+                SK::CLIP
+            } else {
+                SK::BOUNDING
+            },
+            frame,
+            0,
+            0,
+            frame,
+        )?;
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
