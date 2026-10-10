@@ -9,8 +9,11 @@ CARPATIC_USER=${CARPATIC_USER:?Select the installed desktop user}
 export CARPATIC_USER
 desktop_home=$(getent passwd "$CARPATIC_USER" | cut -d: -f6)
 [ -n "$desktop_home" ] && [ -d "$desktop_home" ] || exit 1
-[ "$(uname -m)" = x86_64 ] || { echo 'This image contains an x86_64 build.' >&2; exit 1; }
+native_arch=$(uname -m)
+case "$native_arch" in x86_64|aarch64) ;; *) echo "Unsupported native payload architecture: $native_arch" >&2; exit 1;; esac
+command -v python3 >/dev/null 2>&1 || { echo 'Python3 is required to verify native payloads.' >&2; exit 1; }
 ( cd prebuilt; sha256sum -c SHA256SUMS )
+python3 alpine/verify-prebuilt.py prebuilt --arch "$native_arch"
 # The original signed desktop packages supply the shared runtime dependencies.
 # xterm is the Rust port's terminal; no Rust or C build toolchain is required.
 if [ -f packages/SHA256SUMS ]; then
@@ -70,7 +73,7 @@ printf '[Seat:*]\nuser-session=carpatic-rust\n' > /etc/lightdm/lightdm.conf.d/99
 chown -R "$CARPATIC_USER:$(id -gn "$CARPATIC_USER")" "$desktop_home/.local/share/dwm-titus" "$desktop_home/.config/carpatic" "$desktop_home/.config/dwm-titus"
 chown "$CARPATIC_USER:$(id -gn "$CARPATIC_USER")" "$desktop_home/.xinitrc" "$desktop_home/.xsession"
 # Generate profile bindings/themes as the desktop user, without starting apps.
-su "$CARPATIC_USER" -c 'carpatic-apply'
+su "$CARPATIC_USER" -c 'PATH=/usr/local/bin:/usr/local/sbin:$PATH; export PATH; exec /usr/local/bin/carpatic-apply'
 mkdir -p /etc/carpatic /var/lib/carpatic
 printf 'rust\n' > /etc/carpatic/window-manager
 cp prebuilt/SHA256SUMS /var/lib/carpatic/rust-build.sha256

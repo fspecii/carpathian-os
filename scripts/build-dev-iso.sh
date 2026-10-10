@@ -21,6 +21,7 @@ done
 [ -d "$(dirname "$out")" ] || { echo 'Output parent directory must exist.' >&2; exit 1; }
 [ -f "$base" ] && [ -f "$prebuilt/SHA256SUMS" ] && [ -f "$apks/SHA256SUMS" ] || { echo 'Missing base ISO or verified prebuilt/APK input manifests.' >&2; exit 1; }
 ( cd "$prebuilt"; sha256sum -c SHA256SUMS ) >"$run/prebuilt-check.log" 2>&1
+python3 alpine/verify-prebuilt.py "$prebuilt" --arch x86_64 >>"$run/prebuilt-check.log"
 ( cd "$apks"; sha256sum -c SHA256SUMS ) >"$run/apk-check.log" 2>&1
 python3 - "$apks" <<'PY_APKS'
 import pathlib, sys

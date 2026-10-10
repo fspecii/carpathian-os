@@ -3,6 +3,7 @@ import difflib
 import glob
 import json
 import os
+import platform
 import time
 import re
 import shutil
@@ -16,6 +17,25 @@ ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 class StoreError(Exception):
     """An error with a message that is safe to show to a newcomer."""
+
+
+def host_architecture():
+    machine = platform.machine().lower()
+    return {"amd64": "x86_64", "arm64": "aarch64"}.get(machine, machine)
+
+
+def require_architecture(item):
+    """Reject incompatible recipes before any backend or network action."""
+    arch = host_architecture()
+    allowed = item.get("architectures")
+    if allowed is not None and arch not in allowed:
+        raise StoreError(f"{item.get('name', item.get('id', 'This app'))} is unavailable on {arch}; this recipe supports {', '.join(allowed)}.")
+    # Direct compat:URL installs bypass catalog metadata. Never send a known
+    # x86 download to the native ARM compatibility backend.
+    if arch != "x86_64":
+        artifact = " ".join(str(item.get(key, "")) for key in ("pkg", "asset", "member"))
+        if re.search(r"(?i)(?:^|[/_.-])(?:amd64|x86_64|x64)(?:$|[/_.-])", artifact):
+            raise StoreError(f"This download is built for x86_64 and is unavailable on {arch}.")
 
 
 # ---------------------------------------------------------------- catalog
@@ -280,6 +300,7 @@ def _apk(args, on_line, password=None):
 
 
 def install(app, on_line=None, password=None):
+    require_architecture(app)
     lines = []
     def cb(l):
         lines.append(l)

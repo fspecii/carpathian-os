@@ -134,5 +134,9 @@ export GUM_LOG_SEPARATOR_BACKGROUND="{{ background }}"
 if [ -r "$HOME/.config/carpatic/lazygit-theme.yml" ]; then
   if [ -r "$HOME/.config/lazygit/config.yml" ]; then export LG_CONFIG_FILE="$HOME/.config/lazygit/config.yml,$HOME/.config/carpatic/lazygit-theme.yml"; else export LG_CONFIG_FILE="$HOME/.config/carpatic/lazygit-theme.yml"; fi
 fi
-[ -f "$HOME/.config/starship.toml" ] || { [ -r "$HOME/.config/carpatic/starship.toml" ] && export STARSHIP_CONFIG="$HOME/.config/carpatic/starship.toml"; }
-[ -d /usr/share/Kvantum ] && export QT_STYLE_OVERRIDE=kvantum
+if [ ! -f "$HOME/.config/starship.toml" ] && [ -r "$HOME/.config/carpatic/starship.toml" ]; then
+  export STARSHIP_CONFIG="$HOME/.config/carpatic/starship.toml"
+fi
+if [ -d /usr/share/Kvantum ]; then
+  export QT_STYLE_OVERRIDE=kvantum
+fi

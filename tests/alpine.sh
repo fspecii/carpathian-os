@@ -23,7 +23,15 @@ tar --exclude=__pycache__ -cf "$results/source.tar" Cargo.toml Cargo.lock crates
     integration/carpatic/configurator/bin/carpatic-session-process \
     integration/carpatic/wallpapers/lib \
     integration/carpatic/reminders \
-    integration/carpatic/installer-branding
+    integration/carpatic/installer-branding \
+    integration/carpatic/store/lib \
+    integration/carpatic/store/catalog \
+    integration/carpatic/store/ai \
+    integration/carpatic/store/tests \
+    integration/carpatic/stylepacks \
+    integration/carpatic/configurator/templates/apps/env.sh.tpl \
+    integration/carpatic/configurator/bin/carpatic-render \
+    integration/carpatic/configurator/themes/carpatic/colors.toml
 scripts/vm-test.sh --name "$vm" put "$results/source.tar" "$build_dir/source.tar"
 rc=0
 scripts/vm-test.sh --name "$vm" ssh "set -eu; cd '$build_dir'; tar -xf source.tar; export CARGO_TARGET_DIR=/var/tmp/carpatic-native-target CARGO_BUILD_JOBS=2; cargo build --release --locked; sh tests/host.sh; sh tests/daily.sh" || rc=$?

@@ -1,0 +1,41 @@
+#!/bin/sh
+# Provision the disposable live root, then start its graphical login.
+set -eu
+[ "$(uname -m)" = aarch64 ] && [ -f /etc/alpine-release ] || exit 1
+exec >>/var/log/carpathian-live.log 2>&1
+echo 'Preparing Carpathian OS ARM64 development desktop'
+payload=/usr/share/carpatic-rust
+mkdir -p "$payload"
+medium=
+for path in /media/*/carpathian-arm64-payload.tar.gz; do
+    [ ! -f "$path" ] || { medium=$path; break; }
+done
+[ -n "$medium" ] || { echo 'Missing ARM64 desktop payload'; exit 1; }
+tar -xzf "$medium" -C "$payload"
+id carpathian >/dev/null 2>&1 || adduser -D -s /bin/sh carpathian
+for group in audio video input netdev plugdev; do
+    getent group "$group" >/dev/null 2>&1 && addgroup carpathian "$group" || :
+done
+id -Gn carpathian | tr ' ' '\n' | grep -qx wheel || addgroup carpathian wheel
+mkdir -p /etc/doas.d
+printf 'permit nopass carpathian\n' >/etc/doas.d/carpathian-live.conf
+chmod 600 /etc/doas.d/carpathian-live.conf
+CARPATIC_USER=carpathian sh "$payload/alpine/install-prebuilt.sh"
+python3 "$payload/alpine/arm64-graphics.py"
+# Additional applications use official repositories after offline bootstrap.
+# The medium carries a qualified closure, not every package in its indices.
+release=$(cut -d. -f1,2 /etc/alpine-release)
+printf 'https://dl-cdn.alpinelinux.org/alpine/v%s/main\nhttps://dl-cdn.alpinelinux.org/alpine/v%s/community\n' "$release" "$release" >/etc/apk/repositories
+modprobe fuse || :
+mkdir -p /etc/lightdm/lightdm.conf.d
+cat >/etc/lightdm/lightdm.conf.d/98-carpathian-live.conf <<'EOF'
+[Seat:*]
+autologin-user=carpathian
+autologin-user-timeout=0
+user-session=carpatic-rust
+greeter-session=lightdm-gtk-greeter
+EOF
+# The live account has no password and is confined to this RAM-backed session.
+# The public image contains no SSH keys or enabled remote login service.
+printf 'Carpathian OS ARM64 development live session\nChanges are lost on reboot. Disk installation is not yet supported by this image.\n' >/etc/motd
+rc-service lightdm start

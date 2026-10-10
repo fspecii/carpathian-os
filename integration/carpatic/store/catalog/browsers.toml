@@ -61,6 +61,7 @@ description = "Full email, calendar and contacts with a graphical window and Goo
 
 [[app]]
 id = "chrome"
+architectures = ["x86_64"]
 name = "Google Chrome"
 pkg = "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
 remove_as = "google-chrome-stable"

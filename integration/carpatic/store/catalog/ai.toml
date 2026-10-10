@@ -21,6 +21,7 @@ detail = "Official native installer. Sign in with your Claude account or use an 
 
 [[app]]
 id = "codex"
+architectures = ["x86_64"]
 name = "OpenAI Codex CLI"
 pkg = "codex"
 source = "ai"
@@ -44,6 +45,7 @@ description = "Google's open-source agent for the terminal, free tier with a Goo
 
 [[app]]
 id = "opencode"
+architectures = ["x86_64"]
 tagline = "Open-source terminal coding agent for many providers and local models"
 name = "OpenCode"
 pkg = "opencode"
@@ -56,6 +58,7 @@ description = "Open-source terminal coding agent that works with many providers 
 
 [[app]]
 id = "goose"
+architectures = ["x86_64"]
 name = "Goose"
 pkg = "goose"
 source = "ai"

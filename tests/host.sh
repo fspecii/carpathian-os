@@ -9,6 +9,11 @@ python3 tests/window-animations.py
 python3 tests/animation-matrix-policy.py
 python3 tests/seam-segments.py
 python3 tests/installer-branding.py
+python3 tests/prebuilt-architecture.py
+python3 tests/vm-arm-command.py
+python3 tests/arm64-live-packaging.py
+python3 tests/arm64-graphics.py
+python3 tests/session-env.py
 python3 tests/shared-snapshot.py
 python3 tests/display-lease.py
 python3 tests/debug/rendering.py --self-test

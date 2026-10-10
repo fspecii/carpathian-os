@@ -12,3 +12,4 @@ python3 tests/reminders_notifier.py
 python3 tests/reminders_service.py
 python3 tests/session-logging.py
 python3 tests/session-process.py
+python3 integration/carpatic/store/tests/test_architecture.py

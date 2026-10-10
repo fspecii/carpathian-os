@@ -15,6 +15,8 @@ cargo build --release --locked
 
 For an isolated Alpine machine or VM, install with `CARPATIC_USER=youruser sh alpine/install.sh` as root, then select the desktop session at login. Existing `carpatic-*` command and package names remain compatibility interfaces.
 
+ARM64 UEFI development live media and native payload builds are documented in [ARM64 development](docs/ARM64.md). ARM images are experimental; disk installation and physical hardware support remain unqualified.
+
 ## Test
 
 ```sh

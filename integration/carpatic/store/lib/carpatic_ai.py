@@ -364,6 +364,7 @@ def install(t, on_line=None, password=None, force=False):
     """Install (or reinstall with force/update). Idempotent: returns 'already' when nothing was needed."""
     if isinstance(t, str):
         t = get_tool(t)
+    cs.require_architecture(t)
     if is_installed(t) and not force:
         say(on_line, f"{t['name']} is already installed.")
         return "already"
@@ -442,6 +443,7 @@ def update(t, on_line=None, password=None):
     """Update one tool. Returns 'updated' | 'current'."""
     if isinstance(t, str):
         t = get_tool(t)
+    cs.require_architecture(t)
     k = t["kind"]
     if not is_installed(t):
         raise cs.StoreError(f"{t['name']} is not installed.")

@@ -15,6 +15,57 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parent.parent
+QEMU_NAMES = {'qemu-system-x86_64', 'qemu-system-aarch64'}
+
+def qemu_process(argv):
+    return bool(argv) and Path(os.fsdecode(argv[0])).name in QEMU_NAMES
+
+def firmware_path(value):
+    if value is None:
+        raise RuntimeError('ARM64 requires explicit --qemu, --firmware-code and --firmware-vars paths')
+    path = value.resolve(strict=True)
+    if not path.is_file() or any(c in str(path) for c in ',\n\r'):
+        raise RuntimeError('QEMU/firmware paths must be regular files without comma/newline')
+    return path
+
+def arm_command(vm, meta, a, cdrom):
+    binary = firmware_path(a.qemu)
+    code = firmware_path(a.firmware_code)
+    template = firmware_path(a.firmware_vars)
+    if not os.access(binary, os.X_OK):
+        raise RuntimeError('Explicit QEMU binary is not executable')
+    if binary.name != 'qemu-system-aarch64':
+        raise RuntimeError('ARM64 binary must be named qemu-system-aarch64 for PID ownership checks')
+    if code == template:
+        raise RuntimeError('Firmware code and variable template must be distinct')
+    if a.graphics != 'software':
+        raise RuntimeError('ARM64 fixture currently supports software graphics only')
+    variables = vm / 'uefi-vars.fd'
+    if variables.is_symlink():
+        raise RuntimeError('Refusing symlinked fixture UEFI variable store')
+    if variables.exists() and (not variables.is_file() or variables.stat().st_nlink != 1):
+        raise RuntimeError('Fixture UEFI variable store must be a regular unshared file')
+    if not variables.exists():
+        with variables.open('xb') as output, template.open('rb') as source:
+            shutil.copyfileobj(source, output)
+        variables.chmod(0o600)
+    media = []
+    if cdrom:
+        media = ['-device', 'virtio-scsi-pci,id=scsi', '-drive', f'if=none,id=cd,file={cdrom},format=raw,media=cdrom,readonly=on', '-device', 'scsi-cd,drive=cd,bootindex=1']
+    return [str(binary), '-name', f'Carpathian OS test {a.name}',
+            '-machine', 'virt,gic-version=3,pflash0=firmware,pflash1=variables',
+            '-cpu', 'cortex-a72', '-accel', 'tcg', '-smp', '2', '-m', str(a.ram),
+            '-blockdev', f'node-name=firmware,driver=file,filename={code},read-only=true',
+            '-blockdev', f'node-name=variables,driver=file,filename={variables}',
+            '-device', 'virtio-gpu-pci', '-display', 'gtk,grab-on-hover=on' if a.display == 'gtk' else 'none',
+            '-drive', f'if=none,id=disk,file={vm / "overlay.qcow2"},format=qcow2',
+            '-device', 'virtio-blk-pci,drive=disk,bootindex=2',
+            '-netdev', f'user,id=n0,hostfwd=tcp:127.0.0.1:{meta["port"]}-:22',
+            '-device', 'virtio-net-pci,netdev=n0', '-device', 'qemu-xhci',
+            '-device', 'usb-tablet', '-device', 'usb-kbd',
+            '-serial', f'file:{vm / "run/serial.log"}',
+            '-monitor', f'unix:{vm / "run/monitor.sock"},server,nowait',
+            '-pidfile', str(vm / 'run/qemu.pid'), '-daemonize'] + media
 
 def call(argv, **kwargs):
     return subprocess.run(argv, check=True, **kwargs)
@@ -23,7 +74,7 @@ def live(vm):
     try:
         pid = int((vm / 'run/qemu.pid').read_text())
         args = Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
-        return pid if args and Path(os.fsdecode(args[0])).name == 'qemu-system-x86_64' and any(str(vm / 'overlay.qcow2').encode() in a for a in args) else None
+        return pid if qemu_process(args) and any(str(vm / 'overlay.qcow2').encode() in a for a in args) else None
     except (OSError, ValueError):
         return None
 
@@ -55,10 +106,14 @@ def main():
     parser.add_argument('--name', required=True, help='Unique disposable VM name')
     sub = parser.add_subparsers(dest='command', required=True)
     clone = sub.add_parser('clone')
+    clone.add_argument('--arch', choices=['x86_64', 'aarch64'], default='x86_64')
     clone.add_argument('--base', required=True, type=Path)
     clone.add_argument('--key', required=True, type=Path, help='Existing guest-authorized key (never copied)')
     clone.add_argument('--port', required=True, type=int)
     start = sub.add_parser('start')
+    start.add_argument('--qemu', type=Path, help='Explicit ARM64 QEMU executable')
+    start.add_argument('--firmware-code', type=Path, help='Read-only ARM64 UEFI code image')
+    start.add_argument('--firmware-vars', type=Path, help='ARM64 UEFI variable template copied into fixture')
     start.add_argument('--graphics', choices=['software', 'virgl'], default='software')
     start.add_argument('--ram', type=int, default=1536)
     start.add_argument('--display', choices=['headless', 'gtk'], default='headless', help='Open a QEMU window only for requested inspection')
@@ -91,13 +146,13 @@ def main():
         for proc in Path('/proc').glob('[0-9]*/cmdline'):
             try:
                 argv = proc.read_bytes().split(b'\0')
-                if argv and Path(os.fsdecode(argv[0])).name == 'qemu-system-x86_64' and any(str(base).encode() in x for x in argv):
+                if qemu_process(argv) and any(str(base).encode() in x for x in argv):
                     parser.error('Stop the source VM before cloning it')
             except OSError: pass
         vm.mkdir(parents=True); (vm / 'run').mkdir()
         try:
             call(['qemu-img', 'create', '-q', '-f', 'qcow2', '-F', 'qcow2', '-b', str(base), str(vm / 'overlay.qcow2')])
-            (vm / 'fixture.json').write_text(json.dumps(dict(base=str(base), key=str(key), port=a.port), indent=2)+'\n')
+            (vm / 'fixture.json').write_text(json.dumps(dict(base=str(base), key=str(key), port=a.port, arch=a.arch), indent=2)+'\n')
         except Exception:
             shutil.rmtree(vm); raise
         print(f'Created {vm}'); return
@@ -107,27 +162,34 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX)
             if live(vm): print('Already running'); return
             active = 0
-            for p in Path('/proc').glob('[0-9]*/comm'):
-                try: active += p.read_text().strip() == 'qemu-system-x86'
+            for p in Path('/proc').glob('[0-9]*/cmdline'):
+                try: active += qemu_process(p.read_bytes().split(b'\0'))
                 except OSError: pass
             if active >= 4: raise RuntimeError('Four shared VMs are already running')
             available = int(next(x.split()[1] for x in Path('/proc/meminfo').read_text().splitlines() if x.startswith('MemAvailable:')))
             if available < (a.ram + 1024)*1024: raise RuntimeError('Insufficient available host memory; preserve 1 GiB headroom')
-            if not os.access('/dev/kvm', os.R_OK | os.W_OK): raise RuntimeError('KVM is required')
+            if meta.get('arch', 'x86_64') == 'x86_64' and not os.access('/dev/kvm', os.R_OK | os.W_OK): raise RuntimeError('KVM is required')
             if a.graphics == 'virgl':
                 display, device = 'egl-headless,rendernode=/dev/dri/renderD128', 'virtio-vga-gl'
             else: display, device = 'none', 'virtio-vga'
             if a.display == 'gtk':
                 display = 'gtk,grab-on-hover=on' + (',gl=on' if a.graphics == 'virgl' else '')
             media = (['-drive', f'file={cdrom},format=raw,media=cdrom,readonly=on', '-boot', 'order=d,strict=on'] if cdrom else [])
-            call(['qemu-system-x86_64', '-name', f'Carpathian OS test {a.name}',
+            argv = ['qemu-system-x86_64', '-name', f'Carpathian OS test {a.name}',
                   '-machine', 'q35,accel=kvm,vmport=off', '-cpu', 'host', '-smp', '2', '-m', str(a.ram),
                   '-device', device+',edid=on,xres=1360,yres=768', '-display', display,
                   '-drive', f'file={vm / "overlay.qcow2"},format=qcow2,if=virtio',
                   '-netdev', f'user,id=n0,hostfwd=tcp:127.0.0.1:{meta["port"]}-:22', '-device', 'virtio-net-pci,netdev=n0',
                   '-device', 'qemu-xhci', '-device', 'usb-tablet', '-device', 'usb-kbd',
                   '-serial', f'file:{vm / "run/serial.log"}', '-monitor', f'unix:{vm / "run/monitor.sock"},server,nowait',
-                  '-pidfile', str(vm / 'run/qemu.pid'), '-daemonize'] + media, env={k:v for k,v in os.environ.items() if k != 'WAYLAND_DISPLAY'})
+                  '-pidfile', str(vm / 'run/qemu.pid'), '-daemonize'] + media
+            if meta.get('arch', 'x86_64') == 'aarch64':
+                argv = arm_command(vm, meta, a, cdrom)
+            elif any((a.qemu, a.firmware_code, a.firmware_vars)):
+                parser.error('ARM64 firmware arguments require an aarch64 fixture')
+            call(argv, env={k:v for k,v in os.environ.items() if k != 'WAYLAND_DISPLAY'})
+            if meta.get('arch', 'x86_64') == 'aarch64':
+                meta.update(qemu=str(a.qemu.resolve()), firmware_code=str(a.firmware_code.resolve()), firmware_vars_template=str(a.firmware_vars.resolve()), firmware_vars=str(vm / 'uefi-vars.fd'), acceleration='tcg')
             meta.update(graphics=a.graphics, ram_mib=a.ram, cdrom=str(cdrom) if cdrom else None, cdrom_sha256=cdrom_hash, boot_order='d' if cdrom else 'default')
             (vm / 'fixture.json').write_text(json.dumps(meta, indent=2)+'\n')
             print(f'Started {a.name} ({a.graphics}, SSH 127.0.0.1:{meta["port"]})')
