@@ -6,3 +6,6 @@
 *.log
 __pycache__/
 *.pyc
+
+# Website source lives in its separate repository.
+/website/
