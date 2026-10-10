@@ -217,6 +217,10 @@ def main():
             detail = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', reply.decode(errors='replace'))
             raise RuntimeError('Screenshot failed: '+detail.splitlines()[-2][:200])
     elif a.command in ('stop','destroy'):
+        if a.command == 'destroy' and (
+            meta.get('protected') or (vm / 'USER-PREVIEW-DO-NOT-DESTROY').exists()
+        ):
+            raise RuntimeError('Refusing to destroy a protected user preview; no VM was stopped')
         pid=live(vm)
         if pid:
             monitor(vm,'system_powerdown')

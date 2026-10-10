@@ -5,6 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
+from unittest.mock import patch
+import json
 
 spec = importlib.util.spec_from_file_location('vm_test', Path(__file__).resolve().parents[1] / 'scripts/vm-test.py')
 m = importlib.util.module_from_spec(spec)
@@ -40,5 +42,28 @@ class Commands(unittest.TestCase):
         self.assertFalse(m.qemu_process([b'/usr/bin/sh']))
     def test_explicit_firmware_required(self):
         with self.assertRaises(RuntimeError): m.firmware_path(None)
+    def test_protected_preview_refuses_destroy_before_process_action(self):
+        for metadata, marker in (({'protected': True}, False), ({}, True)):
+            with self.subTest(metadata=metadata, marker=marker), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                vm = root / 'vm/test-preview'; vm.mkdir(parents=True)
+                (vm / 'fixture.json').write_text(json.dumps(metadata))
+                disk = vm / 'overlay.qcow2'; disk.write_bytes(b'USER DISK')
+                if marker: (vm / 'USER-PREVIEW-DO-NOT-DESTROY').touch()
+                with patch.object(m, 'ROOT', root), patch('sys.argv', ['vm-test', '--name', 'preview', 'destroy']), patch.object(m, 'live') as live:
+                    with self.assertRaisesRegex(RuntimeError, 'protected user preview'):
+                        m.main()
+                    live.assert_not_called()
+                self.assertEqual(disk.read_bytes(), b'USER DISK')
+    def test_disposable_stopped_fixture_can_be_removed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            vm = root / 'vm/test-disposable'; vm.mkdir(parents=True)
+            (vm / 'fixture.json').write_text('{}')
+            base = root / 'base.qcow2'; base.write_bytes(b'GOLDEN BASE')
+            with patch.object(m, 'ROOT', root), patch('sys.argv', ['vm-test', '--name', 'disposable', 'destroy']), patch.object(m, 'live', return_value=None):
+                m.main()
+            self.assertFalse(vm.exists())
+            self.assertEqual(base.read_bytes(), b'GOLDEN BASE')
 
 if __name__ == '__main__': unittest.main()
