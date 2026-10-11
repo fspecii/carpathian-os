@@ -3,7 +3,10 @@
 set -eu
 cd "$(dirname "$0")/.."
 project=$PWD
-legacy=$(realpath "$project/../carpatic-os")
+legacy=$(realpath "${CARPATIC_LEGACY_DIR:-$project/../carpatic-os}")
+[ -d "$legacy/installer/engine" ] && [ -f "$legacy/NOTICE" ] || {
+    echo 'Select the legacy installer source with CARPATIC_LEGACY_DIR.' >&2; exit 1;
+}
 base=${CARPATIC_BASE_ISO:-$legacy/iso/out/carpatic-latest.iso}
 prebuilt=${CARPATIC_PREBUILT_DIR:-$project/artifacts/installer-prebuilt}
 apks=${CARPATIC_APK_DIR:-$project/artifacts/installer-apks}
