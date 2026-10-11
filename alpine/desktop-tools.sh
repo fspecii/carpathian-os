@@ -17,6 +17,7 @@ for f in config/*.toml; do
 done
 if [ "${CARPATIC_SKIP_PACKAGES:-0}" != 1 ]; then
     apk add gtk+3.0-dev libxext-dev 'picom>=13' mesa-dri-gallium mesa-utils xfdesktop xdg-user-dirs xrandr xprop dmenu xautolock i3lock-color playerctl \
+        thunar gvfs gvfs-fuse udisks2 udiskie \
         pipewire pipewire-pulse wireplumber alsa-utils firefox xdg-utils \
         libinput-tools xinput xset setxkbmap libxtst flatpak util-linux \
         elogind elogind-openrc polkit-elogind polkit-gnome dbus-openrc polkit-openrc
@@ -34,6 +35,8 @@ SKIP_PACKAGES=${CARPATIC_SKIP_PACKAGES:-0} CARPATIC_USER="$U" sh "$SRC/quicklook
 mkdir -p /usr/local/lib/carpatic /usr/local/lib/carpatic-store /usr/local/share/applications
 for helper in "$SRC"/compat/bin/*; do [ -f "$helper" ] || continue; install -m755 "$helper" /usr/local/bin/; done
 install -m644 "$SRC/compat/gui/carpatic_system_pages.py" /usr/local/lib/carpatic/
+# Removable-media policy belongs to the desktop even without compatibility containers.
+install -Dm644 "$SRC/compat/share/udiskie.yml" /etc/carpatic/udiskie.yml
 # Helpers exposed by Settings need their authentication policies even when the
 # optional compatibility/container installer is not used.
 for policy in "$SRC"/compat/share/*.policy; do
