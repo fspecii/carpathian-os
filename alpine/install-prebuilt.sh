@@ -20,14 +20,24 @@ if [ -f packages/SHA256SUMS ]; then
     ( cd packages; sha256sum -c SHA256SUMS )
     apk add --no-network --no-progress "$project"/packages/*.apk
 else
-    apk add --no-progress xterm
+    apk add --no-progress xterm elogind elogind-openrc polkit-elogind polkit-gnome
 fi
-for required in xfdesktop xdg-user-dir xprop xterm python3 dbus-run-session; do
+for required in xfdesktop xdg-user-dir xprop xterm python3 dbus-run-session pkexec; do
     command -v "$required" >/dev/null 2>&1 || {
         echo "Required desktop runtime is missing: $required" >&2
         exit 1
     }
 done
+auth_agent=
+for candidate in /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 /usr/libexec/polkit-mate-authentication-agent-1 /usr/bin/lxqt-policykit-agent; do
+    [ -x "$candidate" ] || continue
+    auth_agent=$candidate
+    break
+done
+[ -n "$auth_agent" ] || {
+    echo 'Required desktop authentication agent is missing.' >&2
+    exit 1
+}
 python3 -c 'import gi; gi.require_version("Gtk", "3.0"); from gi.repository import Gtk, Gio'
 mkdir -p /usr/share/licenses/carpathian-os
 install -m644 LICENSE NOTICE /usr/share/licenses/carpathian-os/
