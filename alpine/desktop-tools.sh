@@ -18,7 +18,7 @@ done
 if [ "${CARPATIC_SKIP_PACKAGES:-0}" != 1 ]; then
     apk add gtk+3.0-dev libxext-dev 'picom>=13' mesa-dri-gallium mesa-utils xfdesktop xdg-user-dirs xrandr xprop dmenu xautolock i3lock-color playerctl \
         thunar gvfs gvfs-fuse udisks2 udiskie \
-        networkmanager networkmanager-openrc networkmanager-cli networkmanager-wifi \
+        networkmanager networkmanager-openrc networkmanager-cli networkmanager-wifi bluez bluez-openrc \
         pipewire pipewire-pulse wireplumber alsa-utils firefox xdg-utils \
         libinput-tools xinput xset setxkbmap libxtst flatpak util-linux btrfs-progs flock \
         elogind elogind-openrc polkit-elogind polkit-gnome dbus-openrc polkit-openrc
@@ -38,6 +38,18 @@ for required_network_file in /usr/sbin/NetworkManager /etc/init.d/networkmanager
     }
 done
 # End GUI networking runtime contract.
+# GUI Bluetooth runtime contract; existing service/adapter policy stays intact.
+command -v bluetoothctl >/dev/null 2>&1 || {
+    echo 'Required desktop Bluetooth runtime is missing: bluetoothctl' >&2
+    exit 1
+}
+for required_bluetooth_file in /usr/lib/bluetooth/bluetoothd /etc/init.d/bluetooth; do
+    [ -x "$required_bluetooth_file" ] || {
+        echo "Required desktop Bluetooth runtime is missing: $required_bluetooth_file" >&2
+        exit 1
+    }
+done
+# End GUI Bluetooth runtime contract.
 sh alpine/desktop-services.sh
 install -m755 "$SRC/desktop/session/carpatic-status" "$H/.local/share/dwm-titus/scripts/"
 SKIP_PACKAGES=${CARPATIC_SKIP_PACKAGES:-0} SKIP_DWM=1 CARPATIC_USER="$U" DESKTOP_SRC="$SRC/desktop" sh "$SRC/configurator/install.sh"

@@ -180,28 +180,83 @@ class BluetoothPage(Page):
     def build(self, pb):
         self.pb = pb; self.rows = []
         g = pb.group(None, "This computer can be found as “" + (__import__("cset.pages.about_data", fromlist=["x"]).hostname() or "this computer") + "” while Bluetooth settings are open.")
-        powered = parse_bt_info(su.out("bluetoothctl", "show")).get("Powered") == "yes"
-        self.sw = SwitchRow("Bluetooth", "", powered, lambda v: self.win.apply("bluetoothctl", "power", "on" if v else "off", msg="Turning Bluetooth " + ("on" if v else "off") + "...", done=lambda *_: self.refresh()), icon="bluetooth", color="#0a84ff", key="bt-switch"); g.add(self.sw)
+        self.sw = SwitchRow("Bluetooth", "Checking status...", False, lambda v: self.win.apply("bluetoothctl", "power", "on" if v else "off", msg="Turning Bluetooth " + ("on" if v else "off") + "...", done=lambda *_: self.refresh()), icon="bluetooth", color="#0a84ff", key="bt-switch"); g.add(self.sw)
+        self.sw.set_sensitive(False)
+        self.refresh_row = ButtonRow("Bluetooth status", "Checking adapter...", "Retry", self.refresh, key="bt-status"); g.add(self.refresh_row)
         self.dev = pb.group("My devices")
         self.empty = InfoRow("No devices paired yet", "", key="bt-devices"); self.dev.add(self.empty)
+        self.empty.hide(); self.empty.set_no_show_all(True); self.dev.set_sensitive(False)
         self.find = pb.group("Nearby devices")
-        self.find_row = ButtonRow("Find new devices", "Put the device in pairing mode first", "Scan", self.scan, key="bt-scan"); self.find.add(self.find_row)
+        self.find_row = ButtonRow("Find new devices", "Put the device in pairing mode first", "Scan", self.scan, key="bt-scan"); self.find.add(self.find_row); self.find.set_sensitive(False)
         self.nearby = []
         self.refresh()
     def on_show(self):
         if self.pb: self.refresh()
     def refresh(self):
+        if getattr(self, "_refresh_running", False):
+            self._refresh_again = True
+            return
+        self._refresh_running = True
+        self.refresh_row.set_busy(True)
         def work():
-            powered = parse_bt_info(su.out("bluetoothctl", "show")).get("Powered") == "yes"; devs = []
-            for l in su.lines("bluetoothctl", "devices"):
-                p = l.split(" ", 2)
-                if len(p) == 3 and p[0] == "Device": devs.append((p[1], p[2], parse_bt_info(su.out("bluetoothctl", "info", p[1]))))
-            return powered, devs
-        su.bg(work, self.fill)
+            import subprocess, time
+            deadline = time.monotonic() + 30
+            def query(*args):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(["bluetoothctl", *args], 30)
+                return subprocess.run(["bluetoothctl", *args], capture_output=True, text=True,
+                                      timeout=min(15, remaining), env=dict(os.environ, LC_ALL="C"))
+            controller = query("show")
+            if controller.returncode != 0: return {"error": "controller"}
+            state = parse_bt_info(controller.stdout).get("Powered")
+            if state not in ("yes", "no"): return {"error": "controller"}
+            powered = state == "yes"
+            devices = query("devices")
+            if devices.returncode != 0: return {"error": "devices", "powered": powered}
+            devs = []
+            for line in devices.stdout.splitlines():
+                if not line.strip(): continue
+                parts = line.split(" ", 2)
+                if (len(parts) != 3 or parts[0] != "Device"
+                        or not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", parts[1])):
+                    return {"error": "devices", "powered": powered}
+                info = query("info", parts[1])
+                if info.returncode != 0: return {"error": "info", "powered": powered}
+                details = parse_bt_info(info.stdout)
+                if details.get("Paired") not in ("yes", "no") or details.get("Connected") not in ("yes", "no"):
+                    return {"error": "info", "powered": powered}
+                devs.append((parts[1], parts[2], details))
+            return {"powered": powered, "devs": devs}
+        def done(res):
+            self._refresh_running = False
+            self.fill(res)
+            if getattr(self, "_refresh_again", False):
+                self._refresh_again = False
+                self.refresh()
+        su.bg(work, done)
     ICONS = {"audio-headphones": "audio-headphones", "audio-headset": "audio-headset", "audio-card": "audio-speakers", "input-keyboard": "input-keyboard", "input-mouse": "input-mouse", "input-gaming": "input-gaming", "phone": "phone"}
     def fill(self, res):
-        if isinstance(res, Exception): return
-        powered, devs = res; self.sw.set_value_quiet(powered)
+        self.refresh_row.set_busy(False)
+        if isinstance(res, Exception) or "error" in res:
+            error = "query" if isinstance(res, Exception) else res["error"]
+            known_power = not isinstance(res, Exception) and "powered" in res
+            if known_power: self.sw.set_value_quiet(res["powered"])
+            self.sw.set_sensitive(known_power)
+            self.sw.set_sub("" if known_power else "Status unavailable")
+            self.dev.set_sensitive(False); self.find.set_sensitive(False)
+            titles = {"controller": "Bluetooth adapter is unavailable", "devices": "Could not read Bluetooth devices",
+                      "info": "Could not read Bluetooth device details"}
+            self.refresh_row.set_title(titles.get(error, "Could not check Bluetooth"))
+            self.refresh_row.set_sub("Try again. Check that your Bluetooth adapter is connected.")
+            self.refresh_row.buttons[0].set_label("Retry")
+            # Retain previous rows and power state; command failure is not
+            # evidence that Bluetooth is off or all paired devices vanished.
+            return
+        powered, devs = res["powered"], res["devs"]
+        self.sw.set_value_quiet(powered); self.sw.set_sensitive(True); self.sw.set_sub("")
+        self.refresh_row.set_title("Bluetooth is on" if powered else "Bluetooth is off")
+        self.refresh_row.set_sub(""); self.refresh_row.buttons[0].set_label("Refresh")
         for r in self.rows: self.dev.list.remove(r); self.dev.rows.remove(r)
         self.rows = []; self.dev.set_sensitive(powered); self.find.set_sensitive(powered)
         paired = [d for d in devs if d[2].get("Paired") == "yes"]

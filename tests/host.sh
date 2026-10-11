@@ -63,4 +63,5 @@ XDG_RUNTIME_DIR="$temporary/default-apps-runtime" GSETTINGS_BACKEND=memory GIO_U
 XDG_RUNTIME_DIR="$temporary/default-apps-runtime" GSETTINGS_BACKEND=memory GIO_USE_VFS=local NO_AT_BRIDGE=1 CARPATIC_XVFB_TEST=1 CARPATIC_PRIVATE_DBUS_TEST=1 G_DEBUG=fatal-criticals dbus-run-session -- python3 tests/storage-cache.py --gtk
 XDG_RUNTIME_DIR="$temporary/default-apps-runtime" GSETTINGS_BACKEND=memory GIO_USE_VFS=local NO_AT_BRIDGE=1 CARPATIC_XVFB_TEST=1 CARPATIC_PRIVATE_DBUS_TEST=1 G_DEBUG=fatal-criticals dbus-run-session -- python3 tests/wifi-scan.py --gtk
 XDG_RUNTIME_DIR="$temporary/default-apps-runtime" GSETTINGS_BACKEND=memory GIO_USE_VFS=local NO_AT_BRIDGE=1 CARPATIC_XVFB_TEST=1 CARPATIC_PRIVATE_DBUS_TEST=1 G_DEBUG=fatal-criticals dbus-run-session -- python3 tests/wifi-connect.py --gtk
+XDG_RUNTIME_DIR="$temporary/default-apps-runtime" GSETTINGS_BACKEND=memory GIO_USE_VFS=local NO_AT_BRIDGE=1 CARPATIC_XVFB_TEST=1 CARPATIC_PRIVATE_DBUS_TEST=1 G_DEBUG=fatal-criticals dbus-run-session -- python3 tests/bluetooth-refresh.py --gtk
 cargo test --locked -p carpatic-wm --test x11 -- --ignored --nocapture --test-threads=1
