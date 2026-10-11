@@ -18,7 +18,8 @@ done
 if [ "${CARPATIC_SKIP_PACKAGES:-0}" != 1 ]; then
     apk add gtk+3.0-dev libxext-dev 'picom>=13' mesa-dri-gallium mesa-utils xfdesktop xdg-user-dirs xrandr xprop dmenu xautolock i3lock-color playerctl \
         pipewire pipewire-pulse wireplumber alsa-utils firefox xdg-utils \
-        libinput-tools xinput xset setxkbmap libxtst flatpak util-linux
+        libinput-tools xinput xset setxkbmap libxtst flatpak util-linux \
+        elogind elogind-openrc polkit-elogind polkit-gnome
 fi
 install -m755 "$SRC/desktop/session/carpatic-status" "$H/.local/share/dwm-titus/scripts/"
 SKIP_PACKAGES=${CARPATIC_SKIP_PACKAGES:-0} SKIP_DWM=1 CARPATIC_USER="$U" DESKTOP_SRC="$SRC/desktop" sh "$SRC/configurator/install.sh"
@@ -32,6 +33,11 @@ SKIP_PACKAGES=${CARPATIC_SKIP_PACKAGES:-0} CARPATIC_USER="$U" sh "$SRC/quicklook
 mkdir -p /usr/local/lib/carpatic /usr/local/lib/carpatic-store /usr/local/share/applications
 for helper in "$SRC"/compat/bin/*; do [ -f "$helper" ] || continue; install -m755 "$helper" /usr/local/bin/; done
 install -m644 "$SRC/compat/gui/carpatic_system_pages.py" /usr/local/lib/carpatic/
+# Helpers exposed by Settings need their authentication policies even when the
+# optional compatibility/container installer is not used.
+for policy in "$SRC"/compat/share/*.policy; do
+    install -Dm644 "$policy" "/usr/share/polkit-1/actions/$(basename "$policy")"
+done
 for f in "$SRC"/store/bin/*; do [ -f "$f" ] || continue; install -m755 "$f" /usr/local/bin/; done
 for f in "$SRC"/store/lib/*.py; do install -m644 "$f" /usr/local/lib/carpatic-store/; done
 mkdir -p /usr/local/share/carpatic/store/catalog /usr/share/icons/hicolor/64x64/apps

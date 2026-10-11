@@ -12,5 +12,5 @@ mkdir -p /usr/local/share/carpatic-settings; rm -rf /usr/local/share/carpatic-se
 for f in carpatic-mouse carpatic-keyboard carpatic-nightlight carpatic-lockscreen carpatic-progress; do install -m755 "$SRC/bin/$f" /usr/local/bin/; done
 # the app imports carpatic_buttons / carpatic_ui from the configurator
 [ -f /usr/local/lib/carpatic/carpatic_buttons.py ] || { mkdir -p /usr/local/lib/carpatic; cp "$SRC"/../configurator/lib/*.py /usr/local/lib/carpatic/; }
-[ -d /usr/share/polkit-1/actions ] && install -m644 "$SRC/share/org.carpatic.settings.policy" /usr/share/polkit-1/actions/
+install -Dm644 "$SRC/share/org.carpatic.settings.policy" /usr/share/polkit-1/actions/org.carpatic.settings.policy
 echo "carpatic-settings installed in $D"
