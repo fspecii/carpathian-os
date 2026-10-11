@@ -4590,6 +4590,31 @@ fn stationary_pointer_does_not_steal_keyboard_snap_focus() -> Result<()> {
     )?;
     let (conn, screen) = x11rb::connect(None)?;
     let root = conn.setup().roots[screen].root;
+    use x11rb::protocol::xtest::ConnectionExt as _;
+    // A shared Xvfb server retains held keys/buttons across test processes.
+    // Release actual pressed keys rather than --clearmodifiers, which restores
+    // their inherited state after sending the requested chord.
+    let pressed = conn.query_keymap()?.reply()?.keys;
+    for code in 8u8..=255 {
+        if pressed[usize::from(code) / 8] & (1 << (code % 8)) != 0 {
+            conn.xtest_fake_input(KEY_RELEASE_EVENT, code, 0, root, 0, 0, 0)?;
+        }
+    }
+    for button in 1..=5 {
+        conn.xtest_fake_input(BUTTON_RELEASE_EVENT, button, 0, root, 0, 0, 0)?;
+    }
+    conn.flush()?;
+    assert!(conn
+        .query_keymap()?
+        .reply()?
+        .keys
+        .iter()
+        .all(|byte| *byte == 0));
+    // Previous tests share the private server; do not inherit a pointer over
+    // these soon-to-be-mapped overlapping clients.
+    xdotool(&["mousemove", "--sync", "10", "760"]);
+    let parked = conn.query_pointer(root)?.reply()?;
+    assert_eq!((parked.root_x, parked.root_y), (10, 760));
     let mut wm = start_with_policy(false, true)?;
     wait("mouse-focus snap WM ready", || ready(&conn, root, &wm));
     let mut clients = Vec::new();
@@ -4612,6 +4637,19 @@ fn stationary_pointer_does_not_steal_keyboard_snap_focus() -> Result<()> {
         conn.map_window(id)?;
         conn.flush()?;
         wait("mouse-focus probe framed", || root_surface(&conn, id) != id);
+        wait("mouse-focus probe geometry settled", || {
+            let frame = root_surface(&conn, id);
+            let g = geometry(&conn, frame);
+            g.width == width + 32
+                && g.height == 312
+                && conn
+                    .get_window_attributes(id)
+                    .unwrap()
+                    .reply()
+                    .unwrap()
+                    .map_state
+                    == MapState::VIEWABLE
+        });
         clients.push(id);
     }
     let target = clients[2];
@@ -4633,8 +4671,39 @@ fn stationary_pointer_does_not_steal_keyboard_snap_focus() -> Result<()> {
             })
         })
     });
+    let settle_deadline = Instant::now() + Duration::from_secs(5);
+    let mut stable_since = None;
+    loop {
+        let active = property(&conn, root, "_NET_ACTIVE_WINDOW")?;
+        let input = conn.get_input_focus()?.reply()?.focus;
+        let siblings = conn.query_tree(root)?.reply()?.children;
+        let selected = siblings.iter().position(|w| *w == frame);
+        let highest = selected.is_some_and(|selected| {
+            clients.iter().filter(|w| **w != target).all(|w| {
+                siblings
+                    .iter()
+                    .position(|p| *p == root_surface(&conn, *w))
+                    .is_some_and(|p| p < selected)
+            })
+        });
+        if active == vec![target] && input == target && highest {
+            let since = stable_since.get_or_insert_with(Instant::now);
+            if since.elapsed() >= Duration::from_millis(120) {
+                break;
+            }
+        } else {
+            stable_since = None;
+            println!("PRECONDITION_TRANSITION active={active:?} input={input} target={target} stack={siblings:?}");
+        }
+        assert!(
+            Instant::now() < settle_deadline,
+            "explicit focus/input/top-frame failed stable precondition"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    println!("PASS actual active/input/top frame stable before pointer");
     let g = geometry(&conn, frame);
-    let x = i32::from(g.x) + i32::from(g.width) - 16 - 3;
+    let x = i32::from(g.x) + i32::from(g.width) / 2;
     let qy = i32::from(g.y) + 110;
     let py = qy + 40;
     let under = geometry(&conn, root_surface(&conn, exposed));
@@ -4642,15 +4711,118 @@ fn stationary_pointer_does_not_steal_keyboard_snap_focus() -> Result<()> {
     assert!(py >= i32::from(under.y) && py < i32::from(under.y) + i32::from(under.height));
     let extents = property(&conn, target, "_NET_FRAME_EXTENTS")?;
     assert_eq!(&extents[..2], &[16, 16]);
-    println!("POINTER_FIXTURE target={target} frame={frame} outer={g:?} underlying={under:?}");
+    println!("POINTER_FIXTURE target={target} frame={frame} outer=({},{},{},{}) underlying=({},{},{},{}) Q=({x},{qy}) P=({x},{py})",g.x,g.y,g.width,g.height,under.x,under.y,under.width,under.height);
+    use x11rb::protocol::shape::{ConnectionExt as _, SK};
+    let dump = |label: &str| {
+        let pointer = conn.query_pointer(root).unwrap().reply().unwrap();
+        println!(
+            "POINTER_DIAGNOSTIC {label} xy=({}, {}) root-child={} active={:?} input={} stack={:?}",
+            pointer.root_x,
+            pointer.root_y,
+            pointer.child,
+            property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default(),
+            conn.get_input_focus().unwrap().reply().unwrap().focus,
+            conn.query_tree(root).unwrap().reply().unwrap().children
+        );
+        for id in &clients {
+            for window in [*id, root_surface(&conn, *id)] {
+                let g = geometry(&conn, window);
+                let relative = conn.get_geometry(window).unwrap().reply().unwrap();
+                println!("SURFACE {label} client={id} window={window} root=({},{},{},{}) parentxy=({},{}) map={:?}",g.x,g.y,g.width,g.height,relative.x,relative.y,conn.get_window_attributes(window).unwrap().reply().unwrap().map_state);
+                for kind in [SK::BOUNDING, SK::INPUT] {
+                    let r = conn
+                        .shape_get_rectangles(window, kind)
+                        .unwrap()
+                        .reply()
+                        .unwrap();
+                    let rects: Vec<_> = r
+                        .rectangles
+                        .iter()
+                        .map(|r| (r.x, r.y, r.width, r.height))
+                        .collect();
+                    println!(
+                        "SHAPE {label} window={window} kind={} rectangles={rects:?}",
+                        u8::from(kind)
+                    );
+                }
+            }
+        }
+    };
+    dump("before-warp");
+    for window in [frame, target] {
+        let surface = geometry(&conn, window);
+        for (px, py) in [(x, qy), (x, py)] {
+            for kind in [SK::BOUNDING, SK::INPUT] {
+                let shape = conn.shape_get_rectangles(window, kind)?.reply()?;
+                assert!(
+                    shape.rectangles.iter().any(|r| {
+                        let sx = i32::from(surface.x) + i32::from(r.x);
+                        let sy = i32::from(surface.y) + i32::from(r.y);
+                        px >= sx
+                            && px < sx + i32::from(r.width)
+                            && py >= sy
+                            && py < sy + i32::from(r.height)
+                    }),
+                    "Q/P must be inside actual shape window={window} kind={} point=({px},{py})",
+                    u8::from(kind)
+                );
+            }
+        }
+    }
     // Side borders are intentionally input-transparent in the composed frame.
     // Use the reachable client body instead: actual movement establishes P,
     // then stationary geometry-induced crossing must retain keyboard focus.
     xdotool(&["mousemove", "--sync", &x.to_string(), &qy.to_string()]);
-    thread::sleep(Duration::from_millis(80));
-    println!("POINTER_Q {:?}", conn.query_pointer(root)?.reply()?);
+    let observed_q = conn.query_pointer(root)?.reply()?;
+    println!(
+        "POINTER_Q_OBSERVED root=({}, {}) child={} expected-frame={} active={:?}",
+        observed_q.root_x,
+        observed_q.root_y,
+        observed_q.child,
+        frame,
+        property(&conn, root, "_NET_ACTIVE_WINDOW")?
+    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let root_hit = conn.query_pointer(root)?.reply()?;
+        let frame_hit = conn.query_pointer(frame)?.reply()?;
+        if root_hit.child == frame
+            && frame_hit.child == target
+            && property(&conn, root, "_NET_ACTIVE_WINDOW")? == vec![target]
+            && conn.get_input_focus()?.reply()?.focus == target
+        {
+            break;
+        }
+        if Instant::now() >= deadline {
+            dump("Q-setup-failed");
+            panic!("Q actual body hit/focus did not settle");
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    println!("PASS Q hits selected frame body with actual focus");
+    let q = conn.query_pointer(root)?.reply()?;
+    let qi = conn.query_pointer(frame)?.reply()?;
+    println!(
+        "POINTER_Q root=({}, {}) child={} frame-child={} active={:?}",
+        q.root_x,
+        q.root_y,
+        q.child,
+        qi.child,
+        property(&conn, root, "_NET_ACTIVE_WINDOW")?
+    );
     xdotool(&["mousemove", "--sync", &x.to_string(), &py.to_string()]);
     let before = conn.query_pointer(root)?.reply()?;
+    println!(
+        "POINTER_P_OBSERVED root=({}, {}) child={} expected-frame={} active={:?}",
+        before.root_x,
+        before.root_y,
+        before.child,
+        frame,
+        property(&conn, root, "_NET_ACTIVE_WINDOW")?
+    );
+    if before.child != frame {
+        dump("P-setup-failed");
+    }
     assert_eq!(before.child, frame, "pointer must lie inside target frame");
     assert_eq!((before.root_x, before.root_y), (x as i16, py as i16));
     let inner = conn.query_pointer(frame)?.reply()?;
@@ -4658,8 +4830,35 @@ fn stationary_pointer_does_not_steal_keyboard_snap_focus() -> Result<()> {
         inner.child, target,
         "fixture pointer must hit actual client body"
     );
-    println!("POINTER_P root={before:?} frame={inner:?}");
+    println!(
+        "POINTER_P root=({}, {}) child={} frame-child={} active={:?}",
+        before.root_x,
+        before.root_y,
+        before.child,
+        inner.child,
+        property(&conn, root, "_NET_ACTIVE_WINDOW")?
+    );
     thread::sleep(Duration::from_millis(80));
+    let presnap = conn.query_pointer(root)?.reply()?;
+    println!("PRE_SNAP coords=({}, {}) child={} mask={} active={:?} input={} layout={:?} serial={:?} keys={:?}",presnap.root_x,presnap.root_y,presnap.child,u16::from(presnap.mask),property(&conn,root,"_NET_ACTIVE_WINDOW")?,conn.get_input_focus()?.reply()?.focus,conn.get_property(false,root,atom(&conn,"_CARPATIC_LAYOUT")?,AtomEnum::ANY,0,128)?.reply()?.value,property(&conn,root,"_CARPATIC_CONFIG_SERIAL")?,conn.query_keymap()?.reply()?.keys);
+    assert_eq!(
+        property(&conn, root, "_NET_ACTIVE_WINDOW")?,
+        vec![target],
+        "target must remain active before actual key delivery"
+    );
+    assert_eq!(conn.get_input_focus()?.reply()?.focus, target);
+    xdotool(&[
+        "keyup",
+        "Super_L",
+        "Super_R",
+        "Alt_L",
+        "Alt_R",
+        "Control_L",
+        "Control_R",
+        "Shift_L",
+        "Shift_R",
+        "Left",
+    ]);
     xdotool(&["key", "--clearmodifiers", "super+Left"]);
     wait(
         "keyboard snap moves selected frame away from stationary pointer",
