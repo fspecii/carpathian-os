@@ -126,6 +126,9 @@ class SettingsWindow(Gtk.Window):
         # sidebar
         side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL); ui.cls(side, "sidebar-pane"); side.set_size_request(248, -1); root.pack_start(side, False, False, 0)
         self.side = side; self.auto_hidden = False
+        self._sidebar_manual = None; self._sidebar_width = None
+        self._sidebar_need = 480; self._sidebar_pending = False
+        root.connect("size-allocate", self.on_sidebar_allocation)
         sb = Gtk.Box(); ui.cls(sb, "sidebar-search")
         self.search = Gtk.SearchEntry(); ui.cls(self.search, "sb-entry"); self.search.set_placeholder_text("Search"); sb.pack_start(self.search, True, True, 0)
         ui.set_a11y(self.search, "Search settings"); side.pack_start(sb, False, False, 0)
@@ -175,12 +178,38 @@ class SettingsWindow(Gtk.Window):
         h.pack_start(col, True, True, 0); b.add(h); ui.set_a11y(b, f"{full}, account settings"); b.connect("clicked", lambda *_: self.open_page("users"))
         return b
     def toggle_sidebar(self):
-        self.auto_hidden = False; self.side.set_visible(not self.side.get_visible())
+        self._sidebar_manual = not self.side.get_visible()
+        self.auto_hidden = False
+        self._apply_sidebar()
+    def on_sidebar_allocation(self, _root, allocation):
+        width = allocation.width
+        if width <= 0 or width == self._sidebar_width: return
+        # A manually opened sidebar remains open until the window is resized;
+        # manually hidden navigation stays hidden until Ctrl+B opens it again.
+        if self._sidebar_manual is True: self._sidebar_manual = None
+        self._sidebar_width = width
+        if not self._sidebar_pending:
+            self._sidebar_pending = True
+            GLib.idle_add(self._apply_sidebar)
     def set_sidebar_for(self, need):
-        """a page that needs more width than the content area has (the wallpaper browser) hides the sidebar instead of scrolling sideways"""
-        avail = self.get_size()[0] - 248
-        if need > avail and self.side.get_visible(): self.side.hide(); self.auto_hidden = True
-        elif need <= avail and self.auto_hidden: self.side.show(); self.auto_hidden = False
+        # Entry controls use about 240 px; page margins (64), row margins (32),
+        # spacing (12), and a readable label need about 480 px of content.
+        self._sidebar_need = max(480, need)
+        self._apply_sidebar()
+    def _apply_sidebar(self):
+        self._sidebar_pending = False
+        width = self._sidebar_width or self.get_size()[0]
+        if self._sidebar_manual is not None:
+            visible = self._sidebar_manual
+            self.auto_hidden = False
+        else:
+            available = width - 248
+            # Small hysteresis avoids toggling around the collapse threshold.
+            visible = available >= self._sidebar_need + (24 if self.auto_hidden else 0)
+            self.auto_hidden = not visible
+        self.side.set_no_show_all(not visible)
+        if self.side.get_visible() != visible: self.side.set_visible(visible)
+        return False
     def sb_header(self, row, before):
         if before is None or getattr(before, "group", 0) != getattr(row, "group", 0):
             if before is None: row.set_header(Gtk.Box()); row.get_header().set_size_request(-1, 4)
@@ -293,8 +322,7 @@ class SettingsWindow(Gtk.Window):
                 v = ui.PageView(pb, p.max_width); p.view = v; v.show_all()
                 v.connect("offset", self.on_scroll, p.id)
             self.stack.add_named(v, p.id); self.built[p.id] = v
-        if p.raw: self.set_sidebar_for(p.min_content_width())
-        elif self.auto_hidden: self.set_sidebar_for(0)
+        self.set_sidebar_for(p.min_content_width() if p.raw else 0)
         if p.pb is not None and p.optional and not p.async_fill:
             self.index.entries = [e for e in self.index.entries if not (e.page == p.id and e.anchor in p.optional and p.pb.find(e.anchor) is None)]
         self.trail = [p.id]; self.stack.set_visible_child_name(p.id)
