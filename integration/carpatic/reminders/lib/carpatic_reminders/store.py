@@ -17,6 +17,15 @@ class StoreError(ValueError):
     pass
 
 
+class StoreCommitUncertain(StoreError):
+    """Replacement applied, but directory persistence could not be confirmed."""
+    def __init__(self, operation, item, items):
+        super().__init__('Changes are visible now, but persistence after a restart could not be confirmed.')
+        self.operation = operation
+        self.item = item
+        self.items = items
+
+
 def data_path():
     root = Path(os.environ.get('XDG_DATA_HOME') or (Path.home() / '.local/share'))
     if not root.is_absolute():
@@ -116,7 +125,7 @@ class Store:
         except OSError as error:
             raise StoreError(f'Cannot save reminders: {error.strerror}') from None
 
-    def _write(self, items):
+    def _write(self, items, operation=None, item=None):
         data = (json.dumps({'version': 1, 'items': items}, ensure_ascii=False) + '\n').encode()
         if len(data) > MAX_BYTES:
             raise StoreError('Reminder data exceeds the 1 MiB safety limit')
@@ -129,24 +138,28 @@ class Store:
                 os.fsync(stream.fileno())
             os.replace(temporary, self.path)
             temporary = None
-            directory = os.open(self.path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            directory = None
             try:
+                directory = os.open(self.path.parent, os.O_RDONLY | os.O_DIRECTORY)
                 os.fsync(directory)
+            except OSError as error:
+                raise StoreCommitUncertain(operation, item, items) from error
             finally:
-                os.close(directory)
+                if directory is not None: os.close(directory)
         finally:
             if temporary is not None:
                 os.unlink(temporary)
 
-    def add(self, title, notes='', due_date=None, due_time=None):
+    def add(self, title, notes='', due_date=None, due_time=None, completed=False):
         fields = validate_fields(title, notes, due_date, due_time)
+        if type(completed) is not bool: raise StoreError('Invalid completion state')
         with self._lock():
             items = self._read()
             if len(items) >= MAX_ITEMS:
                 raise StoreError('At most 1000 reminders can be stored')
-            item = dict(id=str(uuid.uuid4()), **fields, completed=False,
+            item = dict(id=str(uuid.uuid4()), **fields, completed=completed,
                         created_at=dt.datetime.now(dt.timezone.utc).isoformat())
-            self._write(items + [item])
+            self._write(items + [item], 'add', item)
         return item
 
     def update(self, ident, **changes):
@@ -158,7 +171,7 @@ class Store:
                 if item['id'] == ident:
                     item = validate_item({**item, **changes})
                     items[index] = item
-                    self._write(items)
+                    self._write(items, 'update', item)
                     return item
             raise StoreError('Reminder no longer exists; refresh the list')
 
@@ -168,4 +181,4 @@ class Store:
             remaining = [item for item in items if item['id'] != ident]
             if len(remaining) == len(items):
                 raise StoreError('Reminder no longer exists; refresh the list')
-            self._write(remaining)
+            self._write(remaining, 'delete')

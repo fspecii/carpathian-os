@@ -9,7 +9,18 @@ import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 from gi.repository import Gtk, Gdk, Gio, GLib
-from .store import Store, validate_fields
+from .store import Store, StoreCommitUncertain, validate_fields
+
+
+def confirm_discard(parent):
+    dialog = Gtk.MessageDialog(transient_for=parent, modal=True,
+        message_type=Gtk.MessageType.QUESTION, buttons=Gtk.ButtonsType.NONE,
+        text='Discard your reminder changes?', secondary_text='Your unsaved changes will be lost.')
+    dialog.add_button('Keep Editing', Gtk.ResponseType.CANCEL)
+    dialog.add_button('Discard', Gtk.ResponseType.OK)
+    dialog.set_default_response(Gtk.ResponseType.CANCEL)
+    try: return dialog.run() == Gtk.ResponseType.OK
+    finally: dialog.destroy()
 
 
 class RemindersWindow(Gtk.ApplicationWindow):
@@ -21,10 +32,13 @@ class RemindersWindow(Gtk.ApplicationWindow):
         self.closed = False
         self.busy = False
         self.pending_request = None
+        self._baseline = None
+        self._confirming = False
         self.ident = None
         self.day = None
         self.items = []
         self.connect('destroy', self._destroy)
+        self.connect('delete-event', self._request_close)
         self.connect('key-press-event', self._key)
         self._theme()
         header = Gtk.HeaderBar(title='Reminders', subtitle='On this device')
@@ -132,6 +146,21 @@ class RemindersWindow(Gtk.ApplicationWindow):
         self.editor.pack_start(widget, False, False, 0)
         widget.get_accessible().set_name(label)
 
+    def _draft(self):
+        buffer = self.notes.get_buffer()
+        return (self.title.get_text(), buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), True),
+                self.date.get_text(), self.time.get_text(), self.completed.get_active())
+
+    def _guard_dirty(self):
+        if self.busy or self._confirming: return False
+        if self._baseline is None or self._draft() == self._baseline: return True
+        self._confirming = True
+        try: return confirm_discard(self)
+        finally: self._confirming = False
+
+    def _request_close(self, *_):
+        return not self._guard_dirty()
+
     def _destroy(self, *_):
         self.closed = True
         self.executor.shutdown(wait=False)
@@ -143,7 +172,7 @@ class RemindersWindow(Gtk.ApplicationWindow):
             if event.keyval in (Gdk.KEY_r, Gdk.KEY_R): self.reload(); return True
         return False
 
-    def job(self, action, success):
+    def job(self, action, success, uncertain=None, failure_message=None):
         if self.busy: return
         self.busy = True
         self.editor.set_sensitive(False)
@@ -160,8 +189,13 @@ class RemindersWindow(Gtk.ApplicationWindow):
             self.listbox.set_sensitive(True)
             try:
                 value = result.result()
-            except Exception as error:
+            except StoreCommitUncertain as error:
+                if uncertain: uncertain(error)
                 self.status.set_text(str(error))
+                return False
+            except Exception as error:
+                self.status.set_text(failure_message or str(error))
+                return False
             else:
                 self.status.set_text('')
                 success(value)
@@ -172,15 +206,17 @@ class RemindersWindow(Gtk.ApplicationWindow):
             return False
         future.add_done_callback(ready)
 
-    def reload(self):
-        self.job(self.store.list, self._loaded)
+    def reload(self, committed=None):
+        message = (committed + ' The list could not refresh. Choose Refresh to try again.') if committed else None
+        self.job(self.store.list, self._loaded, failure_message=message)
 
     def open_requested(self, day, new):
         if self.busy:
             self.pending_request = (day, new)
             return
+        if new and not self._guard_dirty(): return
         self.set_day(day)
-        if new: self.new(day)
+        if new: self.new(day, guarded=True)
         self.reload()
 
     def _loaded(self, items):
@@ -227,6 +263,9 @@ class RemindersWindow(Gtk.ApplicationWindow):
 
     def _selected(self, _, row):
         if row is None or not hasattr(row, 'item'): return
+        if self.busy or not self._guard_dirty():
+            self.listbox.unselect_all()
+            return
         item = row.item
         self.ident = item['id']
         self.editor_title.set_text('Edit reminder')
@@ -236,9 +275,10 @@ class RemindersWindow(Gtk.ApplicationWindow):
         self.time.set_text(item['due_time'] or '')
         self.completed.set_active(item['completed'])
         self.delete_button.set_sensitive(True)
+        self._baseline = self._draft()
 
-    def new(self, day=None):
-        if self.busy: return
+    def new(self, day=None, guarded=False):
+        if self.busy or (not guarded and not self._guard_dirty()): return
         self.ident = None
         self.editor_title.set_text('New reminder')
         self.title.set_text('')
@@ -248,6 +288,7 @@ class RemindersWindow(Gtk.ApplicationWindow):
         self.completed.set_active(False)
         self.delete_button.set_sensitive(False)
         self.title.grab_focus()
+        self._baseline = self._draft()
 
     def save(self):
         if self.busy: return
@@ -261,26 +302,52 @@ class RemindersWindow(Gtk.ApplicationWindow):
         completed = self.completed.get_active()
         def action():
             if ident:
-                self.store.update(ident, **fields, completed=completed)
-            else:
-                item = self.store.add(**fields)
-                if completed: self.store.update(item['id'], completed=True)
-            return self.store.list()
-        self.job(action, lambda items: (self._loaded(items), self.new()))
+                return self.store.update(ident, **fields, completed=completed)
+            return self.store.add(**fields, completed=completed)
+        def saved(item):
+            self.ident = item['id']
+            self.editor_title.set_text('Edit reminder')
+            self.delete_button.set_sensitive(True)
+            self._baseline = self._draft()
+            self.status.set_text('Reminder saved.')
+            self.reload(committed='Reminder saved.')
+        def applied(error):
+            self.ident = error.item['id']
+            self.editor_title.set_text('Edit reminder')
+            self.delete_button.set_sensitive(True)
+            self._baseline = self._draft()
+            self._loaded(error.items)
+        self.job(action, saved, applied)
 
     def toggle(self, ident, completed):
         def action():
-            self.store.update(ident, completed=completed)
-            return self.store.list()
-        self.job(action, self._loaded)
+            return self.store.update(ident, completed=completed)
+        def applied(item):
+            if self.ident == ident:
+                baseline = self._baseline
+                self.completed.set_active(item['completed'])
+                if baseline is not None:
+                    self._baseline = baseline[:-1] + (item['completed'],)
+        def saved(item):
+            applied(item)
+            self.reload(committed='Reminder completion saved.')
+        def uncertain(error):
+            applied(error.item)
+            self._loaded(error.items)
+        self.job(action, saved, uncertain)
 
     def delete(self):
         if self.busy or not self.ident: return
         ident = self.ident
         def action():
-            self.store.delete(ident)
-            return self.store.list()
-        self.job(action, lambda items: (self._loaded(items), self.new()))
+            return self.store.delete(ident)
+        def deleted(_):
+            self.new(guarded=True)
+            self.reload(committed='Reminder deleted.')
+        def uncertain(error):
+            self.new(guarded=True)
+            self._loaded(error.items)
+        self.job(action, deleted, uncertain)
 
 
 class RemindersApplication(Gtk.Application):

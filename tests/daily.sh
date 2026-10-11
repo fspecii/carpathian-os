@@ -30,6 +30,7 @@ python3 tests/calendar-loader.py
 python3 tests/calendar-local-events.py
 python3 tests/calendar-launcher.py
 python3 tests/reminders.py
+python3 tests/reminders-commit.py
 python3 tests/notes-storage.py
 python3 tests/notes-install.py
 python3 tests/reminders_notifier.py
