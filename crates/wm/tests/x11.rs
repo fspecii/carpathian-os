@@ -4571,3 +4571,147 @@ fn multiwindow_keyboard_snap_keeps_workarea_focus_stacking_and_restore() -> Resu
     wm.0.wait()?;
     Ok(())
 }
+
+#[test]
+#[ignore = "requires private Xvfb; run tests/run.sh"]
+fn stationary_pointer_does_not_steal_keyboard_snap_focus() -> Result<()> {
+    assert_eq!(
+        std::env::var("CARPATIC_WM_TEST_DISPLAY").as_deref(),
+        Ok("1")
+    );
+    assert!(std::env::var_os("WAYLAND_DISPLAY").is_none());
+    let dir = std::path::PathBuf::from(std::env::var("CARPATIC_CONFIG_DIR")?);
+    let _config = ConfigRestore::new(&dir);
+    std::fs::write(dir.join("themes.toml"), "[appearance]\nworkspaces=4\ndefault_layout='float'\nborderpx=16\nborder_highlight=0\ncorner_radius=0\n[bar]\nenabled=0\n[titlebar]\nenabled=1\nfloating=1\nheight=32\n")?;
+    std::fs::write(dir.join("window-rules.toml"), "rules=[]\n")?;
+    std::fs::write(
+        dir.join("hotkeys.toml"),
+        "keys=[{mod='SUPER',key='Left',func='spawn',exec=['carpatic-snap','left']}]\n",
+    )?;
+    let (conn, screen) = x11rb::connect(None)?;
+    let root = conn.setup().roots[screen].root;
+    let mut wm = start_with_policy(false, true)?;
+    wait("mouse-focus snap WM ready", || ready(&conn, root, &wm));
+    let mut clients = Vec::new();
+    // The wider first peer remains under the selected client's right border.
+    for (x, width) in [(700, 440), (50, 280), (700, 320)] {
+        let id = conn.generate_id()?;
+        conn.create_window(
+            0,
+            id,
+            root,
+            x,
+            180,
+            width,
+            280,
+            0,
+            WindowClass::INPUT_OUTPUT,
+            0,
+            &CreateWindowAux::new().background_pixel(0x25a9df),
+        )?;
+        conn.map_window(id)?;
+        conn.flush()?;
+        wait("mouse-focus probe framed", || root_surface(&conn, id) != id);
+        clients.push(id);
+    }
+    let target = clients[2];
+    let exposed = clients[0];
+    message(&conn, root, target, "_NET_ACTIVE_WINDOW", [2, 0, 0, 0, 0])?;
+    wait("mouse-focus snap target selected", || {
+        property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![target]
+    });
+    let frame = root_surface(&conn, target);
+    wait("selected frame highest before pointer placement", || {
+        let siblings = conn.query_tree(root).unwrap().reply().unwrap().children;
+        let selected = siblings.iter().position(|w| *w == frame);
+        selected.is_some_and(|selected| {
+            clients.iter().filter(|w| **w != target).all(|w| {
+                siblings
+                    .iter()
+                    .position(|p| *p == root_surface(&conn, *w))
+                    .is_some_and(|p| p < selected)
+            })
+        })
+    });
+    let g = geometry(&conn, frame);
+    let x = i32::from(g.x) + i32::from(g.width) - 16 - 3;
+    let qy = i32::from(g.y) + 110;
+    let py = qy + 40;
+    let under = geometry(&conn, root_surface(&conn, exposed));
+    assert!(x > 640 && x >= i32::from(under.x) && x < i32::from(under.x) + i32::from(under.width));
+    assert!(py >= i32::from(under.y) && py < i32::from(under.y) + i32::from(under.height));
+    let extents = property(&conn, target, "_NET_FRAME_EXTENTS")?;
+    assert_eq!(&extents[..2], &[16, 16]);
+    println!("POINTER_FIXTURE target={target} frame={frame} outer={g:?} underlying={under:?}");
+    // Side borders are intentionally input-transparent in the composed frame.
+    // Use the reachable client body instead: actual movement establishes P,
+    // then stationary geometry-induced crossing must retain keyboard focus.
+    xdotool(&["mousemove", "--sync", &x.to_string(), &qy.to_string()]);
+    thread::sleep(Duration::from_millis(80));
+    println!("POINTER_Q {:?}", conn.query_pointer(root)?.reply()?);
+    xdotool(&["mousemove", "--sync", &x.to_string(), &py.to_string()]);
+    let before = conn.query_pointer(root)?.reply()?;
+    assert_eq!(before.child, frame, "pointer must lie inside target frame");
+    assert_eq!((before.root_x, before.root_y), (x as i16, py as i16));
+    let inner = conn.query_pointer(frame)?.reply()?;
+    assert_eq!(
+        inner.child, target,
+        "fixture pointer must hit actual client body"
+    );
+    println!("POINTER_P root={before:?} frame={inner:?}");
+    thread::sleep(Duration::from_millis(80));
+    xdotool(&["key", "--clearmodifiers", "super+Left"]);
+    wait(
+        "keyboard snap moves selected frame away from stationary pointer",
+        || {
+            let g = geometry(&conn, root_surface(&conn, target));
+            i32::from(g.x) + i32::from(g.width) <= x
+        },
+    );
+    wait("stationary pointer exposes overlapping peer", || {
+        conn.query_pointer(root).unwrap().reply().unwrap().child == root_surface(&conn, exposed)
+    });
+    // Require retained focus repeatedly after generated crossing events drain;
+    // a transient active-window publication is insufficient.
+    for _ in 0..12 {
+        thread::sleep(Duration::from_millis(20));
+        let pointer = conn.query_pointer(root)?.reply()?;
+        assert_eq!(
+            (pointer.root_x, pointer.root_y),
+            (before.root_x, before.root_y)
+        );
+        assert_eq!(
+            property(&conn, root, "_NET_ACTIVE_WINDOW")?,
+            vec![target],
+            "geometry-induced enter must not replace keyboard focus"
+        );
+        assert_eq!(conn.get_input_focus()?.reply()?.focus, target);
+    }
+    // Genuine movement across a window boundary must still focus that client.
+    let other = clients[1];
+    let other_frame = geometry(&conn, root_surface(&conn, other));
+    xdotool(&[
+        "mousemove",
+        "--sync",
+        &(i32::from(other_frame.x) + 30).to_string(),
+        &(i32::from(other_frame.y) + 110).to_string(),
+    ]);
+    xdotool(&[
+        "mousemove",
+        "--sync",
+        &(x - 35).to_string(),
+        &(py + 15).to_string(),
+    ]);
+    wait(
+        "genuine pointer movement still focuses exposed client",
+        || property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![exposed],
+    );
+    assert_eq!(conn.get_input_focus()?.reply()?.focus, exposed);
+    for id in clients {
+        conn.destroy_window(id)?;
+    }
+    conn.flush()?;
+    wm.0.kill()?;
+    wm.0.wait()?;
+    Ok(())
+}
