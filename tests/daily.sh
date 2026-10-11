@@ -6,6 +6,7 @@ python3 tests/update-commands.py
 python3 tests/display-commands.py
 python3 tests/settings-search.py
 python3 tests/desktop-commands.py
+python3 tests/desktop-files-settings.py
 python3 tests/desktop-wallpaper.py
 python3 tests/reminders.py
 python3 tests/notes-storage.py

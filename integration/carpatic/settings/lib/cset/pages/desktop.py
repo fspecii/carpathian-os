@@ -1,6 +1,7 @@
 """Desktop & Dock (window look, window buttons, panel/dock through carpatic-panel, widgets), Wallpaper, General (login items, startup),
 Accessibility, Control Centre."""
-import os, glob, math, sys
+import os, glob, math, sys, subprocess, time, tempfile
+from pathlib import Path
 import gi
 from gi.repository import Gtk, Gdk, GLib
 from .. import sysutil as su, ui, theme
@@ -32,6 +33,102 @@ def ws_count(st=None):
 def current_btn_style(st):
     return st.get("WINDOW_BUTTONS") or profile_conf(st.get("PROFILE", "tiling"), "TITLEBAR_STYLE", "windows")
 
+def desktop_files_marker():
+    # The existing login hook deliberately uses this exact path.
+    return Path.home() / '.config/carpatic/desktop-files-disabled'
+
+
+def desktop_files_running():
+    rc, _output = su.run_sync('carpatic-session-process', 'present', '--name', 'xfdesktop', timeout=1)
+    if rc not in (0, 1):
+        raise RuntimeError('Desktop files could not be checked in this session. Try again.')
+    return rc == 0
+
+
+def desktop_files_state():
+    marker = desktop_files_marker()
+    directory = su.out('xdg-user-dir', 'DESKTOP') if su.which('xdg-user-dir') else ''
+    valid = bool(directory and os.path.isabs(directory))
+    home_disabled = valid and os.path.realpath(directory) == os.path.realpath(str(Path.home()))
+    running = False
+    if su.which('carpatic-session-process'):
+        running = desktop_files_running()
+    disabled = marker.exists() or marker.is_symlink()
+    if disabled: status = 'Disabled for future logins; desktop files are still running.' if running else 'Desktop files are turned off.'
+    elif not valid: status = 'The Desktop folder could not be read.'
+    elif home_disabled: status = 'Desktop files are disabled by your folder preferences. Choose a dedicated folder to enable them.'
+    elif not os.path.isdir(directory): status = 'Your configured Desktop folder has not been created yet.'
+    elif not os.access(directory, os.W_OK): status = 'Your Desktop folder is not writable.'
+    elif running: status = 'Desktop files are running in this session.'
+    else: status = 'Desktop files are configured but are not running in this session.'
+    return dict(directory=directory, valid=valid, home_disabled=home_disabled,
+                running=running, disabled=disabled, status=status,
+                enabled=valid and not home_disabled and not disabled)
+
+
+def desktop_files_session():
+    if (os.environ.get('CARPATIC_SESSION') != '1' or not os.environ.get('CARPATIC_SESSION_ID')
+            or not os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')):
+        raise RuntimeError('Open Settings from your Carpathian desktop to change desktop files.')
+    root = su.out('xprop', '-root', '_NET_SUPPORTING_WM_CHECK')
+    import re
+    match = re.search(r'window id # (0x[0-9a-fA-F]+)', root)
+    name = su.out('xprop', '-id', match.group(1), '_NET_WM_NAME') if match else ''
+    if not name.rstrip().endswith('= "Carpathian OS"'):
+        raise RuntimeError('This display is not managed by Carpathian OS.')
+
+
+def set_desktop_files(enabled):
+    desktop_files_session()
+    marker = desktop_files_marker()
+    if marker.is_symlink(): raise RuntimeError('The desktop preference is a symbolic link. Restore a regular preference file first.')
+    if not enabled:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(str(marker), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600) if not marker.exists() else None
+        if descriptor is not None: os.close(descriptor)
+        rc, output = su.run_sync('carpatic-session-process', 'stop', '--name', 'xfdesktop', timeout=1)
+        if rc: raise RuntimeError('Desktop files could not be stopped in this session.')
+        deadline = time.monotonic() + 4
+        while time.monotonic() < deadline:
+            if not desktop_files_running():
+                return 'Desktop files turned off.'
+            time.sleep(.1)
+        raise RuntimeError('Desktop files are disabled for future logins, but are still running in this session.')
+    state = desktop_files_state()
+    if not state['valid'] or state['home_disabled']:
+        raise RuntimeError('Choose a dedicated Desktop folder before enabling desktop files.')
+    if not state['running']:
+        # The inherited session token lets the login supervisor own this helper,
+        # including its cleanup when Settings itself has been closed.
+        with tempfile.TemporaryFile() as errors:
+            process = subprocess.Popen(['carpatic-desktop'], stdout=subprocess.DEVNULL, stderr=errors)
+            ready = False
+            try:
+                deadline = time.monotonic() + 4
+                while time.monotonic() < deadline:
+                    if process.poll() is not None:
+                        process.wait(timeout=1)
+                        raise RuntimeError('Desktop files could not start. Check that the Desktop folder is writable and the desktop components are installed.')
+                    if desktop_files_running():
+                        if process.poll() is not None:
+                            raise RuntimeError('Desktop files exited while starting. Your saved preference is kept.')
+                        ready = True
+                        break
+                    time.sleep(.1)
+                if not ready:
+                    raise RuntimeError('Desktop files did not become ready. Your saved preference has been preserved.')
+            finally:
+                if not ready and process.poll() is None:
+                    process.terminate()
+                    try: process.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        process.kill(); process.wait(timeout=2)
+            # The child retains its anonymous regular file descriptor, so later
+            # GTK warnings cannot block on a pipe or terminate it with SIGPIPE.
+    if marker.exists(): marker.unlink()
+    return 'Desktop files turned on.'
+
+
 class DesktopPage(Page):
     order = 4
     id = "desktop"; title = "Desktop & Dock"; icon = "preferences-desktop-wallpaper"; color = "#ff9f0a"; group = 2
@@ -39,7 +136,7 @@ class DesktopPage(Page):
     keywords = "bar dock taskbar panel design position size autohide hide icons labels windows layout tiling floating auto-tiling drag workspaces desktop widgets menu bar start button clock"
     sub = "How the bar or dock works and how windows behave. How they look is in Appearance."
     entries = (("Bar design", "dock taskbar panel macos windows ubuntu zorin kylin floating minimal menu bar", "panel-design"), ("Taskbar and dock", "panel position size icon autohide clock labels grouping", "panel"),
-               ("Workspaces", "desktops spaces number names virtual", "workspaces"), ("Window layout", "auto-tiling floating tiling windows arrange", "layout"), ("When you drag a tiled window", "float place drag out", "drag-tiled"),
+               ("Desktop files", "icons files folders select drag drop enable disable", "desktop-files"), ("Desktop folder", "open desktop directory location files", "desktop-folder"), ("Workspaces", "desktops spaces number names virtual", "workspaces"), ("Window layout", "auto-tiling floating tiling windows arrange", "layout"), ("When you drag a tiled window", "float place drag out", "drag-tiled"),
                ("Widgets", "desktop cards clock weather calendar", "widgets"), ("Restart the bar", "bar missing disappeared not showing", "panel-restart"))
     optional = frozenset({"panel-design", "panel", "widgets", "panel-restart", "layout", "drag-tiled"})
     def open_sub(self, name):
@@ -48,6 +145,7 @@ class DesktopPage(Page):
         self.pb = pb; self.guard = True; st = su.settings()
         # --- bar / dock: design, position, behaviour
         self.build_panel(pb)
+        self.build_desktop_files(pb)
         # --- window layout and behaviour
         if su.which("carpatic-layout"):
             g = pb.group("Windows", "How windows arrange themselves. The look of windows (buttons, corners, gaps) is in Appearance.")
@@ -63,6 +161,85 @@ class DesktopPage(Page):
         if self.wh:
             g4 = pb.group(); g4.add(NavRow("Widgets", "Clock, calendar, weather and more on the desktop. Off by default.", "view-grid", "#5ac8fa", "", self.wh.open, key="widgets"))
         self.guard = False
+    def build_desktop_files(self, pb):
+        group = pb.group('Desktop files', 'Select, open and arrange files on your desktop.')
+        self.files_state = None
+        self.files_busy = False
+        self.files_status = InfoRow('Status', 'Checking your desktop…', key='desktop-files-status')
+        group.add(self.files_status)
+        self.files_switch = SwitchRow('Show files on desktop', '', False, self.toggle_files, key='desktop-files')
+        self.files_switch.sw.set_sensitive(False); group.add(self.files_switch)
+        self.files_open = ButtonRow('Desktop folder', 'Open your configured folder in Files', 'Open', self.open_desktop_folder, key='desktop-folder')
+        self.files_open.buttons[0].set_sensitive(False); group.add(self.files_open)
+        group.add(ButtonRow('Desktop folder location', 'Choose a dedicated folder. Other folder and icon preferences are kept.', 'Choose…', self.choose_desktop_folder, key='desktop-folder-location'))
+        self.refresh_desktop_files()
+
+    def refresh_desktop_files(self):
+        def done(state):
+            if isinstance(state, Exception):
+                self.files_status.set_value_quiet('Desktop files could not be checked.'); return
+            self.files_state = state
+            self.files_status.set_value_quiet(state['status'])
+            self.files_switch.set_value_quiet(state['enabled'])
+            self.files_switch.sw.set_sensitive(not self.files_busy)
+            self.files_open.set_sub(state['directory'] if state['valid'] and not state['home_disabled'] else 'Choose a dedicated Desktop folder first')
+            self.files_open.buttons[0].set_sensitive(state['valid'] and not state['home_disabled'] and os.path.isdir(state['directory']))
+        su.bg(desktop_files_state, done)
+
+    def toggle_files(self, enabled):
+        if self.files_busy: return
+        if enabled and (not self.files_state or not self.files_state['valid'] or self.files_state['home_disabled']):
+            self.files_switch.set_value_quiet(False)
+            self.choose_desktop_folder(enable=True); return
+        self.change_desktop_files(enabled)
+
+    def change_desktop_files(self, enabled, restart=False):
+        self.files_busy = True; self.files_switch.sw.set_sensitive(False)
+        self.files_status.set_value_quiet('Starting desktop files…' if enabled else 'Stopping desktop files…')
+        def done(result):
+            self.files_busy = False
+            if isinstance(result, Exception):
+                self.win.idle(str(result)); self.refresh_desktop_files()
+            else:
+                self.win.idle(result); self.refresh_desktop_files()
+        def change():
+            if restart: set_desktop_files(False)
+            return set_desktop_files(enabled)
+        su.bg(change, done)
+
+    def open_desktop_folder(self):
+        state = self.files_state
+        if state and state['valid'] and not state['home_disabled'] and os.path.isdir(state['directory']):
+            su.spawn('xdg-open', state['directory'], done=lambda rc, _out: self.win.idle('Desktop folder opened.' if rc == 0 else 'The Desktop folder could not be opened.'))
+
+    def choose_desktop_folder(self, enable=False):
+        if self.files_busy: return
+        dialog = Gtk.FileChooserDialog(title='Choose Desktop folder', transient_for=self.win, action=Gtk.FileChooserAction.SELECT_FOLDER)
+        dialog.add_buttons('Cancel', Gtk.ResponseType.CANCEL, 'Choose', Gtk.ResponseType.ACCEPT)
+        dialog.set_create_folders(True)
+        if dialog.run() == Gtk.ResponseType.ACCEPT: directory = dialog.get_filename()
+        else: directory = None
+        dialog.destroy()
+        if not directory: self.refresh_desktop_files(); return
+        if os.path.realpath(directory) == os.path.realpath(str(Path.home())):
+            self.win.idle('Choose a dedicated folder inside your home, rather than the home folder itself.'); return
+        if not os.path.isdir(directory) or not os.access(directory, os.W_OK):
+            self.win.idle('Choose a writable folder for desktop files.'); return
+        restart = bool(self.files_state and self.files_state['running'] and self.files_state['enabled'])
+        self.files_busy = True
+        def done(result):
+            self.files_busy = False
+            if isinstance(result, Exception) or result[0] != 0:
+                self.win.idle('The Desktop folder could not be saved. Your previous folder preference is kept.'); self.refresh_desktop_files()
+            elif enable or restart:
+                self.change_desktop_files(True, restart=restart)
+            else:
+                self.win.idle('Desktop folder saved. Sign out and back in to use its new location.'); self.refresh_desktop_files()
+        su.bg(lambda: su.run_sync('xdg-user-dirs-update', '--set', 'DESKTOP', directory), done)
+
+    def on_show(self):
+        if hasattr(self, 'files_status'): self.refresh_desktop_files()
+
     def build_panel(self, pb):
         self.panel_group = None
         if not panelcfg.available(): return
