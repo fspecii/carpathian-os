@@ -5071,3 +5071,184 @@ fn same_view_activation_never_focuses_an_unrelated_client() -> Result<()> {
     wm.0.wait()?;
     Ok(())
 }
+
+#[test]
+#[ignore = "requires private Xvfb; run tests/run.sh"]
+fn pointer_mapping_preserves_grabs_and_keyboard_mapping_rebinds() -> Result<()> {
+    use x11rb::protocol::xtest::ConnectionExt as _;
+    assert_eq!(
+        std::env::var("CARPATIC_WM_TEST_DISPLAY").as_deref(),
+        Ok("1")
+    );
+    assert!(std::env::var_os("WAYLAND_DISPLAY").is_none());
+    let dir = std::path::PathBuf::from(std::env::var("CARPATIC_CONFIG_DIR")?);
+    let _config = ConfigRestore::new(&dir);
+    std::fs::write(
+        dir.join("themes.toml"),
+        "[appearance]\nworkspaces=4\n[bar]\nenabled=0\n[titlebar]\nenabled=0\n",
+    )?;
+    std::fs::write(
+        dir.join("hotkeys.toml"),
+        "keys=[{mod='SUPER',key='space',func='showdesktop'}]\n",
+    )?;
+    let (conn, screen) = x11rb::connect(None)?;
+    let root = conn.setup().roots[screen].root;
+    // Restore the server's real mappings even if an assertion panics.
+    struct Maps<'a> {
+        conn: &'a RustConnection,
+        pointer: Vec<u8>,
+        rows: Vec<(u8, Vec<u32>)>,
+        width: u8,
+    }
+    impl Drop for Maps<'_> {
+        fn drop(&mut self) {
+            for (code, symbols) in &self.rows {
+                if let Ok(cookie) = self
+                    .conn
+                    .change_keyboard_mapping(1, *code, self.width, symbols)
+                {
+                    let _ = cookie.check();
+                }
+            }
+            if let Ok(cookie) = self.conn.set_pointer_mapping(&self.pointer) {
+                let _ = cookie.reply();
+            }
+            let _ = self.conn.flush();
+        }
+    }
+    let first = conn.setup().min_keycode;
+    let mapping = conn
+        .get_keyboard_mapping(first, conn.setup().max_keycode - first + 1)?
+        .reply()?;
+    let width = mapping.keysyms_per_keycode;
+    let rows: Vec<_> = mapping
+        .keysyms
+        .chunks(width as usize)
+        .enumerate()
+        .map(|(i, r)| (first + i as u8, r.to_vec()))
+        .collect();
+    let space = rows
+        .iter()
+        .find(|(_, r)| r[0] == 0x20)
+        .expect("existing Space keycode");
+    let superkey = rows
+        .iter()
+        .find(|(_, r)| r[0] == 0xffeb)
+        .expect("existing Super_L keycode")
+        .0;
+    let spare = rows
+        .iter()
+        .find(|(_, r)| r.iter().all(|s| *s == 0))
+        .expect("unused keyboard row");
+    let pointer = conn.get_pointer_mapping()?.reply()?.map;
+    assert!(pointer.len() >= 3);
+    let _maps = Maps {
+        conn: &conn,
+        pointer: pointer.clone(),
+        rows: vec![space.clone(), spare.clone()],
+        width,
+    };
+    // Reset inherited XTest-held state, without rewriting any mapping.
+    let pressed = conn.query_keymap()?.reply()?.keys;
+    for code in 8u8..=255 {
+        if pressed[code as usize / 8] & (1 << (code % 8)) != 0 {
+            conn.xtest_fake_input(KEY_RELEASE_EVENT, code, 0, root, 0, 0, 0)?
+                .check()?;
+        }
+    }
+    for button in 1..=pointer.len() as u8 {
+        conn.xtest_fake_input(BUTTON_RELEASE_EVENT, button, 0, root, 0, 0, 0)?
+            .check()?;
+    }
+    // Prime Xvfb's lazy XKB/XTest keyboard before the WM owns any grabs.
+    conn.xtest_fake_input(KEY_PRESS_EVENT, superkey, 0, root, 0, 0, 0)?
+        .check()?;
+    conn.xtest_fake_input(KEY_RELEASE_EVENT, superkey, 0, root, 0, 0, 0)?
+        .check()?;
+    conn.get_input_focus()?.reply()?;
+    let log = std::path::PathBuf::from(std::env::var("CARPATIC_WM_TEST_LOG")?);
+    let offset = std::fs::metadata(&log).map(|m| m.len()).unwrap_or(0) as usize;
+    let mut wm = start_with_policy(false, false)?;
+    wait("mapping WM ready", || ready(&conn, root, &wm));
+    let read_log = || {
+        String::from_utf8_lossy(
+            std::fs::read(&log)
+                .unwrap_or_default()
+                .get(offset..)
+                .unwrap_or_default(),
+        )
+        .into_owned()
+    };
+    let rebinds = || read_log().matches("KEY_GRABS_REBIND").count();
+    let completed = || read_log().matches("KEY_GRABS_READY").count();
+    wait("initial grabs processed by server", || completed() > 0);
+    let chord = |code| -> Result<()> {
+        conn.xtest_fake_input(KEY_PRESS_EVENT, superkey, 0, root, 0, 0, 0)?
+            .check()?;
+        conn.xtest_fake_input(KEY_PRESS_EVENT, code, 0, root, 0, 0, 0)?
+            .check()?;
+        conn.xtest_fake_input(KEY_RELEASE_EVENT, code, 0, root, 0, 0, 0)?
+            .check()?;
+        conn.xtest_fake_input(KEY_RELEASE_EVENT, superkey, 0, root, 0, 0, 0)?
+            .check()?;
+        conn.flush()?;
+        Ok(())
+    };
+    chord(space.0)?;
+    wait("known-keycode initial hotkey", || {
+        property(&conn, root, "_NET_SHOWING_DESKTOP").unwrap_or_default() == vec![1]
+    });
+    let before = rebinds();
+    let completed_before = completed();
+    let mut swapped = pointer.clone();
+    swapped.swap(0, 2);
+    assert_eq!(
+        conn.set_pointer_mapping(&swapped)?.reply()?.status,
+        MappingStatus::SUCCESS
+    );
+    wait("real pointer notification handled", || {
+        read_log().contains("MAPPING_NOTIFY POINTER")
+    });
+    chord(space.0)?;
+    wait("hotkey after pointer mapping", || {
+        property(&conn, root, "_NET_SHOWING_DESKTOP").unwrap_or_default() == vec![0]
+    });
+    assert_eq!(
+        rebinds(),
+        before,
+        "pointer-only mapping must not call keyboard ungrab/rebind path"
+    );
+    conn.change_keyboard_mapping(1, space.0, width, &vec![0; width as usize])?
+        .check()?;
+    conn.change_keyboard_mapping(1, spare.0, width, &space.1)?
+        .check()?;
+    wait("keyboard remap positive control rebind", || {
+        completed() >= completed_before + 2
+    });
+    chord(spare.0)?;
+    wait("hotkey uses actual remapped keycode", || {
+        property(&conn, root, "_NET_SHOWING_DESKTOP").unwrap_or_default() == vec![1]
+    });
+    chord(space.0)?;
+    thread::sleep(Duration::from_millis(80));
+    assert_eq!(
+        property(&conn, root, "_NET_SHOWING_DESKTOP")?,
+        vec![1],
+        "old Space keycode no longer dispatches"
+    );
+    chord(spare.0)?;
+    wait("remapped keycode remains usable", || {
+        property(&conn, root, "_NET_SHOWING_DESKTOP").unwrap_or_default() == vec![0]
+    });
+    wm.0.kill()?;
+    wm.0.wait()?;
+    drop(_maps);
+    assert_eq!(conn.get_pointer_mapping()?.reply()?.map, pointer);
+    assert_eq!(
+        conn.get_keyboard_mapping(first, conn.setup().max_keycode - first + 1)?
+            .reply()?
+            .keysyms,
+        mapping.keysyms
+    );
+    Ok(())
+}

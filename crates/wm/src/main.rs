@@ -1637,6 +1637,9 @@ impl Wm {
         Ok(())
     }
     fn bind_keys(&mut self) -> Result<()> {
+        if std::env::var_os("CARPATIC_WM_DEBUG").is_some() {
+            eprintln!("KEY_GRABS_REBIND");
+        }
         self.conn.ungrab_key(0u8, self.root, ModMask::ANY)?;
         let setup = self.conn.setup();
         let first = setup.min_keycode;
@@ -1645,6 +1648,7 @@ impl Wm {
             .get_keyboard_mapping(first, setup.max_keycode - first + 1)?
             .reply()?;
         self.keys.clear();
+        let mut last_grab = None;
         for (index, symbols) in mapping
             .keysyms
             .chunks(mapping.keysyms_per_keycode as usize)
@@ -1675,16 +1679,26 @@ impl Wm {
             }
             for modifiers in modifiers {
                 for lock in [0, 2, 16, 18] {
-                    self.conn.grab_key(
+                    last_grab = Some(self.conn.grab_key(
                         false,
                         self.root,
                         ModMask::from(modifiers | lock),
                         code,
                         GrabMode::ASYNC,
                         GrabMode::ASYNC,
-                    )?;
+                    )?);
                 }
             }
+        }
+        if std::env::var_os("CARPATIC_WM_DEBUG").is_some() {
+            // Checking the final request proves the server processed every
+            // preceding grab before the diagnostic readiness marker.
+            if let Some(cookie) = last_grab {
+                cookie.check()?;
+            } else {
+                self.conn.get_input_focus()?.reply()?;
+            }
+            eprintln!("KEY_GRABS_READY");
         }
         Ok(())
     }
@@ -4291,7 +4305,14 @@ impl Wm {
                 self.end_drag(true)?;
             }
             Event::KeyPress(e) => self.key(e)?,
-            Event::MappingNotify(_) => self.bind_keys()?,
+            Event::MappingNotify(event) => {
+                if std::env::var_os("CARPATIC_WM_DEBUG").is_some() {
+                    eprintln!("MAPPING_NOTIFY {:?}", event.request);
+                }
+                if event.request != Mapping::POINTER {
+                    self.bind_keys()?;
+                }
+            }
             Event::RandrScreenChangeNotify(_) | Event::RandrNotify(_) => self.refresh_monitors()?,
             Event::ConfigureNotify(e) if e.window == self.root => {
                 self.area.width = u32::from(e.width);
@@ -4787,9 +4808,7 @@ impl Wm {
                         // Same-view activation must not briefly focus the first
                         // available app before the requested target. A real
                         // view change still applies normal workspace policy.
-                        if self.showing_desktop
-                            || monitor.view != 1 << desktop
-                            || monitor.all_view
+                        if self.showing_desktop || monitor.view != 1 << desktop || monitor.all_view
                         {
                             self.switch(desktop)?;
                         }
