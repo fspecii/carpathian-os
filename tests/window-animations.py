@@ -97,11 +97,14 @@ class WindowAnimations(unittest.TestCase):
         self.assertIsNone(motion.owned_pid())
     def test_stale_record_cannot_claim_a_process_on_another_display(self):
         # Real procfs ownership, not a mock that repeats the implementation.
+        import select
         env = dict(os.environ, DISPLAY=":97")
-        child = subprocess.Popen(["picom", "-c", "import time; time.sleep(10)",
+        child = subprocess.Popen(["picom", "-c", "import os,time; os.write(1,b'READY\\n'); time.sleep(10)",
                                   str(self.cfg / "window-animations.conf")],
-                                 executable=sys.executable, env=env)
+                                 executable=sys.executable, env=env, stdout=subprocess.PIPE)
         try:
+            self.assertTrue(select.select([child.stdout], [], [], 3)[0], "owned fixture did not reach exec readiness")
+            self.assertEqual(child.stdout.readline(), b"READY\n")
             with patch.dict(os.environ, DISPLAY=":97"):
                 runtime = motion.runtime_dir(); runtime.mkdir(parents=True)
                 (runtime / "pid").write_text(str(child.pid))
@@ -112,6 +115,7 @@ class WindowAnimations(unittest.TestCase):
                 self.assertIsNone(motion.owned_pid())
         finally:
             child.terminate(); child.wait(timeout=3)
+            child.stdout.close()
 
     def test_backend_uses_glx_only_when_acceleration_is_confirmed(self):
         with patch.dict(os.environ, CARPATIC_ANIMATION_BACKEND="auto"), patch.object(motion, "session_guard", return_value=True):

@@ -1,4 +1,4 @@
-"""Popup host for flyouts: override-redirect GTK window around a Canvas, grabbed pointer + keyboard, closes on Esc / outside click / focus loss,
+"""Popup host for flyouts: override-redirect GTK window around a Canvas, grabbed pointer, closes on Esc / outside click / focus loss,
 rounded by XShape without a compositor (true alpha with one), small slide-in, optional text entry overlay positioned by the view."""
 import math, os, signal, time
 import cairo

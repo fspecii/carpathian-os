@@ -25,6 +25,8 @@ python3 tests/bluetooth-install.py
 python3 tests/desktop-wallpaper.py
 python3 tests/calendar-events.py
 python3 tests/calendar-loader.py
+python3 tests/calendar-local-events.py
+python3 tests/calendar-launcher.py
 python3 tests/reminders.py
 python3 tests/notes-storage.py
 python3 tests/notes-install.py

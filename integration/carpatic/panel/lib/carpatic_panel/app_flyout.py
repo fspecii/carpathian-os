@@ -77,6 +77,8 @@ def main(args):
         x, y = placement.place(w, h, sc, edge, anchor, args.mode, getattr(args, 'align', None) or 'auto')
         if args.mode == "start" and look == "launchpad": x, y = sc[0], sc[1]
         win = pp.Popup(view, theme, (x, y), edge, slide=not args.no_slide and not args.shot and look != "launchpad")
+        if args.mode in ("quick", "calendar"):
+            view.on_close = win.close_me
         if args.mode == "start": win.canvas.view.menu_cb = None
         if args.shot:
             GLib.timeout_add(700, lambda: (shot(args.shot), Gtk.main_quit(), False)[2])

@@ -92,6 +92,16 @@ class Compact(unittest.TestCase):
         if view.entry_rect:
             x, y, w, h = view.entry_rect
             self.assertGreaterEqual(y, 0); self.assertLessEqual(y+h, view.H)
+    def test_open_event_preserves_unsaved_quick_entry(self):
+        view = self.view()
+        view.entry_text = 'Lunch tomorrow 13:00'
+        event = Event('Existing event', view.cal.today, uid='fixture', path='/tmp/fixture.ics')
+        with patch('carpatic_panel.flyout_cal.threading.Thread') as thread, patch.object(view, 'on_close') as close:
+            view._open_event(event)
+        thread.assert_not_called(); close.assert_not_called()
+        self.assertEqual(view.entry_text, 'Lunch tomorrow 13:00')
+        self.assertIn('Save or clear', view.entry_error)
+
     def test_malformed_import_preserves_popup_and_displays_warning(self):
         source = Path(self.temp.name) / 'mixed.ics'
         source.write_text('BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART:20261332T090000\nEND:VEVENT\nBEGIN:VEVENT\nDTSTART:20260315T090000\nSUMMARY:Valid appointment\nEND:VEVENT\nEND:VCALENDAR\n')
@@ -200,6 +210,39 @@ class Compact(unittest.TestCase):
                 self.assertEqual(len(calls), 2)
             finally:
                 release.set(); model.close()
+
+    def test_event_route_gates_gui_launch_until_popup_closes(self):
+        from carpatic_panel import flyout_cal
+        view = self.view(notes=False)
+        event = Event('--title is literal', view.cal.today, uid='fixture', path=str(Path(self.temp.name) / 'event.ics'))
+        trace = []
+        view.on_close = lambda: trace.append('close')
+        class Gate:
+            def write(self, value): trace.append(('gate', value))
+            def close(self): trace.append('pipe-close')
+        def spawn(args, **kwargs):
+            trace.append(('spawn', args, kwargs)); return SimpleNamespace(pid=1, stdin=Gate())
+        with patch.object(flyout_cal.shutil, 'which', return_value='/fixture/carpatic-calendar'), patch.object(flyout_cal.subprocess, 'Popen', side_effect=spawn):
+            view._open_event(event)
+            pump(lambda: len(trace) == 4)
+        self.assertEqual(trace[0][0], 'spawn')
+        self.assertEqual(trace[1:], ['close', ('gate', b'1'), 'pipe-close'])
+        self.assertIn('--wait-for-launch', trace[0][1])
+        self.assertIn('--title=--title is literal', trace[0][1])
+        self.assertIn('--event=' + event.path, trace[0][1])
+        self.assertEqual(trace[0][2]['stdin'], flyout_cal.subprocess.PIPE)
+
+    def test_event_spawn_failure_keeps_flyout_and_visible_error(self):
+        from carpatic_panel import flyout_cal
+        view = self.view(notes=False)
+        event = Event('Existing event', view.cal.today, uid='fixture', path=str(Path(self.temp.name) / 'event.ics'))
+        with patch.object(view, 'on_close') as close, patch.object(flyout_cal.shutil, 'which', return_value='/fixture/carpatic-calendar'), patch.object(flyout_cal.subprocess, 'Popen', side_effect=OSError('injected spawn failure')):
+            view._open_event(event)
+            pump(lambda: bool(view.entry_error))
+        close.assert_not_called()
+        self.assertFalse(view._reminders_closed)
+        self.assertEqual(view.entry_text, '')
+        self.assertIn('could not be opened', view.entry_error.lower())
 
     def test_layout_matrix_sixweek_weeknumbers_and_all_events(self):
         original = json.dumps(SPECS, sort_keys=True)

@@ -11,6 +11,7 @@ from pathlib import Path
 from . import gfx, calmath, events as ev, notes as nt
 from .kit import View, Node, Group, p_button
 from .event_loader import EventLoader
+from .local_events import CalendarError
 
 SPECS = {
     "win":    dict(w=384, pad=16, sr=14, cr=10, order="notes-first", cols=1, cell=40),
@@ -492,12 +493,61 @@ class CalView(View):
         if not title: return False
         try:
             ev.write_event(title, day, st, en, self.cal.data)
-        except OSError:
-            self.entry_error = "Event could not be saved. Your entry was kept; try again."
+        except (OSError, CalendarError) as error:
+            self.entry_error = "Event could not be saved. " + (str(error) if isinstance(error, CalendarError) else "Your entry was kept; try again.")
             self.refresh()
             return False
         self.entry_error = ""
         self.cal.invalidate(); self.cal.select(day); self.entry_text = ""; self.refresh(); return True
+
+    def _open_event(self, event):
+        if self.entry_text.strip():
+            self.entry_error = 'Save or clear your new event before opening another event'
+            self.refresh()
+            return
+        if not event.path or not Path(event.path).is_absolute():
+            self.entry_error = 'Event details are unavailable'
+            self.refresh()
+            return
+        args = ['--event=' + event.path, '--uid=' + event.uid, '--title=' + event.title[:2000], '--date=' + event.day.isoformat()]
+        if len(event.uid) > 1024 or any('\0' in arg for arg in args):
+            self.entry_error = 'Event details contain unsupported text'
+            self.refresh()
+            return
+        if event.start: args += ['--start', event.start.isoformat()]
+        if event.end: args += ['--end', event.end.isoformat()]
+        if event.all_day: args += ['--all-day']
+        def worker():
+            executable = shutil.which('carpatic-calendar')
+            if executable: GLib.idle_add(launch, executable)
+            else: GLib.idle_add(failed)
+        def launch(executable):
+            if self._reminders_closed: return False
+            # The helper waits for permission before importing/mapping GTK.
+            # A failed exec keeps this popup alive; successful exec releases
+            # the pointer grab before permitting the normal window to open.
+            try:
+                child = subprocess.Popen([executable, '--wait-for-launch'] + args,
+                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL, start_new_session=True)
+            except OSError:
+                self.entry_error = 'The calendar editor could not be opened. Try again.'
+                self.refresh()
+                return False
+            try:
+                self.on_close()
+                child.stdin.write(b'1'); child.stdin.close()
+            except (OSError, BrokenPipeError):
+                # The helper reports its own startup failures even after this
+                # standalone flyout exits. EOF also cancels a waiting helper.
+                try: child.stdin.close()
+                except OSError: pass
+            return False
+        def failed():
+            if self._reminders_closed: return False
+            self.entry_error = 'Calendar editor is not installed'
+            self.refresh(); return False
+        threading.Thread(target=worker, name='calendar-open-event', daemon=True).start()
 
     def _event_row(self, e, x, y, w):
         t = self.theme
@@ -512,7 +562,7 @@ class CalView(View):
                 gfx.text(cr, e.title, tx, n.y + n.h / 2 - 8, 13, t.fg, 600, maxw=n.w - 90); gfx.text(cr, e.where, tx, n.y + n.h / 2 + 9, 11.5, t.fg_muted, 400, maxw=n.w - 90)
             else:
                 gfx.text(cr, e.title, tx, n.y + n.h / 2, 13, t.fg, 600, maxw=n.w - 90)
-        return Node(id="ev:%s:%s" % (e.uid or e.title, e.day), x=x, y=y, w=w, h=40, paint=paint, radius=8, on_click=lambda n: None, focusable=False)
+        return Node(id="ev:%s:%s" % (e.uid or e.title, e.day), x=x, y=y, w=w, h=40, paint=paint, radius=8, on_click=lambda n: self._open_event(e), focusable=True, tooltip="Open calendar event")
 
     # ------------------------------------------------------------------ notifications
     def _notif_block(self, x, y, w, h, title=True):

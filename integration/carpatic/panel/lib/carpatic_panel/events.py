@@ -3,7 +3,7 @@
 Sources: ~/.local/share/carpatic/calendar/*.ics (written by the quick entry), ~/.local/share/carpatic/widgets/calendar.ics (the widgets
 agent's file), and khal/vdirsyncer folders (~/.calendars/**/*.ics) when present."""
 import datetime as dt
-import glob, os, re, uuid
+import glob, os, re, uuid, tempfile
 
 DATA = os.environ.get("CARPATIC_DATA", os.path.expanduser("~/.local/share/carpatic"))
 PALETTE = ("accent", "info", "ember", "danger", "success")
@@ -212,27 +212,38 @@ def parse_quick(text, today=None):
 
 def write_event(title, day, start=None, end=None, data=None):
     """Writes ~/.local/share/carpatic/calendar/<uid>.ics (atomic) and returns the path."""
-    d = os.path.join(data or DATA, "calendar"); os.makedirs(d, exist_ok=True)
+    from .local_events import validate_event
+    validate_event(title, day, start, end)
+    date = lambda d: f"{d.year:04d}{d.month:02d}{d.day:02d}"
+    d = os.path.join(data or DATA, "calendar"); os.makedirs(d, mode=0o700, exist_ok=True)
     uid = uuid.uuid4().hex
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Carpathian OS//panel//EN", "BEGIN:VEVENT", f"UID:{uid}@carpatic",
              "DTSTAMP:" + dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")]
-    esc = title.replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;")
+    esc = title.replace("\\", "\\\\").replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n").replace(",", "\\,").replace(";", "\\;")
     if start is None:
-        lines += [f"DTSTART;VALUE=DATE:{day:%Y%m%d}", f"DTEND;VALUE=DATE:{day + dt.timedelta(days=1):%Y%m%d}"]
+        lines += ["DTSTART;VALUE=DATE:" + date(day), "DTEND;VALUE=DATE:" + date(day + dt.timedelta(days=1))]
     else:
-        lines.append(f"DTSTART:{day:%Y%m%d}T{start:%H%M%S}")
-        if end: lines.append(f"DTEND:{day:%Y%m%d}T{end:%H%M%S}")
+        lines.append("DTSTART:" + date(day) + "T" + start.strftime("%H%M%S"))
+        if end: lines.append("DTEND:" + date(day) + "T" + end.strftime("%H%M%S"))
     lines += [f"SUMMARY:{esc}", "END:VEVENT", "END:VCALENDAR"]
-    p = os.path.join(d, uid + ".ics"); tmp = p + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="") as f: f.write("\r\n".join(lines) + "\r\n")
-    os.replace(tmp, p)
+    p = os.path.join(d, uid + ".ics")
+    fd, tmp = tempfile.mkstemp(prefix=".event-", suffix=".tmp", dir=d)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write("\r\n".join(lines) + "\r\n")
+            f.flush(); os.fsync(f.fileno())
+        os.replace(tmp, p)
+        tmp = None
+    finally:
+        if tmp is not None: os.unlink(tmp)
     return p
 
 
 def delete_event(path, uid, data=None):
-    """Remove an event the quick entry wrote (only files inside our own calendar dir are ever deleted)."""
-    d = os.path.realpath(os.path.join(data or DATA, "calendar"))
-    if os.path.dirname(os.path.realpath(path)) == d:
-        try: os.unlink(path); return True
-        except OSError: return False
-    return False
+    """Remove only a validated panel-created event matching the requested UID."""
+    from .local_events import CalendarError, inspect_local, delete_local
+    try:
+        current = inspect_local(path, uid, data)
+        return delete_local(path, uid, current['revision'], data)
+    except (CalendarError, OSError):
+        return False
