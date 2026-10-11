@@ -147,7 +147,17 @@ class WifiPage(Page):
             rc, out = su.run_sync(*cmd, timeout=45, stdin=(pw + "\n") if pw else None); return rc, out
         def done(res):
             rc, out = res if not isinstance(res, Exception) else (1, "")
-            self.win.idle("Connected." if rc == 0 else "Could not join that network. Check the password and try again.")
+            messages = {
+                0: "Connected.",
+                8: "Wi-Fi service is unavailable. Try again shortly.",
+                3: "Joining the network timed out. Try again.",
+                124: "Joining the network timed out. Try again.",
+                10: "That network is no longer available. Scan again and try again.",
+                4: "Could not join that network. Check the password or network settings and try again.",
+            }
+            # nmcli output can contain interactive secret prompts; display only
+            # known exit-code messages, never the command's raw output.
+            self.win.idle(messages.get(rc, "Could not join that network. Try again."))
             self.scan()
         su.bg(work, done)
     def forget(self, name):

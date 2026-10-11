@@ -18,10 +18,26 @@ done
 if [ "${CARPATIC_SKIP_PACKAGES:-0}" != 1 ]; then
     apk add gtk+3.0-dev libxext-dev 'picom>=13' mesa-dri-gallium mesa-utils xfdesktop xdg-user-dirs xrandr xprop dmenu xautolock i3lock-color playerctl \
         thunar gvfs gvfs-fuse udisks2 udiskie \
+        networkmanager networkmanager-openrc networkmanager-cli networkmanager-wifi \
         pipewire pipewire-pulse wireplumber alsa-utils firefox xdg-utils \
         libinput-tools xinput xset setxkbmap libxtst flatpak util-linux btrfs-progs flock \
         elogind elogind-openrc polkit-elogind polkit-gnome dbus-openrc polkit-openrc
 fi
+# GUI networking runtime contract, including externally supplied offline APKs.
+# Keep existing wpa/iwd selection and interface/service ownership intact.
+# Fresh installer provisioning owns service enablement; custom network setups
+# require deliberate migration rather than starting competing DHCP managers.
+command -v nmcli >/dev/null 2>&1 || {
+    echo 'Required desktop networking runtime is missing: nmcli' >&2
+    exit 1
+}
+for required_network_file in /usr/sbin/NetworkManager /etc/init.d/networkmanager; do
+    [ -x "$required_network_file" ] || {
+        echo "Required desktop networking runtime is missing: $required_network_file" >&2
+        exit 1
+    }
+done
+# End GUI networking runtime contract.
 sh alpine/desktop-services.sh
 install -m755 "$SRC/desktop/session/carpatic-status" "$H/.local/share/dwm-titus/scripts/"
 SKIP_PACKAGES=${CARPATIC_SKIP_PACKAGES:-0} SKIP_DWM=1 CARPATIC_USER="$U" DESKTOP_SRC="$SRC/desktop" sh "$SRC/configurator/install.sh"

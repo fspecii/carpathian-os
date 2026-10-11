@@ -12,10 +12,12 @@ python3 tests/storage-mounts.py
 python3 tests/storage-trash.py
 python3 tests/storage-cache.py
 python3 tests/wifi-scan.py
+python3 tests/wifi-connect.py
 python3 tests/default-apps.py
 python3 tests/desktop-commands.py
 python3 tests/desktop-files-settings.py
 python3 tests/removable-media-install.py
+python3 tests/network-install.py
 python3 tests/desktop-wallpaper.py
 python3 tests/reminders.py
 python3 tests/notes-storage.py
