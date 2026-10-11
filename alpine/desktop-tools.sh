@@ -19,7 +19,7 @@ if [ "${CARPATIC_SKIP_PACKAGES:-0}" != 1 ]; then
     apk add gtk+3.0-dev libxext-dev 'picom>=13' mesa-dri-gallium mesa-utils xfdesktop xdg-user-dirs xrandr xprop dmenu xautolock i3lock-color playerctl \
         thunar gvfs gvfs-fuse udisks2 udiskie \
         pipewire pipewire-pulse wireplumber alsa-utils firefox xdg-utils \
-        libinput-tools xinput xset setxkbmap libxtst flatpak util-linux \
+        libinput-tools xinput xset setxkbmap libxtst flatpak util-linux btrfs-progs flock \
         elogind elogind-openrc polkit-elogind polkit-gnome dbus-openrc polkit-openrc
 fi
 sh alpine/desktop-services.sh

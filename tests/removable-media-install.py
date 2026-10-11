@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DESKTOP = Path(os.environ.get('CARPATIC_DESKTOP_TOOLS_TEST_SOURCE', ROOT / 'alpine/desktop-tools.sh'))
 SOURCE = ROOT / 'integration/carpatic'
 REQUIRED = {'thunar', 'gvfs', 'gvfs-fuse', 'udisks2', 'udiskie'}
+RECOVERY_REQUIRED = {'btrfs-progs', 'flock'}
 
 
 def installer_parts():
@@ -62,6 +63,34 @@ class RemovableMediaInstallation(unittest.TestCase):
         self.assertTrue({'dbus-openrc', 'elogind', 'polkit-elogind', 'polkit-gnome'} <= set(packages))
         self.assertEqual(contents, (SOURCE / 'compat/share/udiskie.yml').read_bytes())
         self.assertEqual(mode, 0o644)
+
+    def test_online_recovery_tools_are_explicit_dependencies(self):
+        result, packages, _, _ = self.stage(0)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(RECOVERY_REQUIRED <= set(packages))
+
+    def test_offline_iso_requires_each_recovery_tool(self):
+        text = (ROOT / 'scripts/build-dev-iso.sh').read_text()
+        start = text.index('for required in xterm ')
+        block = text[start:text.index('\ndone', start)+len('\ndone')]
+        names = shlex.split(block.split('for required in ',1)[1].split('; do',1)[0])
+        self.assertTrue(RECOVERY_REQUIRED <= set(names))
+        with tempfile.TemporaryDirectory() as directory:
+            apks=Path(directory)
+            for name in names: (apks/(name+'-1.0-r0.apk')).touch()
+            def check():
+                return subprocess.run(['/bin/sh','-eu','-c',block],capture_output=True,text=True,
+                                      env={'PATH':'/usr/bin:/bin','apks':directory})
+            self.assertEqual(check().returncode,0)
+            for name in sorted(RECOVERY_REQUIRED):
+                path=apks/(name+'-1.0-r0.apk');path.unlink()
+                # A similarly named package must not satisfy the exact root.
+                decoy=apks/(name+'-extra-1.0-r0.apk');decoy.touch()
+                result=check()
+                self.assertNotEqual(result.returncode,0,name)
+                self.assertIn('Missing required offline package: '+name,result.stderr)
+                decoy.unlink();path.touch()
+                self.assertEqual(check().returncode,0)
 
     def test_offline_skip_still_installs_and_refreshes_policy(self):
         result, packages, contents, mode = self.stage(1, existing=b'obsolete policy\n')
