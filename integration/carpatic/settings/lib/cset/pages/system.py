@@ -5,6 +5,7 @@ from .. import sysutil as su, ui, theme
 from ..app import Page
 from ..ui import *
 from . import about_data as ad
+from .. import trash as trash_backend
 
 DESIGN = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "..", "..", "design", "brand"), "/usr/share/carpatic/brand", "/usr/local/share/carpatic/brand"]
 
@@ -228,17 +229,24 @@ REAL_FS = {"ext4", "ext3", "ext2", "btrfs", "xfs", "f2fs", "vfat", "exfat", "ntf
 def mounts(path="/proc/mounts"):
     """[(device, mountpoint, fstype, total, free)] for real filesystems, one per device"""
     res = []; seen = set()
-    try: lines = open(path).read().splitlines()
+    try:
+        with open(path) as source: lines = source.read().splitlines()
     except OSError: return res
     for l in lines:
         p = l.split()
-        if len(p) < 3 or p[2] not in REAL_FS or p[0] in seen: continue
-        if p[1].startswith(("/var/lib/docker", "/snap", "/boot/efi")) and p[1] != "/": pass
-        try: st = os.statvfs(p[1])
+        if len(p) < 3 or p[2] not in REAL_FS: continue
+        # /proc/mounts escapes spaces, tabs, newlines and backslashes. Decode
+        # before looking up the filesystem, otherwise ordinary USB names vanish.
+        device = re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), p[0])
+        mountpoint = re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), p[1])
+        if device in seen: continue
+        if any(mountpoint == prefix or mountpoint.startswith(prefix + "/")
+               for prefix in ("/var/lib/docker", "/snap", "/boot/efi")): continue
+        try: st = os.statvfs(mountpoint)
         except OSError: continue
         total = st.f_blocks * st.f_frsize
         if total <= 0: continue
-        seen.add(p[0]); res.append((p[0], p[1].replace("\\040", " "), p[2], total, st.f_bavail * st.f_frsize))
+        seen.add(device); res.append((device, mountpoint, p[2], total, st.f_bavail * st.f_frsize))
     return res
 
 def dir_size(path, timeout=20):
@@ -266,10 +274,13 @@ class StoragePage(Page):
             if not os.path.isdir(p): continue
             r = InfoRow("Cache" if name == ".cache" else name, "Measuring...", key="home-" + name); r.set_busy(True); self.home.add(r); self.home_rows[p] = r
         su.bg(lambda: {p: dir_size(p) for p in self.home_rows}, self.fill_home)
-        self.trash = os.path.expanduser("~/.local/share/Trash/files")
         h = pb.group("Free up space")
-        tsz = dir_size(self.trash, 5) if os.path.isdir(self.trash) else 0
-        self.trash_row = ButtonRow("Empty the Trash", su.human_bytes(tsz) + " in the Trash" if tsz else "The Trash is empty", "Empty", self.empty_trash, "destructive", key="trash"); self.trash_row.buttons[0].set_sensitive(tsz > 0); h.add(self.trash_row)
+        self._trash_busy = False
+        self.trash_row = ButtonRow("Empty the Trash", "Checking the Trash...", "Empty", self.empty_trash, "destructive", key="trash")
+        self.trash_row.buttons[0].set_sensitive(False)
+        self.trash_row.add_button("Refresh", self.refresh_trash)
+        h.add(self.trash_row)
+        self.refresh_trash()
         h.add(ButtonRow("Clear cached thumbnails", "They are made again when needed", "Clear", lambda: self.win.apply("sh", "-c", "rm -rf ~/.cache/thumbnails ~/.cache/carpatic/thumbs", msg="Clearing...", done=lambda *_: self.win.idle("Cleared.")), key="cache"))
         if su.which("carpatic-rollback") and fs_of_root() == "btrfs":
             snaps = [l for l in su.lines("carpatic-rollback", "list") if not l.startswith("No snapshots")]
@@ -279,9 +290,33 @@ class StoragePage(Page):
         tot = sum(res.values()) or 1
         for p, sz in res.items():
             r = self.home_rows[p]; r.set_busy(False); r.set_value(su.human_bytes(sz))
+    def on_show(self):
+        if hasattr(self, "trash_row"):
+            self.refresh_trash()
+    def _trash_start(self, text):
+        self._trash_busy = True
+        self.trash_row.set_sub(text)
+        for button in self.trash_row.buttons:
+            button.set_sensitive(False)
+        self.trash_row.set_busy(True)
+    def _trash_done(self, result):
+        self._trash_busy = False
+        self.trash_row.set_busy(False)
+        self.trash_row.set_sub(trash_backend.status_text(result))
+        known = not isinstance(result, Exception) and not result.unavailable
+        self.trash_row.buttons[0].set_sensitive(known and result.count > 0)
+        self.trash_row.buttons[1].set_sensitive(True)
+    def refresh_trash(self):
+        if self._trash_busy:
+            return
+        self._trash_start("Checking the Trash...")
+        su.bg(trash_backend.inspect_trash, self._trash_done)
     def empty_trash(self):
-        if ui.confirm(self.win, "Empty the Trash?", "Everything in it is deleted for good.", "Empty", True):
-            self.win.apply("sh", "-c", "rm -rf ~/.local/share/Trash/files/* ~/.local/share/Trash/info/*", msg="Emptying the Trash...", done=lambda *_: (self.trash_row.set_sub("The Trash is empty"), self.trash_row.buttons[0].set_sensitive(False)))
+        if self._trash_busy:
+            return
+        if ui.confirm(self.win, "Empty the Trash?", "Everything in the Trash on connected drives is deleted for good.", "Empty", True):
+            self._trash_start("Emptying the Trash...")
+            su.bg(trash_backend.empty_trash, self._trash_done)
 
 # ---------------------------------------------------------------- Privacy & Security
 def secure_boot():

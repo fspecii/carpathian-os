@@ -8,6 +8,8 @@ python3 tests/progress-errors.py
 python3 tests/rollback-commands.py
 python3 tests/display-commands.py
 python3 tests/settings-search.py
+python3 tests/storage-mounts.py
+python3 tests/storage-trash.py
 python3 tests/default-apps.py
 python3 tests/desktop-commands.py
 python3 tests/desktop-files-settings.py
