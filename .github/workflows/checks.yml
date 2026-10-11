@@ -31,7 +31,8 @@ jobs:
           sudo apt-get install --no-install-recommends -y \
             build-essential fontconfig fonts-dejavu-core \
             xvfb xdotool x11-utils libx11-6 libxext6 \
-            dbus-daemon python3 python3-pil python3-gi python3-gi-cairo gir1.2-gtk-3.0
+            dbus-daemon python3 python3-pil python3-gi python3-gi-cairo gir1.2-gtk-3.0 \
+            xdg-utils desktop-file-utils shared-mime-info file
           rustup toolchain install 1.85.1 --profile minimal --component rustfmt
       - name: Run quick checks
         run: |

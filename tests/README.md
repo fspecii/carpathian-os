@@ -24,3 +24,5 @@ The fixture manager refuses new clones or ordinary VM starts below 1 GiB of avai
 ## Installer identity
 
 The quick suite includes five private controlling-terminal checks for the selected wordmark, mountain alignment, animation/reduced motion, resize and terminal restoration. They require no graphical desktop. Theme checks include canonical/symbolic logo geometry and palette contrast.
+
+The private Default Apps GTK checks also require xdg-utils, desktop-file-utils, shared-mime-info and file. They use an isolated home and a temporary file receiver.
