@@ -6,7 +6,8 @@ selected day, dimmed neighbours, event dots, agenda under the grid, quick entry 
 clear and do-not-disturb."""
 import datetime as dt
 import json, os, shutil, subprocess, threading
-from gi.repository import GLib
+from gi.repository import GLib, Gio
+from pathlib import Path
 from . import gfx, calmath, events as ev, notes as nt
 from .kit import View, Node, Group, p_button
 
@@ -80,18 +81,70 @@ class CalView(View):
         self.reminders_count = None
         self.reminders_status = 'Loading reminders…'
         self._reminders_busy = False
+        self._reminders_closed = False
+        self._reminders_dirty = False
+        self._reminders_monitor = None
+        self._reminders_handler = None
+        root = Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share')
+        self._reminders_path = root / 'carpatic/reminders/reminders.json' if root.is_absolute() else None
+        self._watch_reminders()
         self._reminders_timer = GLib.timeout_add(150, self._load_reminders)
+
+    def _watch_reminders(self):
+        if self._reminders_monitor:
+            self._reminders_monitor.disconnect(self._reminders_handler)
+            self._reminders_monitor.cancel()
+            self._reminders_monitor = None
+        if self._reminders_closed or self._reminders_path is None: return
+        directory = self._reminders_path.parent
+        while not directory.is_dir() and directory != directory.parent:
+            directory = directory.parent
+        self._reminders_watch_dir = directory
+        try:
+            self._reminders_monitor = Gio.File.new_for_path(str(directory)).monitor_directory(
+                Gio.FileMonitorFlags.WATCH_MOVES, None)
+            self._reminders_handler = self._reminders_monitor.connect('changed', self._reminders_changed)
+        except GLib.Error:
+            pass  # Initial/date refresh still works when monitoring is unavailable.
+
+    def _reminders_changed(self, monitor, file, other, event):
+        if self._reminders_closed: return
+        # Watch the nearest existing ancestor without creating user directories.
+        # Rebind as first-use storage directories appear; ignore ledger/lock churn.
+        target = self._reminders_path
+        directory = self._reminders_watch_dir
+        wanted = target
+        while wanted.parent != directory and wanted != wanted.parent:
+            wanted = wanted.parent
+        paths = [item.get_path() for item in (file, other) if item is not None]
+        if str(wanted) not in paths and str(directory) not in paths: return
+        self._watch_reminders()
+        self._reminders_dirty = True
+        if not self._reminders_busy and not self._reminders_timer:
+            self._reminders_timer = GLib.timeout_add(150, self._load_reminders)
+
+    def dispose(self):
+        self._reminders_closed = True
+        if self._reminders_timer:
+            GLib.source_remove(self._reminders_timer)
+            self._reminders_timer = 0
+        if self._reminders_monitor:
+            self._reminders_monitor.disconnect(self._reminders_handler)
+            self._reminders_monitor.cancel()
+            self._reminders_monitor = None
 
     def refresh(self):
         # Defer new I/O until after first paint / date-selection rendering.
-        if (hasattr(self, 'reminders_day') and self.reminders_day != self.cal.selected
+        if (hasattr(self, 'reminders_day') and not self._reminders_closed
+                and (self.reminders_day != self.cal.selected or self._reminders_dirty)
                 and not self._reminders_timer and not self._reminders_busy):
             self._reminders_timer = GLib.timeout_add(150, self._load_reminders)
         super().refresh()
 
     def _load_reminders(self):
         self._reminders_timer = 0
-        if self._reminders_busy: return False
+        if self._reminders_closed or self._reminders_busy: return False
+        self._reminders_dirty = False
         day = self.cal.selected
         self._reminders_busy = True
         def worker():
@@ -110,6 +163,7 @@ class CalView(View):
             GLib.idle_add(deliver, count, status)
         def deliver(count, status):
             self._reminders_busy = False
+            if self._reminders_closed: return False
             self.reminders_day = day
             self.reminders_count = count
             self.reminders_status = status

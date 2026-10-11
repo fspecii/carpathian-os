@@ -82,6 +82,9 @@ def main(args):
             GLib.timeout_add(700, lambda: (shot(args.shot), Gtk.main_quit(), False)[2])
         Gtk.main()
     finally:
+        if 'view' in locals():
+            dispose = getattr(view, 'dispose', None)
+            if dispose: dispose()
         try: os.unlink(pidfile)
         except OSError: pass
     return 0

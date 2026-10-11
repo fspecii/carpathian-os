@@ -214,6 +214,15 @@ class ReminderGuiTests(unittest.TestCase):
             view = CalView(Theme(DEFAULT_LIGHT), cal, None, on_close=lambda: closed.append(True))
             self.pump_until(lambda: view.reminders_day == cal.selected)
             self.assertEqual(view.reminders_count, 1)
+            # The store atomically replaces JSON; the open flyout must observe
+            # external creation/completion without reopening or changing date.
+            subprocess.run([str(CLI), 'add', 'External today', '--due-date', '2026-10-11'],
+                           env=os.environ.copy(), check=True, capture_output=True)
+            self.pump_until(lambda: view.reminders_count == 2)
+            external = next(item for item in self.store.list() if item['title'] == 'External today')
+            self.store.update(external['id'], completed=True)
+            self.pump_until(lambda: view.reminders_count == 1)
+            self.assertEqual(cal.selected, dt.date(2026, 10, 11))
             nodes = {node.id: node for node in view.build() if node.id}
             self.assertIn('cal:reminders', nodes)
             self.assertIn('cal:new-reminder', nodes)
@@ -226,6 +235,50 @@ class ReminderGuiTests(unittest.TestCase):
                 self.pump_until(lambda: bool(closed))
                 argv = launch.call_args.args[0]
                 self.assertEqual(argv[1:], ['--date', '2026-10-12', '--new'])
+            # Unrelated notifier ledger churn must not trigger store I/O.
+            from gi.repository import Gio
+            view._reminders_changed(view._reminders_monitor,
+                Gio.File.new_for_path(str(self.store.path.parent / 'delivery-ledger.json')),
+                None, Gio.FileMonitorEvent.CHANGED)
+            self.assertEqual(view._reminders_timer, 0)
+            target = Gio.File.new_for_path(str(self.store.path))
+            view._reminders_changed(view._reminders_monitor, target, None, Gio.FileMonitorEvent.CHANGED)
+            scheduled = view._reminders_timer
+            view._reminders_changed(view._reminders_monitor, target, None, Gio.FileMonitorEvent.CHANGED)
+            self.assertEqual(view._reminders_timer, scheduled)
+            monitor = view._reminders_monitor
+            view.dispose()
+            view.dispose()  # Popup teardown and application finally may both run.
+            self.assertTrue(monitor.is_cancelled())
+            self.assertEqual(view._reminders_timer, 0)
+            count = view.reminders_count
+            self.store.add('After dismissal', due_date='2026-10-12')
+            view._load_reminders()
+            self.assertEqual(view.reminders_count, count)
+
+
+    def test_gui_calendar_first_use_directory_and_shutdown(self):
+        gui_guard()
+        sys.path.insert(0, str(ROOT / 'integration/carpatic/panel/lib'))
+        from carpatic_panel.flyout_cal import CalModel, CalView
+        from carpatic_panel.theme import Theme, DEFAULT_LIGHT
+        data = Path(self.temporary.name) / 'new-data'
+        with patch.dict(os.environ, {'XDG_DATA_HOME': str(data),
+                                    'PATH': str(CLI.parent) + ':' + os.environ.get('PATH', '')}):
+            cal = CalModel(today=dt.date(2026, 10, 11), data=self.temporary.name)
+            view = CalView(Theme(DEFAULT_LIGHT), cal, None)
+            self.addCleanup(view.dispose)
+            self.pump_until(lambda: view.reminders_count == 0)
+            self.assertFalse(data.exists())
+            subprocess.run([str(CLI), 'add', 'First note', '--due-date', '2026-10-11'],
+                           check=True, capture_output=True)
+            self.pump_until(lambda: view.reminders_count == 1)
+            self.assertEqual(view._reminders_watch_dir, data / 'carpatic/reminders')
+            view.dispose()
+            # Completion from an already running load may be queued after dispose;
+            # it must never redraw/rearm the closed view.
+            view.refresh = lambda: self.fail('Closed calendar refreshed')
+            self.pump_until(lambda: not view._reminders_busy)
 
 
 if __name__ == '__main__':

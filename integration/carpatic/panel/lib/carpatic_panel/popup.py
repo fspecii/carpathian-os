@@ -93,6 +93,8 @@ class Popup(Gtk.Window):
 
     def _destroyed(self, *_):
         self._closed = True
+        dispose = getattr(self.view, 'dispose', None)
+        if dispose: dispose()
         for source in tuple(self._sources): GLib.source_remove(source)
         self._sources.clear()
         self._screen.disconnect(self._compositor_signal)
