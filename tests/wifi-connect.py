@@ -52,6 +52,67 @@ class Commands(unittest.TestCase):
   _,done=self.pending.pop();done(RuntimeError('Untrusted command output'))
   self.assertEqual(self.messages[-1],'Could not join that network. Try again.')
 
+class ProfileActions(unittest.TestCase):
+ setUp=Commands.setUp
+ PROFILE={'name':'Renamed profile','ssid':'Fixture network','uuid':'11111111-1111-4111-8111-111111111111'}
+ def test_duplicate_profiles_require_explicit_selection_without_join(self):
+  network={'ssid':'Fixture network','secure':True,'active':False}
+  other=dict(self.PROFILE,uuid='22222222-2222-4222-8222-222222222222')
+  with patch.object(self.page,'connect') as connect:
+   self.page.join_network(network,[self.PROFILE,other])
+  connect.assert_not_called()
+  self.assertIn('Known networks',self.messages[-1])
+  self.assertEqual(self.pending,[])
+ def test_one_profile_routes_exact_selected_identity(self):
+  network={'ssid':'Fixture network','secure':True,'active':False}
+  with patch.object(self.page,'connect') as connect:
+   self.page.join_network(network,[self.PROFILE])
+  connect.assert_called_once_with(network,True,self.PROFILE)
+ def test_saved_connect_uses_exact_uuid_without_secret_prompt(self):
+  calls=[]
+  self.page.connect.__globals__['su'].run_sync=lambda *args,**kwargs:(calls.append((args,kwargs)) or (0,''))
+  with patch.object(self.page.connect.__globals__['ui'],'ask_text') as prompt:
+   self.page.connect({'ssid':'Fixture network','secure':True},True,self.PROFILE)
+   work,done=self.pending.pop();done(work())
+  prompt.assert_not_called()
+  self.assertEqual(calls[0][0],('nmcli','con','up','uuid',self.PROFILE['uuid']))
+  self.assertEqual(self.messages[-1],'Connected.')
+ def test_saved_failure_guides_configuration_without_raw_output(self):
+  os.environ['FIXTURE_NMCLI_RC']='4'
+  self.page.connect({'ssid':'Fixture network','secure':True},True,self.PROFILE)
+  work,done=self.pending.pop();done(work())
+  self.assertIn('Configure',self.messages[-1])
+  self.assertNotIn('Untrusted command output',self.messages[-1])
+ def configure_result(self, executable, spawn=None):
+  self.page.configure.__globals__['su'].which=lambda _:bool(executable)
+  with patch.object(subprocess,'Popen',side_effect=spawn) as process:
+   self.page.configure(self.PROFILE)
+   work,done=self.pending.pop();done(work())
+  return process
+ def test_missing_editor_returns_actionable_message_without_spawn(self):
+  process=self.configure_result(None)
+  process.assert_not_called()
+  self.assertIn('unavailable',self.messages[-1].lower())
+  self.assertIn('forget',self.messages[-1].lower())
+  self.assertIn('join',self.messages[-1].lower())
+ def test_editor_spawn_failure_returns_known_message(self):
+  self.configure_result('/fixture/nm-connection-editor',OSError('private startup diagnostic'))
+  self.assertIn('could not',self.messages[-1].lower())
+  self.assertNotIn('private startup diagnostic',self.messages[-1])
+ def test_running_editor_is_success_and_launches_exact_uuid(self):
+  child=SimpleNamespace(wait=lambda timeout:(_ for _ in ()).throw(subprocess.TimeoutExpired('fixture',timeout)))
+  process=self.configure_result('/fixture/nm-connection-editor',lambda *args,**kwargs:child)
+  args,kwargs=process.call_args
+  self.assertEqual(args[0],['nm-connection-editor','--edit='+self.PROFILE['uuid']])
+  self.assertEqual(kwargs['stdin'],subprocess.DEVNULL)
+  self.assertEqual(kwargs['stdout'],subprocess.DEVNULL)
+  self.assertEqual(kwargs['stderr'],subprocess.DEVNULL)
+  self.assertTrue(kwargs['start_new_session'])
+  self.assertNotIn('could not',self.messages[-1].lower())
+ def test_editor_immediate_nonzero_exit_is_failure(self):
+  self.configure_result('/fixture/nm-connection-editor',lambda *args,**kwargs:SimpleNamespace(wait=lambda timeout:1))
+  self.assertIn('could not',self.messages[-1].lower())
+
 if GTK_MODE:
  class ActualGtk(unittest.TestCase):
   setUp=Commands.setUp

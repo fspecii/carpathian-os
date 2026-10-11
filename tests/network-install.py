@@ -8,7 +8,7 @@ import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
 DESKTOP=ROOT/'alpine/desktop-tools.sh'
-REQUIRED={'networkmanager','networkmanager-openrc','networkmanager-cli','networkmanager-wifi'}
+REQUIRED={'networkmanager','networkmanager-openrc','networkmanager-cli','networkmanager-wifi','network-manager-applet'}
 
 class NetworkingInstallation(unittest.TestCase):
     def stage(self,skip,missing=None):
@@ -16,6 +16,7 @@ class NetworkingInstallation(unittest.TestCase):
             root=Path(directory);bin=root/'bin';bin.mkdir();calls=root/'calls'
             (bin/'apk').write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$APK_CALLS"\n');(bin/'apk').chmod(0o755)
             if missing!='nmcli':(bin/'nmcli').write_text('#!/bin/sh\nexit 0\n');(bin/'nmcli').chmod(0o755)
+            if missing!='nm-connection-editor':(bin/'nm-connection-editor').write_text('#!/bin/sh\nexit 0\n');(bin/'nm-connection-editor').chmod(0o755)
             text=DESKTOP.read_text();start=text.index('if [ "${CARPATIC_SKIP_PACKAGES:-0}" != 1 ]; then')
             end=text.index('# End GUI networking runtime contract.',start)
             block=text[start:end]
@@ -33,7 +34,7 @@ class NetworkingInstallation(unittest.TestCase):
         result,packages=self.stage(1)
         self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(packages,[])
     def test_each_missing_runtime_fails_even_when_packages_skipped(self):
-        for missing in ('nmcli','/usr/sbin/NetworkManager','/etc/init.d/networkmanager'):
+        for missing in ('nmcli','nm-connection-editor','/usr/sbin/NetworkManager','/etc/init.d/networkmanager'):
             for skip in (0,1):
                 with self.subTest(missing=missing,skip=skip):
                     result,packages=self.stage(skip,missing)

@@ -59,12 +59,13 @@ class WifiPage(Page):
         self._scan_running = True
         self.scan_row.set_busy(True)
         def work():
-            import subprocess
+            import subprocess, time
+            deadline = time.monotonic() + 25
             def query(*args):
                 # Read-only queries must retain exit status: empty stdout is
                 # also returned when NetworkManager is unavailable.
                 return subprocess.run(["nmcli", *args], capture_output=True, text=True,
-                                      timeout=25, env=dict(os.environ, LC_ALL="C"))
+                                      timeout=max(.1, deadline - time.monotonic()), env=dict(os.environ, LC_ALL="C"))
             radio = query("radio", "wifi")
             if radio.returncode != 0:
                 return {"error": "service" if radio.returncode == 8 else "radio"}
@@ -76,10 +77,25 @@ class WifiPage(Page):
             networks = query("-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "dev", "wifi", "list", "--rescan", "auto")
             if networks.returncode != 0:
                 return {"error": "service" if networks.returncode == 8 else "scan", "enabled": True}
-            profiles = query("-t", "-f", "NAME,TYPE", "con", "show")
+            profiles = query("-t", "-f", "NAME,UUID,TYPE", "con", "show")
             if profiles.returncode != 0:
                 return {"error": "service" if profiles.returncode == 8 else "profiles", "enabled": True}
-            return {"enabled": True, "text": networks.stdout, "cons": profiles.stdout.splitlines()}
+            saved = []
+            for line in profiles.stdout.splitlines():
+                fields = split_t(line)
+                if len(fields) != 3 or fields[2] not in ('802-11-wireless', 'wifi'): continue
+                name, uuid, _ = fields
+                if not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}', uuid):
+                    return {'error': 'profiles', 'enabled': True}
+                if time.monotonic() >= deadline: return {'error': 'profiles', 'enabled': True}
+                details = query('-t', '-f', '802-11-wireless.ssid', 'con', 'show', 'uuid', uuid)
+                if details.returncode != 0: return {'error': 'profiles', 'enabled': True}
+                rows = details.stdout.splitlines()
+                value = rows[0].split(':', 1) if len(rows) == 1 else []
+                if len(value) != 2 or value[0] != '802-11-wireless.ssid':
+                    return {'error': 'profiles', 'enabled': True}
+                saved.append({'name': name, 'uuid': uuid, 'ssid': value[1]})
+            return {"enabled": True, "text": networks.stdout, "cons": saved}
         def done(res):
             self._scan_running = False
             self.fill(res)
@@ -112,7 +128,7 @@ class WifiPage(Page):
         self.nets.set_sensitive(enabled); self.known.set_sensitive(enabled)
         for r in self.nets_rows: self.nets.list.remove(r); self.nets.rows.remove(r)
         self.nets_rows = []
-        saved = [split_t(c)[0] for c in cons if len(split_t(c)) > 1 and split_t(c)[1] in ("802-11-wireless", "wifi")]
+        saved = {profile['ssid'] for profile in cons}
         if not enabled:
             self.scan_row.set_title("Wi-Fi is off"); self.scan_row.set_sub("Turn it on to see networks nearby."); self.scan_row.buttons[0].hide(); return
         self.scan_row.buttons[0].show()
@@ -123,25 +139,57 @@ class WifiPage(Page):
             if n["secure"]: r.ctl.pack_start(Gtk.Image.new_from_icon_name("changes-prevent-symbolic", Gtk.IconSize.BUTTON), False, False, 0)
             if n["active"]:
                 b = Gtk.Button(label="Disconnect"); b.connect("clicked", lambda *_: self.win.apply("nmcli", "dev", "disconnect", self.wifi_dev(), msg="Disconnecting...", done=lambda *_: self.scan())); r.ctl.pack_start(b, False, False, 0)
-            r.connect("activate", lambda _r, n=n, sv=saved: None if n["active"] else self.connect(n, n["ssid"] in sv))
+            matches = [profile for profile in cons if profile['ssid'] == n['ssid']]
+            r.connect("activate", lambda _r, n=n, matches=matches: self.join_network(n, matches))
             self.nets.add(r); self.nets_rows.append(r); r.show_all()
         self.known.clear()
         if saved:
-            for name in saved:
-                r = ButtonRow(name, "", "Forget", None, "destructive", key="known-" + name); r.buttons[0].connect("clicked", lambda b, nm=name: self.forget(nm)); self.known.add(r)
+            for profile in cons:
+                r = ButtonRow(profile['name'], profile['ssid'], "Forget", None, "destructive", key="known-" + profile['uuid'])
+                r.buttons[0].connect("clicked", lambda b, item=profile: self.forget(item))
+                r.add_button('Connect', lambda item=profile: self.connect({'ssid': item['ssid'], 'secure': True}, True, item))
+                r.add_button('Configure', lambda item=profile: self.configure(item))
+                self.known.add(r)
             self.known.set_no_show_all(False); self.known.show_all()
     def wifi_dev(self):
         for l in su.lines("nmcli", "-t", "-f", "DEVICE,TYPE", "dev"):
             f = split_t(l)
             if len(f) > 1 and f[1] == "wifi": return f[0]
         return ""
-    def connect(self, n, saved):
+    def join_network(self, network, profiles):
+        if network['active']: return
+        if len(profiles) > 1:
+            self.win.idle('Choose Connect beside the profile you want in Known networks.')
+            return
+        self.connect(network, bool(profiles), profiles[0] if profiles else None)
+    def configure(self, profile):
+        self.win.busy('Opening network configuration...')
+        def work():
+            import subprocess
+            available = su.which('nm-connection-editor')
+            if not available: return 'missing'
+            try:
+                child = subprocess.Popen(['nm-connection-editor', '--edit=' + profile['uuid']],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL, start_new_session=True)
+                try: code = child.wait(timeout=1)
+                except subprocess.TimeoutExpired: return 'launched'
+                return 'launched' if code == 0 else 'failed'
+            except OSError: return 'failed'
+        def done(result):
+            messages = {'launched': 'Update the password or other settings in the network editor, then Connect again.',
+                        'missing': 'The network configuration app is unavailable. To enter a new password, Forget this profile and join the network again.',
+                        'failed': 'The network configuration app could not open. Try again.'}
+            self.win.idle(messages.get(result, messages['failed']) if isinstance(result, str) else messages['failed'])
+        su.bg(work, done)
+    def connect(self, n, saved, profile=None):
         pw = None
         if n["secure"] and not saved:
             r = ui.ask_text(self.win, f"Join “{n['ssid']}”", "Type the Wi-Fi password.", "Password", True, "Join")
             if r is None: return
             pw = r[0]
-        cmd = ["nmcli", "dev", "wifi", "connect", n["ssid"]] + (["--ask"] if pw else [])
+        cmd = (["nmcli", "con", "up", "uuid", profile['uuid']] if profile else
+               ["nmcli", "dev", "wifi", "connect", n["ssid"]] + (["--ask"] if pw else []))
         self.win.busy(f"Joining {n['ssid']}...")
         def work():
             rc, out = su.run_sync(*cmd, timeout=45, stdin=(pw + "\n") if pw else None); return rc, out
@@ -157,12 +205,14 @@ class WifiPage(Page):
             }
             # nmcli output can contain interactive secret prompts; display only
             # known exit-code messages, never the command's raw output.
+            if profile and rc == 4:
+                messages[4] = 'Could not connect. Use Configure beside this profile to check its password and network settings.'
             self.win.idle(messages.get(rc, "Could not join that network. Try again."))
             self.scan()
         su.bg(work, done)
-    def forget(self, name):
-        if ui.confirm(self.win, f"Forget “{name}”?", "You will need the password to join it again.", "Forget", True):
-            self.win.apply("nmcli", "con", "delete", name, msg="Forgetting...", done=lambda *_: self.scan())
+    def forget(self, profile):
+        if ui.confirm(self.win, f"Forget “{profile['name']}”?", "You will need the password to join it again.", "Forget", True):
+            self.win.apply("nmcli", "con", "delete", "uuid", profile['uuid'], msg="Forgetting...", done=lambda *_: self.scan())
 
 # ---------------------------------------------------------------- Bluetooth
 def parse_bt_info(text):

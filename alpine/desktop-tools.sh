@@ -18,7 +18,7 @@ done
 if [ "${CARPATIC_SKIP_PACKAGES:-0}" != 1 ]; then
     apk add gtk+3.0-dev libxext-dev 'picom>=13' mesa-dri-gallium mesa-utils xfdesktop xdg-user-dirs xrandr xprop dmenu xautolock i3lock-color playerctl \
         thunar gvfs gvfs-fuse udisks2 udiskie \
-        networkmanager networkmanager-openrc networkmanager-cli networkmanager-wifi bluez bluez-openrc \
+        networkmanager networkmanager-openrc networkmanager-cli networkmanager-wifi network-manager-applet bluez bluez-openrc \
         pipewire pipewire-pulse wireplumber alsa-utils firefox xdg-utils \
         libinput-tools xinput xset setxkbmap libxtst flatpak util-linux btrfs-progs flock \
         elogind elogind-openrc polkit-elogind polkit-gnome dbus-openrc polkit-openrc
@@ -29,6 +29,10 @@ fi
 # require deliberate migration rather than starting competing DHCP managers.
 command -v nmcli >/dev/null 2>&1 || {
     echo 'Required desktop networking runtime is missing: nmcli' >&2
+    exit 1
+}
+command -v nm-connection-editor >/dev/null 2>&1 || {
+    echo 'Required desktop networking runtime is missing: nm-connection-editor' >&2
     exit 1
 }
 for required_network_file in /usr/sbin/NetworkManager /etc/init.d/networkmanager; do
