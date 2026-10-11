@@ -1,0 +1,17 @@
+{
+  "logo_source": "integration/carpatic/panel/assets/branding/carpathian-os.svg",
+  "logo_sha256": "1f4a6642ec2a50d8e592191407e33b57eb0f0cba86640b624a2128b677449b6b",
+  "font": "DejaVu Sans regular",
+  "font_file": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+  "font_sha256": "ae7b7855e115a5966d8b1b3f80f254ccc117ec86f9965e202ee2940453837280",
+  "font_license": "Bitstream Vera; DejaVu changes public domain; see BOOT-FONT-LICENSE.txt",
+  "cairo_version": "1.18.0",
+  "imagemagick_version": "Version: ImageMagick 6.9.12-98 Q16 x86_64 18038 https://legacy.imagemagick.org",
+  "renderer_sha256": "5c10f9adf6587d15b400de1def2e7f6977dfc1f3c8b9e2e0226963c7bb10ab4a",
+  "files": {
+    "boot-background.svg": "1558b54704a1d6d9d0f027dc8737925233de9b4d07f7e6f20db4ff251ab0ad06",
+    "boot-background.png": "a49ab85ff4d262f48eb135a27670e29b90d68add54c2565ededfcdd6d2054474",
+    "boot-splash.svg": "4b22ff9c508be1285bcbe42d41d1a692904c8778d9f5c31c567cb643c91b03b4",
+    "boot-splash.png": "6470174e6271aec85ad295879eddd83f09657d6ec6ae90228112cb4f11c026b1"
+  }
+}

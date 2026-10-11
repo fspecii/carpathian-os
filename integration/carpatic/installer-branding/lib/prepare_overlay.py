@@ -15,6 +15,27 @@ def replace_once(text, before, after, label):
     return text.replace(before, after, 1)
 
 
+
+def brand_engine(path):
+    """Update the known phase display label in an owned, copied engine only."""
+    path = Path(path)
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('Expected a regular staged installer engine')
+    source = path.read_text()
+    before = '    setup) echo "Running Carpatic setup" ;;'
+    alternate = '    setup) echo "Running Carpatik setup" ;;'
+    after = '    setup) echo "Running Carpathian setup" ;;'
+    matches = [(label, source.count(label)) for label in (before, alternate, after)]
+    if sum(count for _, count in matches) != 1:
+        raise ValueError('Expected exactly one known setup phase label; inherited engine changed')
+    # Match the complete phase dispatch line, leaving phase IDs and commands intact.
+    selected = next(label for label, count in matches if count)
+    if selected not in source.splitlines():
+        raise ValueError('Unexpected setup phase label context; inherited engine changed')
+    if selected != after:
+        path.write_text(source.replace(selected, after, 1))
+
+
 def prepare(root, legacy):
     root = root.resolve(strict=True)
     source_dir = legacy.resolve(strict=True) / 'installer/wizard'
@@ -94,7 +115,15 @@ print_logo() {{
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('overlay', type=Path)
-    parser.add_argument('legacy', type=Path)
+    parser.add_argument('overlay', type=Path, nargs='?')
+    parser.add_argument('legacy', type=Path, nargs='?')
+    parser.add_argument('--engine', type=Path, help='brand a copied, owned engine after adaptation')
     args = parser.parse_args()
-    for path in prepare(args.overlay, args.legacy): print(path)
+    if args.engine is not None:
+        if args.overlay is not None or args.legacy is not None:
+            parser.error('--engine cannot be combined with overlay or legacy')
+        brand_engine(args.engine)
+    else:
+        if args.overlay is None or args.legacy is None:
+            parser.error('overlay and legacy are required without --engine')
+        for path in prepare(args.overlay, args.legacy): print(path)

@@ -207,4 +207,58 @@ class OverlayHostname(unittest.TestCase):
             sys.path.remove(str(branding))
 
 
+class EnginePhaseBranding(unittest.TestCase):
+    def setUp(self):
+        import importlib.util
+        branding = GREETER.parent
+        sys.path.insert(0, str(branding))
+        self.addCleanup(sys.path.remove, str(branding))
+        spec = importlib.util.spec_from_file_location('engine_branding_subject', branding / 'prepare_overlay.py')
+        self.module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.module)
+        self.scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(self.scratch.cleanup)
+        self.path = Path(self.scratch.name) / 'carpatic-engine'
+
+    def test_phase_display_changes_with_shell_ids_commands_intact(self):
+        for spelling in ('Carpatic', 'Carpatik'):
+            source = ('#!/bin/sh\nname_of() {\n  case $1 in\n'
+                      f'    setup) echo "Running {spelling} setup" ;;\n'
+                      '    user) echo "Finalizing user" ;;\n  esac\n}\n'
+                      'PHASE_LIST="setup user"\n'
+                      'CARPATIC_SRC=/usr/share/carpatic\n'
+                      'carpatic-install -y\n')
+            self.path.write_text(source)
+            self.path.chmod(0o755)
+            self.module.brand_engine(self.path)
+            expected = source.replace(f'Running {spelling} setup', 'Running Carpathian setup')
+            self.assertEqual(self.path.read_text(), expected)
+            self.assertEqual(self.path.stat().st_mode & 0o777, 0o755)
+            self.module.brand_engine(self.path)
+            self.assertEqual(self.path.read_text(), expected)
+            subprocess.run(['sh', '-n', str(self.path)], check=True)
+            # Execute only fixture dispatch, avoiding fixture install command.
+            dispatch = expected.split('PHASE_LIST=')[0] + 'name_of setup\n'
+            result = subprocess.check_output(['sh'], input=dispatch, text=True)
+            self.assertEqual(result.strip(), 'Running Carpathian setup')
+
+    def test_missing_duplicate_unknown_context_rejected_without_write(self):
+        for source in ('setup) echo "Running unknown setup" ;;\n',
+                       '    setup) echo "Running Carpatic setup" ;;\n' * 2,
+                       '#    setup) echo "Running Carpatic setup" ;;\n'):
+            self.path.write_text(source)
+            with self.assertRaises(ValueError):
+                self.module.brand_engine(self.path)
+            self.assertEqual(self.path.read_text(), source)
+
+    def test_symlink_rejected(self):
+        target = self.path.with_name('original-engine')
+        source = '    setup) echo "Running Carpatic setup" ;;\n'
+        target.write_text(source)
+        self.path.symlink_to(target)
+        with self.assertRaises(ValueError):
+            self.module.brand_engine(self.path)
+        self.assertEqual(target.read_text(), source)
+
+
 if __name__=='__main__': unittest.main()

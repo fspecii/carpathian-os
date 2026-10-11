@@ -135,6 +135,7 @@ text = text.replace('export PATH=',
     'export CARPATIC_ENGINE=/usr/local/bin/carpatic-install-engine\nexport PATH=', 1)
 launcher.write_text(text)
 PY
+python3 integration/carpatic/installer-branding/lib/prepare_overlay.py --engine "$stage/overlay/usr/local/share/carpatic-rust-installer/engine/carpatic-engine"
 sh -n "$stage/overlay/usr/local/share/carpatic-rust-installer/engine/carpatic-engine"
 tar --owner=0 --group=0 -czf "$stage/carpatic-live.apkovl.tar.gz" -C "$stage/overlay" .
 # Capture every packaged source and input byte; excludes build-only caches.
@@ -155,6 +156,8 @@ xorriso -indev "$base" -outdev "$partial" -boot_image any replay \
     -map "$stage/boot-menus/grub.cfg" /boot/grub/grub.cfg \
     -map "$stage/boot-menus/syslinux.cfg" /boot/syslinux/syslinux.cfg \
     -map "$stage/boot-menus/theme.txt" /boot/grub/themes/carpatic/theme.txt \
+    -map integration/carpatic/installer-branding/assets/boot-background.png /boot/grub/themes/carpatic/background.png \
+    -map integration/carpatic/installer-branding/assets/boot-splash.png /boot/syslinux/splash.png \
     -commit -end >"$run/iso-remaster.log" 2>&1
 # Hard-link publication fails atomically if the final image already exists.
 ln "$partial" "$out"

@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Focused staging checks: display text changes, boot configuration bytes do not."""
 import importlib.util
+import hashlib
+import json
+import struct
+import xml.etree.ElementTree as ET
 from pathlib import Path
 import tempfile
 import unittest
@@ -73,6 +77,37 @@ class BootBranding(unittest.TestCase):
         branding.prepare(self.directory)
         for path in self.directory.iterdir():
             self.assertNotIn(b'\n', path.read_bytes().replace(b'\r\n', b''))
+
+
+class BootAssets(unittest.TestCase):
+    def test_recorded_sources_and_rasters_match(self):
+        assets = ROOT / 'integration/carpatic/installer-branding/assets'
+        metadata = json.loads((assets / 'boot-render-provenance.json').read_text())
+        for name, expected in metadata['files'].items():
+            self.assertEqual(hashlib.sha256((assets / name).read_bytes()).hexdigest(), expected)
+        self.assertEqual(hashlib.sha256((ROOT / metadata['logo_source']).read_bytes()).hexdigest(), metadata['logo_sha256'])
+        self.assertEqual(hashlib.sha256((assets / 'render-boot.py').read_bytes()).hexdigest(), metadata['renderer_sha256'])
+        self.assertIn('Permission is hereby granted', (assets / 'BOOT-FONT-LICENSE.txt').read_text())
+
+    def test_boot_png_format_and_vector_branding(self):
+        assets = ROOT / 'integration/carpatic/installer-branding/assets'
+        namespace = {'s': 'http://www.w3.org/2000/svg'}
+        panel = ET.parse(ROOT / 'integration/carpatic/panel/assets/branding/carpathian-os.svg').getroot()
+        expected_paths = [path.attrib['d'] for path in panel.findall('s:path', namespace)]
+        for name, width, height in [('boot-background', 1280, 720), ('boot-splash', 640, 480)]:
+            data = (assets / (name + '.png')).read_bytes()
+            self.assertEqual(data[:8], b'\x89PNG\r\n\x1a\n')
+            self.assertEqual(data[12:16], b'IHDR')
+            self.assertEqual(struct.unpack('>IIBBBBB', data[16:29]), (width, height, 8, 2, 0, 0, 0))
+            tree = ET.parse(assets / (name + '.svg')).getroot()
+            self.assertEqual(tree.attrib['viewBox'], f'0 0 {width} {height}')
+            logo = tree.find("s:g[@id='mountain']", namespace)
+            self.assertEqual([path.attrib['d'] for path in logo], expected_paths)
+            wordmark = tree.find("s:path[@id='wordmark']", namespace)
+            self.assertEqual(wordmark.attrib['aria-label'], 'Carpathian OS')
+            self.assertGreater(len(wordmark.attrib['d']), 5000)
+            self.assertEqual(tree.findall('s:text', namespace), [])
+            self.assertEqual(tree.find('s:rect', namespace).attrib['fill'], '#0b0e13')
 
 
 if __name__ == '__main__':
