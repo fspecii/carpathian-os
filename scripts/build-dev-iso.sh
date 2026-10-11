@@ -35,7 +35,7 @@ for path in root.glob('*.apk'):
     if path.is_symlink() or path.name not in listed:
         raise SystemExit('Unverified or symlink APK input: ' + path.name)
 PY_APKS
-for required in xterm bluez bluez-openrc blueman networkmanager networkmanager-openrc networkmanager-cli networkmanager-wifi network-manager-applet btrfs-progs flock xfdesktop xdg-user-dirs thunar gvfs gvfs-fuse udisks2 udiskie elogind polkit-elogind polkit-gnome elogind-openrc dbus-openrc polkit-openrc; do
+for required in xterm kmod blkid coreutils util-linux-misc python3 py3-gobject3 libxcb slock bluez bluez-openrc blueman networkmanager networkmanager-openrc networkmanager-cli networkmanager-wifi network-manager-applet btrfs-progs flock xfdesktop xdg-user-dirs thunar gvfs gvfs-fuse udisks2 udiskie elogind polkit-elogind polkit-gnome elogind-openrc dbus-openrc polkit-openrc; do
     present=0
     for file in "$apks/$required"-[0-9]*.apk; do [ ! -f "$file" ] || present=1; done
     [ "$present" = 1 ] || { echo "Missing required offline package: $required" >&2; exit 1; }
@@ -62,6 +62,16 @@ PY_CLEAN
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 xorriso -osirrox on -indev "$base" -extract /carpatic-live.apkovl.tar.gz "$stage/base-overlay.tar.gz" >"$stage/extract.log" 2>&1
+# Extract only known display-text files; boot paths and arguments stay intact.
+mkdir "$stage/boot-menus"
+xorriso -osirrox on -indev "$base" \
+    -extract /boot/grub/grub.cfg "$stage/boot-menus/grub.cfg" \
+    -extract /boot/syslinux/syslinux.cfg "$stage/boot-menus/syslinux.cfg" \
+    -extract /boot/grub/themes/carpatic/theme.txt "$stage/boot-menus/theme.txt" \
+    >"$run/boot-menu-extract.log" 2>&1
+chmod u+w "$stage/boot-menus/grub.cfg" "$stage/boot-menus/syslinux.cfg" "$stage/boot-menus/theme.txt"
+python3 integration/carpatic/installer-branding/lib/prepare_boot_menus.py "$stage/boot-menus"
+sha256sum "$stage/boot-menus/"* >"$run/boot-menu-inputs.sha256"
 mkdir -p "$stage/overlay" "$stage/payload"
 tar -xzf "$stage/base-overlay.tar.gz" -C "$stage/overlay"
 # The greeter uses the Python already carried by the motion package. Make it
@@ -142,6 +152,9 @@ sha256sum "$stage/carpatic-rust-payload.tar.gz" "$stage/carpatic-live.apkovl.tar
 xorriso -indev "$base" -outdev "$partial" -boot_image any replay \
     -map "$stage/carpatic-live.apkovl.tar.gz" /carpatic-live.apkovl.tar.gz \
     -map "$stage/carpatic-rust-payload.tar.gz" /carpatic-rust-payload.tar.gz \
+    -map "$stage/boot-menus/grub.cfg" /boot/grub/grub.cfg \
+    -map "$stage/boot-menus/syslinux.cfg" /boot/syslinux/syslinux.cfg \
+    -map "$stage/boot-menus/theme.txt" /boot/grub/themes/carpatic/theme.txt \
     -commit -end >"$run/iso-remaster.log" 2>&1
 # Hard-link publication fails atomically if the final image already exists.
 ln "$partial" "$out"

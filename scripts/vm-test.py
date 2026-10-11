@@ -76,6 +76,39 @@ def arm_command(vm, meta, a, cdrom):
             '-monitor', f'unix:{vm / "run/monitor.sock"},server,nowait',
             '-pidfile', str(vm / 'run/qemu.pid'), '-daemonize'] + media
 
+def x86_uefi(vm, meta, a):
+    """Keep firmware code immutable and NVRAM owned by this fixture across boots."""
+    def image(value, saved, default):
+        selected = value or meta.get(saved) or default
+        try:
+            return firmware_path(Path(selected))
+        except OSError as error:
+            raise RuntimeError(f'Missing x86 UEFI firmware: {selected}; supply --firmware-code and --firmware-vars') from error
+    code = image(a.firmware_code, 'firmware_code', '/usr/share/OVMF/OVMF_CODE_4M.fd')
+    template = image(a.firmware_vars, 'firmware_vars_template', '/usr/share/OVMF/OVMF_VARS_4M.fd')
+    if code == template or os.path.samefile(code, template):
+        raise RuntimeError('Firmware code and variable template must be distinct')
+    if not code.stat().st_size or not template.stat().st_size:
+        raise RuntimeError('UEFI firmware images must not be empty')
+    # Changing the firmware family under an existing NVRAM store is unsafe.
+    for field, selected in (('firmware_code', code), ('firmware_vars_template', template)):
+        if meta.get('boot_firmware') == 'uefi' and str(selected) != meta.get(field):
+            raise RuntimeError('Existing UEFI fixture must keep its original firmware images')
+    variables = vm / 'uefi-vars.fd'
+    if variables.is_symlink() or (variables.exists() and
+            (not variables.is_file() or variables.stat().st_nlink != 1)):
+        raise RuntimeError('Fixture UEFI variable store must be a regular unshared file')
+    if variables.exists() and any(os.path.samefile(variables, image) for image in (code, template)):
+        raise RuntimeError('Fixture UEFI variable store must not be a firmware template')
+    if not variables.exists():
+        with variables.open('xb') as output, template.open('rb') as source:
+            shutil.copyfileobj(source, output)
+        variables.chmod(0o600)
+    return (['-drive', f'if=pflash,format=raw,unit=0,file={code},readonly=on',
+             '-drive', f'if=pflash,format=raw,unit=1,file={variables}'],
+            dict(boot_firmware='uefi', firmware_code=str(code),
+                 firmware_vars_template=str(template), firmware_vars=str(variables)))
+
 def call(argv, **kwargs):
     return subprocess.run(argv, check=True, **kwargs)
 
@@ -121,8 +154,9 @@ def main():
     clone.add_argument('--port', required=True, type=int)
     start = sub.add_parser('start')
     start.add_argument('--qemu', type=Path, help='Explicit ARM64 QEMU executable')
-    start.add_argument('--firmware-code', type=Path, help='Read-only ARM64 UEFI code image')
-    start.add_argument('--firmware-vars', type=Path, help='ARM64 UEFI variable template copied into fixture')
+    start.add_argument('--uefi', action='store_true', help='Use x86 OVMF UEFI; retained on subsequent starts (default BIOS)')
+    start.add_argument('--firmware-code', type=Path, help='Read-only UEFI code image; ARM64 requires an explicit path')
+    start.add_argument('--firmware-vars', type=Path, help='UEFI variable template copied into fixture; ARM64 requires an explicit path')
     start.add_argument('--graphics', choices=['software', 'virgl'], default='software')
     start.add_argument('--ram', type=int, default=1536)
     start.add_argument('--display', choices=['headless', 'gtk'], default='headless', help='Open a QEMU window only for requested inspection')
@@ -196,11 +230,20 @@ def main():
                   '-device', 'qemu-xhci', '-device', 'usb-tablet', '-device', 'usb-kbd',
                   '-serial', f'file:{vm / "run/serial.log"}', '-monitor', f'unix:{vm / "run/monitor.sock"},server,nowait',
                   '-pidfile', str(vm / 'run/qemu.pid'), '-daemonize'] + media
+            firmware_metadata = {}
             if meta.get('arch', 'x86_64') == 'aarch64':
+                if a.uefi:
+                    parser.error('--uefi selects x86 firmware; ARM64 already requires explicit UEFI paths')
                 argv = arm_command(vm, meta, a, cdrom)
-            elif any((a.qemu, a.firmware_code, a.firmware_vars)):
-                parser.error('ARM64 firmware arguments require an aarch64 fixture')
+            elif a.qemu:
+                parser.error('--qemu is supported only for ARM64 fixtures')
+            elif a.uefi or meta.get('boot_firmware') == 'uefi':
+                firmware_arguments, firmware_metadata = x86_uefi(vm, meta, a)
+                argv += firmware_arguments
+            elif any((a.firmware_code, a.firmware_vars)):
+                parser.error('x86 firmware paths require --uefi')
             call(argv, env={k:v for k,v in os.environ.items() if k != 'WAYLAND_DISPLAY'})
+            meta.update(firmware_metadata)
             if meta.get('arch', 'x86_64') == 'aarch64':
                 meta.update(qemu=str(a.qemu.resolve()), firmware_code=str(a.firmware_code.resolve()), firmware_vars_template=str(a.firmware_vars.resolve()), firmware_vars=str(vm / 'uefi-vars.fd'), acceleration='tcg')
             meta.update(graphics=a.graphics, ram_mib=a.ram, cdrom=str(cdrom) if cdrom else None, cdrom_sha256=cdrom_hash, boot_order='d' if cdrom else 'default')

@@ -10,10 +10,12 @@ python3 tests/animation-matrix-policy.py
 python3 tests/seam-segments.py
 python3 tests/flyout-oracle.py
 python3 tests/installer-branding.py
+python3 tests/iso-boot-branding.py
 python3 tests/prebuilt-architecture.py
 python3 tests/desktop-auth-install.py
 python3 tests/settings-responsive.py
 python3 tests/vm-arm-command.py
+python3 tests/vm-x86-uefi.py
 python3 tests/arm64-live-packaging.py
 python3 tests/arm64-graphics.py
 python3 tests/session-env.py
