@@ -20,7 +20,7 @@ if [ -f packages/SHA256SUMS ]; then
     ( cd packages; sha256sum -c SHA256SUMS )
     apk add --no-network --no-progress "$project"/packages/*.apk
 else
-    apk add --no-progress xterm elogind elogind-openrc polkit-elogind polkit-gnome
+    apk add --no-progress xterm elogind elogind-openrc polkit-elogind polkit-gnome dbus-openrc polkit-openrc
 fi
 for required in xfdesktop xdg-user-dir xprop xterm python3 dbus-run-session pkexec; do
     command -v "$required" >/dev/null 2>&1 || {

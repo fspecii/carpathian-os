@@ -19,8 +19,9 @@ if [ "${CARPATIC_SKIP_PACKAGES:-0}" != 1 ]; then
     apk add gtk+3.0-dev libxext-dev 'picom>=13' mesa-dri-gallium mesa-utils xfdesktop xdg-user-dirs xrandr xprop dmenu xautolock i3lock-color playerctl \
         pipewire pipewire-pulse wireplumber alsa-utils firefox xdg-utils \
         libinput-tools xinput xset setxkbmap libxtst flatpak util-linux \
-        elogind elogind-openrc polkit-elogind polkit-gnome
+        elogind elogind-openrc polkit-elogind polkit-gnome dbus-openrc polkit-openrc
 fi
+sh alpine/desktop-services.sh
 install -m755 "$SRC/desktop/session/carpatic-status" "$H/.local/share/dwm-titus/scripts/"
 SKIP_PACKAGES=${CARPATIC_SKIP_PACKAGES:-0} SKIP_DWM=1 CARPATIC_USER="$U" DESKTOP_SRC="$SRC/desktop" sh "$SRC/configurator/install.sh"
 for f in "$SRC"/desktop/bin/*; do [ -f "$f" ] || continue; install -m755 "$f" /usr/local/bin/; done
