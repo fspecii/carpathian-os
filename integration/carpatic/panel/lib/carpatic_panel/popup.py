@@ -58,8 +58,19 @@ class Popup(Gtk.Window):
         self._entry_css = css
         self._compositor_signal = scr.connect("composited-changed", self._compositor_changed)
         orig = self.canvas.rebuild
+        self._entry_sync_pending = False
+        def sync_later():
+            self._entry_sync_pending = False
+            self.sync_entry()
+            return False
         def rebuild():
-            orig(); self.sync_entry()
+            orig()
+            # A rebuild can run inside GtkOverlay's child drawing traversal.
+            # Change its entry children only after that traversal has finished,
+            # using the current view state if panes changed again meanwhile.
+            if not self._entry_sync_pending:
+                self._entry_sync_pending = True
+                self._schedule(0, sync_later)
         self.canvas.rebuild = rebuild
         self.canvas.rebuild()
         w, h = uiscale.dev(view.size()[0]), uiscale.dev(view.size()[1]); self.set_default_size(w, h); self.resize(w, h)
@@ -192,6 +203,8 @@ class Popup(Gtk.Window):
             e = Gtk.Entry(); e.get_style_context().add_class("cp"); e.set_has_frame(False)
             e.set_placeholder_text(getattr(self.view, "entry_placeholder", "Add event, e.g. Lunch tomorrow 13:00"))
             e.set_visibility(kind != "password"); e.set_halign(Gtk.Align.START); e.set_valign(Gtk.Align.START)
+            if kind != "password": e.set_text(getattr(self.view, "entry_text", ""))
+            e.get_accessible().set_name(getattr(self.view, "entry_accessible_name", getattr(self.view, "entry_placeholder", "Text entry")))
             e.connect("changed", lambda en: self.view.on_entry_change(en.get_text()) if hasattr(self.view, "on_entry_change") else None)
             e.connect("activate", lambda en: self.view.on_entry_activate(en.get_text(), en) if hasattr(self.view, "on_entry_activate") else None)
             self.overlay.add_overlay(e); self.entry = e; e.show()

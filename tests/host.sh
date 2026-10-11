@@ -50,8 +50,9 @@ done
 export DISPLAY=":$(cat "$temporary/display")"
 # Reserve real-session display numbers even if Xvfb chose an unused :0.
 case "$DISPLAY" in :0|:1) printf 'Refusing a reserved display.\n' >&2; exit 1;; esac
-unset WAYLAND_DISPLAY
+unset WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
 export GDK_BACKEND=x11 CARPATIC_WM_TEST_DISPLAY=1
 export CARPATIC_WM_TEST_LOG="$PWD/artifacts/wm-test.log"
 python3 integration/carpatic/panel/tests/test_first_paint.py
+CARPATIC_XVFB_TEST=1 CARPATIC_PRIVATE_DBUS_TEST=1 G_DEBUG=fatal-criticals dbus-run-session -- python3 tests/calendar-compact.py
 cargo test --locked -p carpatic-wm --test x11 -- --ignored --nocapture --test-threads=1

@@ -6,7 +6,7 @@ selected day, dimmed neighbours, event dots, agenda under the grid, quick entry 
 clear and do-not-disturb."""
 import datetime as dt
 import json, os, shutil, subprocess, threading
-from gi.repository import GLib, Gio
+from gi.repository import GLib, Gio, Gdk
 from pathlib import Path
 from . import gfx, calmath, events as ev, notes as nt
 from .kit import View, Node, Group, p_button
@@ -67,7 +67,7 @@ def long_date(d):
 class CalView(View):
     def __init__(self, theme, cal: CalModel, notes_src, look="win", max_h=720, dnd_get=None, dnd_set=None, on_close=None, now_fn=None, weather=None):
         super().__init__(theme)
-        self.cal = cal; self.notes_src = notes_src; self.look = look; self.sp = SPECS[look]
+        self.cal = cal; self.notes_src = notes_src; self.look = look; self.sp = dict(SPECS[look])
         self.radius = self.sp["sr"]; self.W = self.sp["w"]; self.max_h = max_h
         self.dnd_get = dnd_get or (lambda: False); self.dnd_set = dnd_set or (lambda v: None)
         self.on_close = on_close or (lambda: None)
@@ -77,6 +77,9 @@ class CalView(View):
         self.weather = weather
         self.groups = {}
         self.H = self._height()
+        self.mode = "calendar"
+        self.compact = False
+        self.entry_accessible_name = "Add calendar event"
         self.reminders_day = None
         self.reminders_count = None
         self.reminders_status = 'Loading reminders…'
@@ -205,7 +208,7 @@ class CalView(View):
         return max(1, min(3, len(self.cal.agenda()), (avail - 28 - 52) // 44)) if self.cal.agenda() else 0
 
     def _height(self):
-        if self.sp["cols"] == 2: return 580
+        if self.sp["cols"] == 2: return min(self.max_h, 580)
         sp = self.sp
         cal_h = self._cal_h() + 8
         agenda_h = 28 + 36 + (3 * 44 if self.cal.agenda() else 56) + 8
@@ -220,7 +223,18 @@ class CalView(View):
     # ------------------------------------------------------------------ build
     def build(self):
         self.entry_rect = None
+        self.sp = dict(SPECS[self.look])
         sp = self.sp; nodes = []
+        agenda_min = 28 + 36 + (44 * min(3, max(1, len(self.cal.agenda()))) if self.cal.agenda() else 56) + 8 + 44
+        if sp['cols'] == 2:
+            combined_min = 2 * sp['pad'] + 52 + self._cal_h() + 8 + (172 if self.cal.agenda() else 124) + 48
+        else:
+            combined_min = 2 * sp['pad'] + self._cal_h() + 16 + agenda_min + (104 if self.notes else 120)
+            if sp['order'] == 'head-notes-cal': combined_min += 52
+        self.compact = self.H < combined_min
+        if self.compact:
+            return self._compact_build()
+        self.groups.pop('agenda', None)
         if sp["cols"] == 2:
             colw = (self.W - 2 * sp["pad"] - 16) / 2
             nodes += self._notif_block(sp["pad"], sp["pad"], colw, self.H - 2 * sp["pad"], title=True)
@@ -245,6 +259,41 @@ class CalView(View):
             nodes += self._notif_block(x0, y, cw, notes_h, title=True); y += notes_h + 8
             nodes += self._calendar_block(x0, y, cw, card=False); y += cal_h + 4
             nodes += self._agenda_block(x0, y, cw, self.H - sp["pad"] - y)
+        return nodes
+
+    def _set_mode(self, mode):
+        self.mode = mode
+        self.live_entry = False
+        self.refresh()
+
+    def _compact_build(self):
+        """Keep real content reachable when stacked regions cannot fit."""
+        sp = self.sp
+        pad = sp['pad']; width = self.W - 2 * pad
+        nodes = []
+        button_width = (width - 8) / 2
+        for index, mode in enumerate(('calendar', 'notifications')):
+            text = 'Calendar' if mode == 'calendar' else 'Notifications' + (f' · {len(self.notes)}' if self.notes else '')
+            def paint(cr, node, state, label=text, active=mode == self.mode):
+                p_button(self.theme, 8)(cr, node, state)
+                if active: gfx.fill_rrect(cr, node.x, node.y, node.w, node.h, 8, self.theme.accent_soft)
+                gfx.text(cr, label, node.x + node.w / 2, node.y + node.h / 2, 12, self.theme.accent if active else self.theme.fg, 600, 'c', maxw=node.w - 12)
+            nodes.append(Node(id='cal:mode-' + mode, x=pad + index * (button_width + 8), y=pad,
+                              w=button_width, h=32, paint=paint, tooltip='Show ' + mode,
+                              on_click=lambda node, selected=mode: self._set_mode(selected), radius=8))
+        y = pad + 40
+        if self.mode == 'notifications':
+            self.groups.pop('agenda', None)
+            nodes += self._notif_block(pad, y, width, max(0, self.H - pad - y), title=True)
+            return nodes
+        self.groups.pop('notes', None)
+        # At 520 px this is 32 px per date cell and a 174 px agenda. Below
+        # 480 px the compact layout remains an explicit unqualified case.
+        budget = self.H - 2 * pad - 40 - 8 - 172
+        sp['cell'] = max(24, min(sp['cell'], int((budget - 74) // 6)))
+        nodes += self._calendar_block(pad, y, width, card=True)
+        y += self._cal_h() + 8
+        nodes += self._agenda_block(pad, y, width, self.H - pad - y)
         return nodes
 
     # ------------------------------------------------------------------ date header
@@ -330,7 +379,7 @@ class CalView(View):
         title = "Today" if sel == c.today else ("Tomorrow" if sel == c.today + dt.timedelta(days=1) else sel.strftime("%A %-d %B"))
         def head(cr, n, st):
             gfx.text(cr, title, n.x + 2, n.y + 14, 13, t.fg, 600)
-            gfx.text(cr, (f"{len(evs)} event" + ("s" if len(evs) != 1 else "")) if evs else "", n.x + n.w - 2, n.y + 14, 12, t.fg_muted, 400, "r")
+            gfx.text(cr, (f"{len(evs)} event" + ("s" if len(evs) != 1 else "")) if evs else "", n.x + n.w - (78 if self.compact and evs else 2), n.y + 14, 12, t.fg_muted, 400, "r")
         nodes.append(Node(x=x, y=y, w=w, h=28, paint=head))
         yy = y + 28
         def reminders_paint(cr, n, st):
@@ -350,14 +399,35 @@ class CalView(View):
         entry_h = 44
         ey = y + h - entry_h + 4
         rows = max(0, min(len(evs), 3, int((h - 28 - 36 - entry_h - 20) // 44)))
-        if not evs and ey - yy >= 32:
-            nodes.append(Node(x=x, y=yy, w=w, h=min(48, ey - yy - 16), paint=lambda cr, n, st: gfx.text(cr, "No calendar events for this day.", n.x + 2, n.y + 16, 12.5, t.fg_muted, 400)))
-        for i, e in enumerate(evs[:rows]):
-            nodes.append(self._event_row(e, x, yy, w)); yy += 44
-        if len(evs) > rows and rows and ey - yy >= 28:
-            more = len(evs) - rows
-            nodes.append(Node(x=x, y=yy - 6, w=w, h=20, paint=lambda cr, n, st: gfx.text(cr, f"+ {more} more", n.x + 2, n.y + 10, 11.5, t.fg_muted, 500)))
-            yy += 14
+        if self.compact and evs:
+            height = max(0, ey - 20 - yy)
+            group = self.groups.get('agenda')
+            if group is None: group = self.groups['agenda'] = Group(x, yy, w, height)
+            group.x, group.y, group.w, group.h, group.content_h = x, yy, w, height, len(evs) * 44
+            group.target = max(0, min(group.max_offset, group.target))
+            group.offset = max(0, min(group.max_offset, group.offset))
+            for index, event in enumerate(evs):
+                row = self._event_row(event, x, yy + index * 44, w)
+                row.group = 'agenda'; nodes.append(row)
+            for index, delta in enumerate((-44, 44)):
+                def scroll(node, amount=delta):
+                    group.scroll_by(amount)
+                    if self.canvas: self.canvas.kick()
+                label = 'Previous calendar event' if delta < 0 else 'Next calendar event'
+                nodes.append(Node(id='cal:agenda-' + ('prev' if delta < 0 else 'next'),
+                                  x=x + w - 68 + index * 36, y=y - 2, w=32, h=28,
+                                  paint=self._btn_paint('chevron_u' if delta < 0 else 'chevron_d'),
+                                  on_click=scroll, tooltip=label, radius=8))
+        else:
+            self.groups.pop('agenda', None)
+            if not evs and ey - yy >= 32:
+                nodes.append(Node(x=x, y=yy, w=w, h=min(48, ey - yy - 16), paint=lambda cr, n, st: gfx.text(cr, "No calendar events for this day.", n.x + 2, n.y + 16, 12.5, t.fg_muted, 400)))
+            for i, e in enumerate(evs[:rows]):
+                nodes.append(self._event_row(e, x, yy, w)); yy += 44
+            if len(evs) > rows and rows and ey - yy >= 28:
+                more = len(evs) - rows
+                nodes.append(Node(x=x, y=yy - 6, w=w, h=20, paint=lambda cr, n, st: gfx.text(cr, f"+ {more} more", n.x + 2, n.y + 10, 11.5, t.fg_muted, 500)))
+                yy += 14
         # quick entry
         self.entry_rect = (x, ey, w, 36)
         parsed = self.preview()
