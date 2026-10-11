@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Notes
+Comment=Write and organize private local notes
+Exec=carpatic-notes
+Icon=accessories-text-editor
+Terminal=false
+Categories=Office;Utility;
+StartupNotify=true

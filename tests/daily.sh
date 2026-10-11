@@ -8,6 +8,8 @@ python3 tests/settings-search.py
 python3 tests/desktop-commands.py
 python3 tests/desktop-wallpaper.py
 python3 tests/reminders.py
+python3 tests/notes-storage.py
+python3 tests/notes-install.py
 python3 tests/reminders_notifier.py
 python3 tests/reminders_service.py
 python3 tests/session-logging.py

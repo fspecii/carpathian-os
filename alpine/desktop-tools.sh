@@ -27,7 +27,7 @@ SKIP_PACKAGES=${CARPATIC_SKIP_PACKAGES:-0} SKIP_DWM=1 CARPATIC_USER="$U" DESKTOP
 for f in "$SRC"/desktop/bin/*; do [ -f "$f" ] || continue; install -m755 "$f" /usr/local/bin/; done
 sh "$SRC/settings/install.sh"
 SKIP_PACKAGES=1 sh "$SRC/themepicker/install.sh"
-for component in wallpapers stylepacks widgets motion reminders; do sh "$SRC/$component/install.sh"; done
+for component in wallpapers stylepacks widgets motion reminders notes; do sh "$SRC/$component/install.sh"; done
 SKIP_PACKAGES=${CARPATIC_SKIP_PACKAGES:-0} sh "$SRC/geek/install.sh"
 SKIP_PACKAGES=${CARPATIC_SKIP_PACKAGES:-0} CARPATIC_USER="$U" sh "$SRC/quicklook/install.sh"
 # Input/display integration is shared; installing these does not enable compatibility containers.
