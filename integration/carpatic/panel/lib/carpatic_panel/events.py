@@ -39,8 +39,9 @@ def _unescape(s): return s.replace("\\n", "\n").replace("\\N", "\n").replace("\\
 def _parse_dt(val, params=""):
     """-> (date, time|None, all_day). UTC 'Z' times are converted to local time; floating times are taken as local."""
     val = val.strip()
-    if "VALUE=DATE" in params.upper() or re.fullmatch(r"\d{8}", val):
-        return dt.datetime.strptime(val[:8], "%Y%m%d").date(), None, True
+    if re.search(r"(?:^|;)VALUE=DATE(?:;|$)", params.upper()) or re.fullmatch(r"\d{8}", val):
+        if not re.fullmatch(r"\d{8}", val): return None
+        return dt.datetime.strptime(val, "%Y%m%d").date(), None, True
     m = re.fullmatch(r"(\d{8})T(\d{6}|\d{4})(Z?)", val)
     if not m: return None
     s = m.group(2) + ("00" if len(m.group(2)) == 4 else "")
@@ -88,46 +89,62 @@ def _expand(base, rrule, lo, hi, exdates):
     return out
 
 
-def parse_ics(text, lo, hi, color=0, path=""):
-    """Events overlapping [lo, hi] (dates). Multi-day events are listed on each day."""
+def _parse_event(blk, lo, hi, color, path):
     out = []
-    for blk in re.findall(r"BEGIN:VEVENT(.*?)END:VEVENT", _unfold(text), re.S):
-        props = {}
-        for line in blk.strip().split("\n"):
-            if ":" not in line: continue
-            k, v = line.split(":", 1)
-            name, _, params = k.partition(";")
-            props.setdefault(name.upper(), []).append((params, v))
-        if "DTSTART" not in props: continue
-        s = _parse_dt(props["DTSTART"][0][1], props["DTSTART"][0][0])
-        if not s: continue
-        day, st, all_day = s
-        en = _parse_dt(props["DTEND"][0][1], props["DTEND"][0][0]) if "DTEND" in props else None
-        title = _unescape(props.get("SUMMARY", [("", "(no title)")])[0][1]).strip() or "(no title)"
-        where = _unescape(props.get("LOCATION", [("", "")])[0][1]).strip()
-        uid = props.get("UID", [("", "")])[0][1]
-        span = 0
-        if en and en[0] > day: span = (en[0] - day).days - (1 if all_day else 0)
-        en_t = en[1] if en and en[0] == day else None
-        ex = set()
-        for p, v in props.get("EXDATE", []):
-            for x in v.split(","):
-                r = _parse_dt(x, p)
-                if r: ex.add(r[0])
-        dates = _expand(day, props["RRULE"][0][1], lo - dt.timedelta(days=span), hi, ex) if "RRULE" in props else [day]
-        for d0 in dates:
-            for k in range(span + 1):
-                d = d0 + dt.timedelta(days=k)
-                if lo <= d <= hi: out.append(Event(title, d, st if k == 0 else None, en_t if k == span else None, all_day or k > 0, where, color, uid, path))
+    props = {}
+    for line in blk.strip().split("\n"):
+        if ":" not in line: continue
+        k, v = line.split(":", 1)
+        name, _, params = k.partition(";")
+        props.setdefault(name.upper(), []).append((params, v))
+    if "DTSTART" not in props: raise ValueError("missing start date")
+    s = _parse_dt(props["DTSTART"][0][1], props["DTSTART"][0][0])
+    if not s: raise ValueError("invalid start date")
+    day, st, all_day = s
+    en = _parse_dt(props["DTEND"][0][1], props["DTEND"][0][0]) if "DTEND" in props else None
+    if "DTEND" in props and not en: raise ValueError("invalid end date")
+    title = _unescape(props.get("SUMMARY", [("", "(no title)")])[0][1]).strip() or "(no title)"
+    where = _unescape(props.get("LOCATION", [("", "")])[0][1]).strip()
+    uid = props.get("UID", [("", "")])[0][1]
+    span = 0
+    if en and en[0] > day: span = (en[0] - day).days - (1 if all_day else 0)
+    en_t = en[1] if en and en[0] == day else None
+    ex = set()
+    for p, v in props.get("EXDATE", []):
+        for x in v.split(","):
+            r = _parse_dt(x, p)
+            if not r: raise ValueError("invalid exclusion date")
+            ex.add(r[0])
+    dates = _expand(day, props["RRULE"][0][1], lo - dt.timedelta(days=span), hi, ex) if "RRULE" in props else [day]
+    for d0 in dates:
+        for k in range(max(0, (lo - d0).days), min(span, (hi - d0).days) + 1):
+            d = d0 + dt.timedelta(days=k)
+            if lo <= d <= hi: out.append(Event(title, d, st if k == 0 else None, en_t if k == span else None, all_day or k > 0, where, color, uid, path))
     return out
 
 
-def load_events(lo, hi, data=None):
+def parse_ics(text, lo, hi, color=0, path="", issues=None):
+    """Read each record independently so damaged imports preserve valid neighbors."""
+    out = []
+    for blk in re.findall(r"BEGIN:VEVENT(.*?)END:VEVENT", _unfold(text), re.S):
+        try:
+            out.extend(_parse_event(blk, lo, hi, color, path))
+        except (ValueError, OverflowError):
+            if issues is not None: issues.append("A calendar event could not be read")
+    return out
+
+def load_events(lo, hi, data=None, issues=None):
     out = []
     for i, p in enumerate(sources(data)):
         try:
-            with open(p, encoding="utf-8", errors="replace") as f: out += parse_ics(f.read(), lo, hi, i % len(PALETTE), p)
-        except OSError: continue
+            with open(p, "rb") as f: raw = f.read(2 * 1024 * 1024 + 1)
+            if len(raw) > 2 * 1024 * 1024:
+                if issues is not None: issues.append("A calendar file is too large to read")
+                continue
+            out += parse_ics(raw.decode("utf-8", "replace"), lo, hi, i % len(PALETTE), p, issues)
+        except OSError:
+            if issues is not None: issues.append("A calendar file could not be opened")
+            continue
     out.sort(key=lambda e: (e.day, not e.all_day, e.start or dt.time(0)))
     return out
 

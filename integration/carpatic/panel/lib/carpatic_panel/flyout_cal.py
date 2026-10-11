@@ -10,6 +10,7 @@ from gi.repository import GLib, Gio, Gdk
 from pathlib import Path
 from . import gfx, calmath, events as ev, notes as nt
 from .kit import View, Node, Group, p_button
+from .event_loader import EventLoader
 
 SPECS = {
     "win":    dict(w=384, pad=16, sr=14, cr=10, order="notes-first", cols=1, cell=40),
@@ -29,6 +30,14 @@ class CalModel:
         self.selected = self.today
         self.week_numbers = week_numbers; self.clock24 = clock24; self.data = data
         self._cache = {}
+        self.event_issues = []
+        self._cached_issues = []
+        self.events_loading = False
+        self.on_events_changed = None
+        self._event_generation = 0
+        self._event_request = None
+        self._event_closed = False
+        self._event_loader = EventLoader(ev.load_events, GLib.idle_add, self._events_ready)
 
     def grid(self): return calmath.month_grid(self.year, self.month, self.first)
 
@@ -48,12 +57,38 @@ class CalModel:
     def events_in_grid(self):
         g = self.grid(); lo, hi = g[0][0], g[-1][-1]
         key = (lo, hi)
-        if key not in self._cache: self._cache = {key: ev.load_events(lo, hi, self.data)}
+        if key in self._cache:
+            self.events_loading = False
+            self.event_issues = self._cached_issues
+            self._event_request = None
+        elif not self._event_closed:
+            request = (self._event_generation, lo, hi)
+            if request != self._event_request:
+                self._event_request = request
+                self.events_loading = True
+                self.event_issues = []
+                self._event_loader.request(request, lo, hi, self.data)
         by = {}
-        for e in self._cache[key]: by.setdefault(e.day, []).append(e)
+        for e in self._cache.get(key, []): by.setdefault(e.day, []).append(e)
         return by
 
-    def invalidate(self): self._cache = {}
+    def _events_ready(self, key, events, issues):
+        if self._event_closed or key != self._event_request: return
+        self._cache = {(key[1], key[2]): events}
+        self.event_issues = issues
+        self._cached_issues = issues
+        self.events_loading = False
+        if self.on_events_changed: self.on_events_changed()
+
+    def invalidate(self):
+        self._event_generation += 1
+        self._cache = {}
+        self._event_request = None
+
+    def close(self):
+        self._event_closed = True
+        self.on_events_changed = None
+        self._event_loader.close()
 
     def agenda(self): return self.events_in_grid().get(self.selected, [])
 
@@ -73,7 +108,7 @@ class CalView(View):
         self.on_close = on_close or (lambda: None)
         self.notes = notes_src.history() if notes_src else []
         self.live_entry = False
-        self.expanded = set(); self.swipe = {}; self.entry_rect = None; self.entry_text = ""
+        self.expanded = set(); self.swipe = {}; self.entry_rect = None; self.entry_text = ""; self.entry_error = ""
         self.weather = weather
         self.groups = {}
         self.H = self._height()
@@ -92,6 +127,7 @@ class CalView(View):
         self._reminders_path = root / 'carpatic/reminders/reminders.json' if root.is_absolute() else None
         self._watch_reminders()
         self._reminders_timer = GLib.timeout_add(150, self._load_reminders)
+        self.cal.on_events_changed = self.refresh
 
     def _watch_reminders(self):
         if self._reminders_monitor:
@@ -127,6 +163,7 @@ class CalView(View):
             self._reminders_timer = GLib.timeout_add(150, self._load_reminders)
 
     def dispose(self):
+        self.cal.close()
         self._reminders_closed = True
         if self._reminders_timer:
             GLib.source_remove(self._reminders_timer)
@@ -194,7 +231,7 @@ class CalView(View):
             return False
         threading.Thread(target=worker, name='calendar-open-reminders', daemon=True).start()
 
-    def on_entry_change(self, text): self.entry_text = text; self.refresh()
+    def on_entry_change(self, text): self.entry_text = text; self.entry_error = ""; self.refresh()
 
     def on_entry_activate(self, text, entry):
         if self.submit_entry(text): entry.set_text("")
@@ -421,7 +458,7 @@ class CalView(View):
         else:
             self.groups.pop('agenda', None)
             if not evs and ey - yy >= 32:
-                nodes.append(Node(x=x, y=yy, w=w, h=min(48, ey - yy - 16), paint=lambda cr, n, st: gfx.text(cr, "No calendar events for this day.", n.x + 2, n.y + 16, 12.5, t.fg_muted, 400)))
+                nodes.append(Node(x=x, y=yy, w=w, h=min(48, ey - yy - 16), paint=lambda cr, n, st: gfx.text(cr, ("Loading calendar events…" if c.events_loading else "No calendar events for this day."), n.x + 2, n.y + 16, 12.5, t.fg_muted, 400)))
             for i, e in enumerate(evs[:rows]):
                 nodes.append(self._event_row(e, x, yy, w)); yy += 44
             if len(evs) > rows and rows and ey - yy >= 28:
@@ -430,7 +467,7 @@ class CalView(View):
                 yy += 14
         # quick entry
         self.entry_rect = (x, ey, w, 36)
-        parsed = self.preview()
+        parsed = self.entry_error or ("Some calendar events could not be read" if c.event_issues else self.preview())
         nodes.append(Node(x=x, y=ey - 18, w=w, h=16, paint=lambda cr, n, st: gfx.text(cr, parsed, n.x + 4, n.y + 8, 11, t.accent, 500, maxw=n.w - 8) if parsed else None))
         def field(cr, n, st):
             gfx.fill_rrect(cr, n.x, n.y, n.w, n.h, 10, t.tile_off)
@@ -453,7 +490,13 @@ class CalView(View):
     def submit_entry(self, text):
         title, day, st, en = ev.parse_quick(text, self.cal.today)
         if not title: return False
-        ev.write_event(title, day, st, en, self.cal.data)
+        try:
+            ev.write_event(title, day, st, en, self.cal.data)
+        except OSError:
+            self.entry_error = "Event could not be saved. Your entry was kept; try again."
+            self.refresh()
+            return False
+        self.entry_error = ""
         self.cal.invalidate(); self.cal.select(day); self.entry_text = ""; self.refresh(); return True
 
     def _event_row(self, e, x, y, w):

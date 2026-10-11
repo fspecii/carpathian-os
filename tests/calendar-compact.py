@@ -8,7 +8,9 @@ import re
 import sys
 import tempfile
 import time
+import threading
 import unittest
+from unittest.mock import patch
 from types import SimpleNamespace
 
 if os.environ.get('WAYLAND_DISPLAY') or os.environ.get('XDG_CURRENT_DESKTOP') == 'COSMIC':
@@ -90,6 +92,115 @@ class Compact(unittest.TestCase):
         if view.entry_rect:
             x, y, w, h = view.entry_rect
             self.assertGreaterEqual(y, 0); self.assertLessEqual(y+h, view.H)
+    def test_malformed_import_preserves_popup_and_displays_warning(self):
+        source = Path(self.temp.name) / 'mixed.ics'
+        source.write_text('BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART:20261332T090000\nEND:VEVENT\nBEGIN:VEVENT\nDTSTART:20260315T090000\nSUMMARY:Valid appointment\nEND:VEVENT\nEND:VCALENDAR\n')
+        from carpatic_panel import events, gfx
+        with patch.object(events, 'sources', return_value=[str(source)]):
+            model = CalModel(today=dt.date(2026, 3, 15), first=0, data=self.temp.name)
+            view = CalView(Theme.from_palette({'mode': 'dark'}), model, FakeNotes([]), max_h=520)
+            self.views.append(view)
+            pump(lambda: not model.events_loading)
+            self.assertEqual([e.title for e in model.agenda()], ['Valid appointment'])
+            self.assertTrue(model.event_issues)
+            with patch.object(gfx, 'text', wraps=gfx.text) as text:
+                nodes = render_png(view, str(ARTIFACTS / 'malformed-import-warning.png'))
+                self.assert_geometry(view, nodes)
+                self.assertTrue(any('Some calendar events could not be read' in str(c.args) for c in text.call_args_list))
+
+    def test_failed_save_keeps_actual_entry_and_displays_error(self):
+        from carpatic_panel import events, gfx
+        view = self.view(notes=False)
+        popup = Popup(view, view.theme, (20, 20), slide=False)
+        try:
+            pump(lambda: popup._paint_ready and popup.entry is not None)
+            draft = 'Lunch tomorrow 13:00'
+            popup.entry.set_text(draft)
+            with patch.object(events, 'write_event', side_effect=OSError('fixture disk full')):
+                popup.entry.emit('activate')
+            self.assertEqual(popup.entry.get_text(), draft)
+            self.assertEqual(view.entry_text, draft)
+            self.assertIn('could not be saved', view.entry_error)
+            with patch.object(gfx, 'text', wraps=gfx.text) as text:
+                nodes = render_png(view, str(ARTIFACTS / 'failed-save-warning.png'))
+                self.assert_geometry(view, nodes)
+                self.assertTrue(any('Event could not be saved' in str(c.args) for c in text.call_args_list))
+        finally:
+            popup.close_me()
+
+    def test_slow_import_keeps_actual_popup_and_main_loop_responsive(self):
+        from carpatic_panel import events
+        entered = threading.Event(); release = threading.Event()
+        def slow(lo, hi, data, issues):
+            entered.set()
+            if not release.wait(3): raise RuntimeError('Fixture not released')
+            return [Event('Arrived asynchronously', dt.date(2026, 3, 15))]
+        with patch.object(events, 'load_events', side_effect=slow):
+            model = CalModel(today=dt.date(2026, 3, 15), first=0, data=self.temp.name)
+            view = CalView(Theme.from_palette({'mode': 'dark'}), model, FakeNotes([]), max_h=520)
+            self.views.append(view)
+            popup = Popup(view, view.theme, (20, 20), slide=False)
+            try:
+                pump(lambda: entered.is_set() and popup._paint_ready)
+                self.assertTrue(model.events_loading)
+                heartbeat = []
+                GLib.idle_add(lambda: (heartbeat.append(True), False)[1])
+                pump(lambda: bool(heartbeat))
+                self.assertFalse(release.is_set())
+                release.set()
+                pump(lambda: not model.events_loading)
+                self.assertEqual([e.title for e in model.agenda()], ['Arrived asynchronously'])
+            finally:
+                release.set(); popup.close_me()
+
+    def test_model_discards_old_month_and_delivers_latest_selection(self):
+        from carpatic_panel import events
+        entered = threading.Event(); release = threading.Event(); calls = []
+        def slow(lo, hi, data, issues):
+            calls.append((lo, hi))
+            if len(calls) == 1:
+                entered.set()
+                if not release.wait(3): raise RuntimeError('Fixture not released')
+            return [Event('Loaded ' + lo.isoformat(), lo)]
+        with patch.object(events, 'load_events', side_effect=slow):
+            model = CalModel(today=dt.date(2026, 3, 15), first=0, data=self.temp.name)
+            try:
+                self.assertEqual(model.events_in_grid(), {})
+                pump(entered.is_set)
+                model.shift(1); self.assertEqual(model.events_in_grid(), {})
+                model.shift(1); self.assertEqual(model.events_in_grid(), {})
+                latest = (model.grid()[0][0], model.grid()[-1][-1])
+                release.set(); pump(lambda: not model.events_loading)
+                self.assertEqual(len(calls), 2)
+                self.assertEqual(calls[-1], latest)
+                self.assertEqual(list(model.events_in_grid()), [latest[0]])
+            finally:
+                release.set(); model.close()
+
+    def test_return_to_cached_month_preserves_events_after_stale_completion(self):
+        from carpatic_panel import events
+        entered = threading.Event(); release = threading.Event(); calls = []
+        def load(lo, hi, data, issues):
+            calls.append((lo, hi))
+            if len(calls) == 2:
+                entered.set()
+                if not release.wait(3): raise RuntimeError('Fixture not released')
+            return [Event('Loaded ' + lo.isoformat(), lo)]
+        with patch.object(events, 'load_events', side_effect=load):
+            model = CalModel(today=dt.date(2026, 3, 15), first=0, data=self.temp.name)
+            try:
+                model.events_in_grid(); pump(lambda: not model.events_loading)
+                original = model.events_in_grid()
+                model.shift(1); model.events_in_grid(); pump(entered.is_set)
+                model.shift(-1)
+                self.assertEqual(model.events_in_grid(), original)
+                self.assertFalse(model.events_loading)
+                release.set(); pump(lambda: model._event_loader._active is None)
+                self.assertEqual(model.events_in_grid(), original)
+                self.assertEqual(len(calls), 2)
+            finally:
+                release.set(); model.close()
+
     def test_layout_matrix_sixweek_weeknumbers_and_all_events(self):
         original = json.dumps(SPECS, sort_keys=True)
         cases = 0
