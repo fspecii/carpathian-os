@@ -36,6 +36,14 @@ class UpdateStatus(unittest.TestCase):
         self.assertEqual(namespace['parse_update_status'](value), ('2', True))
         self.assertEqual(namespace['parse_update_status']('updates: failed, restart needed: no'), ('unknown', False))
 
+    def test_bluetooth_repair_is_visible_even_when_update_count_is_zero(self):
+        page = SimpleNamespace(status=MagicMock(), btn_apply=MagicMock(), btn_restart=MagicMock(),
+                               snap_rows=[], snap=MagicMock())
+        namespace['fill'](page, ('updates: 0, restart needed: no, Bluetooth repair needed: yes', None, 'ext4'))
+        page.status.set_value.assert_called_once_with('Bluetooth compatibility update needed')
+        page.status.set_state.assert_called_once_with('warn')
+        self.assertNotIn('up to date', page.status.set_sub.call_args.args[0].lower())
+
     def test_failure_replaces_stale_success_and_disables_actions(self):
         page = SimpleNamespace(status=MagicMock(), btn_apply=MagicMock(), btn_restart=MagicMock())
         namespace['fill'](page, RuntimeError('status failed'))

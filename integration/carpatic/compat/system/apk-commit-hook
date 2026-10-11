@@ -3,8 +3,21 @@
 # Keeps two promises after any `apk add/upgrade/del`:
 #  1. packaging fix-ups that Alpine has not shipped upstream yet (listed in compat/packages/UPSTREAM.md)
 #  2. the "restart to finish updating" marker (see carpatic-update)
+compat_status=0
 case "${1:-}" in
   post-commit)
+    # Package upgrades overwrite the numeric-input adaptation. Reapply only
+    # supported source; preserve a visible failure for the GUI update path.
+    if [ -x /usr/bin/blueman-manager ]; then
+      if /usr/bin/python3 -I /usr/libexec/carpatic/blueman-passkey.py; then
+        rm -f /var/lib/carpathian-blueman-compatibility-error
+      else
+        printf '%s\n' 'Bluetooth pairing compatibility requires an update.' > /var/lib/carpathian-blueman-compatibility-error
+        compat_status=1
+      fi
+    else
+      rm -f /var/lib/carpathian-blueman-compatibility-error
+    fi
     # cups-pdf: CUPS only runs a backend as root if its mode is 0700; Alpine ships 0755, so "Save as PDF" silently prints nothing
     [ -f /usr/lib/cups/backend/cups-pdf ] && chmod 700 /usr/lib/cups/backend/cups-pdf
     # upstream branding that is not an app for our users ("About Xfce", settings dialogs of Thunar/Mousepad): NoDisplay in the packaged entries, for every user,
@@ -38,4 +51,4 @@ case "${1:-}" in
     [ -x /usr/local/bin/carpatic-update ] && /usr/local/bin/carpatic-update --mark >/dev/null 2>&1
     ;;
 esac
-exit 0
+exit "$compat_status"

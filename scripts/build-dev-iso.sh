@@ -35,7 +35,7 @@ for path in root.glob('*.apk'):
     if path.is_symlink() or path.name not in listed:
         raise SystemExit('Unverified or symlink APK input: ' + path.name)
 PY_APKS
-for required in xterm bluez bluez-openrc networkmanager networkmanager-openrc networkmanager-cli networkmanager-wifi network-manager-applet btrfs-progs flock xfdesktop xdg-user-dirs thunar gvfs gvfs-fuse udisks2 udiskie elogind polkit-elogind polkit-gnome elogind-openrc dbus-openrc polkit-openrc; do
+for required in xterm bluez bluez-openrc blueman networkmanager networkmanager-openrc networkmanager-cli networkmanager-wifi network-manager-applet btrfs-progs flock xfdesktop xdg-user-dirs thunar gvfs gvfs-fuse udisks2 udiskie elogind polkit-elogind polkit-gnome elogind-openrc dbus-openrc polkit-openrc; do
     present=0
     for file in "$apks/$required"-[0-9]*.apk; do [ ! -f "$file" ] || present=1; done
     [ "$present" = 1 ] || { echo "Missing required offline package: $required" >&2; exit 1; }

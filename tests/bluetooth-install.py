@@ -8,7 +8,7 @@ import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
 DESKTOP=ROOT/'alpine/desktop-tools.sh'
-REQUIRED={'bluez','bluez-openrc'}
+REQUIRED={'bluez','bluez-openrc','blueman'}
 
 class BluetoothInstallation(unittest.TestCase):
     def stage(self,skip,missing=None):
@@ -16,6 +16,8 @@ class BluetoothInstallation(unittest.TestCase):
             root=Path(directory);bin=root/'bin';bin.mkdir();calls=root/'calls'
             (bin/'apk').write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$APK_CALLS"\n');(bin/'apk').chmod(0o755)
             if missing!='bluetoothctl':(bin/'bluetoothctl').write_text('#!/bin/sh\nexit 0\n');(bin/'bluetoothctl').chmod(0o755)
+            for executable in ('blueman-manager','blueman-applet'):
+                if missing!=executable:(bin/executable).write_text('#!/bin/sh\nexit 0\n');(bin/executable).chmod(0o755)
             text=DESKTOP.read_text();start=text.index('if [ "${CARPATIC_SKIP_PACKAGES:-0}" != 1 ]; then')
             package_end=text.index('\nfi',start)+3
             bluetooth_start=text.index('# GUI Bluetooth runtime contract;',package_end)
@@ -34,7 +36,7 @@ class BluetoothInstallation(unittest.TestCase):
         result,packages=self.stage(1)
         self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(packages,[])
     def test_each_missing_runtime_fails_even_when_packages_skipped(self):
-        for missing in ('bluetoothctl','/usr/lib/bluetooth/bluetoothd','/etc/init.d/bluetooth'):
+        for missing in ('bluetoothctl','blueman-manager','blueman-applet','/usr/lib/bluetooth/bluetoothd','/etc/init.d/bluetooth'):
             for skip in (0,1):
                 with self.subTest(missing=missing,skip=skip):
                     result,packages=self.stage(skip,missing)

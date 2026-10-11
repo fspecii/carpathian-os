@@ -63,7 +63,7 @@ case "$1" in
  *) echo 'Unexpected action attempted' >&2; exit 2;;
 esac
 ''');executable.chmod(0o700)
-  self.env=patch.dict(os.environ,{'PATH':self.temp.name,'BT_SCAN_MODE':'success','BT_COMMAND_LOG':str(self.log),'BT_PID_FILE':str(self.pidfile)});self.env.start();self.addCleanup(self.env.stop)
+  self.env=patch.dict(os.environ,{'PATH':self.temp.name+os.pathsep+os.environ['PATH'],'BT_SCAN_MODE':'success','BT_COMMAND_LOG':str(self.log),'BT_PID_FILE':str(self.pidfile)});self.env.start();self.addCleanup(self.env.stop)
   self.pending=[];self.page=subject(SimpleNamespace(bg=lambda work,done:self.pending.append((work,done))));self.page.find=Widget();self.page.find_row=Widget();self.page.nearby=[]
  def finish(self):
   work,done=self.pending.pop(0)
@@ -106,6 +106,33 @@ esac
  def test_overlapping_scans_coalesce_one_followup(self):
   self.page.scan();self.page.scan();self.page.scan();self.assertEqual(len(self.pending),1);self.finish();self.assertEqual(len(self.pending),1);self.finish();self.assertFalse(self.page._scan_running);self.assertFalse(self.page._scan_again)
 
+class PairingLaunch(unittest.TestCase):
+ setUp=Commands.setUp
+ finish=Commands.finish
+ def launch(self,available,spawn=None):
+  self.messages=[];self.page.win=SimpleNamespace(busy=lambda _:None,idle=self.messages.append)
+  self.page.open_pairing.__globals__['su'].which=lambda _:available
+  with patch.object(subprocess,'Popen',side_effect=spawn) as process:
+   self.page.open_pairing('Fixture New');self.finish()
+  return process
+ def test_missing_manager_stays_gui_with_actionable_failure(self):
+  process=self.launch(False);process.assert_not_called()
+  self.assertIn('unavailable',self.messages[-1].lower())
+ def test_spawn_failure_hides_raw_diagnostics(self):
+  self.launch(True,OSError('private diagnostic'))
+  self.assertIn('could not',self.messages[-1].lower());self.assertNotIn('private diagnostic',self.messages[-1])
+ def test_running_manager_uses_plain_argv_without_pair_or_trust_commands(self):
+  def pending(timeout):raise subprocess.TimeoutExpired('fixture',timeout)
+  process=self.launch(True,lambda *args,**kwargs:SimpleNamespace(wait=pending))
+  args,kwargs=process.call_args
+  self.assertEqual(args[0],['blueman-manager'])
+  self.assertEqual(kwargs['stdin'],subprocess.DEVNULL);self.assertEqual(kwargs['stdout'],subprocess.DEVNULL);self.assertEqual(kwargs['stderr'],subprocess.DEVNULL);self.assertTrue(kwargs['start_new_session'])
+  self.assertFalse(self.log.exists(),'Settings ran a bluetoothctl pair/trust command')
+  self.assertIn('Pair',self.messages[-1]);self.assertIn('Fixture New',self.messages[-1])
+ def test_nonzero_manager_exit_is_failure(self):
+  self.launch(True,lambda *args,**kwargs:SimpleNamespace(wait=lambda timeout:1))
+  self.assertIn('could not',self.messages[-1].lower())
+
 if GTK_MODE:
  class ActualGtk(unittest.TestCase):
   setUp=Commands.setUp
@@ -124,6 +151,17 @@ if GTK_MODE:
     os.environ['BT_SCAN_MODE']='scan_no_ack';page.scan();self.pump(lambda:not page._scan_running)
     self.assertEqual(page.nearby,[old]);self.assertFalse(old.is_sensitive());self.assertEqual(page.find_row.title.get_text(),'Could not start Bluetooth discovery');self.assertTrue(page.find_row.buttons[0].is_sensitive());self.assertEqual(page.find_row.buttons[0].get_label(),'Retry')
     os.environ['BT_SCAN_MODE']='success';page.find_row.buttons[0].emit('clicked');self.pump(lambda:not page._scan_running);self.assertTrue(page.nearby[0].is_sensitive());self.assertEqual(len(page.nearby),1)
+   finally:win.destroy()
+  def test_nearby_setup_button_routes_device_name_to_native_pairing(self):
+   page=subject(SimpleNamespace(bg=sysutil.bg),ui.ButtonRow);page.find=ui.GroupCard('Nearby');page.find_row=ui.ButtonRow('Find new devices','','Scan',page.scan);page.find.add(page.find_row);page.nearby=[]
+   win=Gtk.Window();win.add(page.find);win.show_all()
+   try:
+    page.scan();self.pump(lambda:not page._scan_running)
+    button=page.nearby[0].buttons[0]
+    self.assertEqual(button.get_label(),'Set up')
+    with patch.object(page,'open_pairing') as launch:button.emit('clicked')
+    launch.assert_called_once_with('Fixture New')
+    self.assertEqual(self.log.read_text().splitlines(),['--timeout 8 scan on','devices Paired','devices'])
    finally:win.destroy()
   def test_off_or_unavailable_refresh_invalidates_prior_successful_scan(self):
    for result in ({'powered':False,'devs':[]},{'error':'controller'}):

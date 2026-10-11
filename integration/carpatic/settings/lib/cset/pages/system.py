@@ -134,7 +134,11 @@ class UpdatesPage(Page):
             self.btn_restart.set_no_show_all(True)
             return
         st, snaps, fs = res; n, restart = parse_update_status(st)
-        if restart: self.status.set_value("Restart needed"); self.status.set_sub("Restart to finish updating."); self.status.set_state("warn")
+        if "Bluetooth repair needed: yes" in st:
+            self.status.set_value("Bluetooth compatibility update needed")
+            self.status.set_sub("Check for updates before pairing Bluetooth devices.")
+            self.status.set_state("warn")
+        elif restart: self.status.set_value("Restart needed"); self.status.set_sub("Restart to finish updating."); self.status.set_state("warn")
         elif n == "0": self.status.set_value("Up to date"); self.status.set_sub("Your system is up to date."); self.status.set_state("ok")
         elif n == "unknown": self.status.set_value("Not checked"); self.status.set_sub("Press \u201cCheck for updates\u201d to see if anything is new."); self.status.set_state("off")
         else: self.status.set_value("Updates available"); self.status.set_sub(f"{n} update{'s' if n != '1' else ''} ready to install."); self.status.set_state("warn")

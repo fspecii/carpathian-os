@@ -20,3 +20,10 @@ https://github.com/fspecii/LinPad/tree/01246414fe9517d883b9489ba3e9e9f3780f479e/
 Palettes and wallpaper generator: CC0 1.0 as declared by their source files.
 Carpatic profiles and wallpaper-generator adaptations are original integration.
 No vendor logos or proprietary fonts are included.
+
+Blueman numeric-input compatibility
+----------------------------------
+integration/carpatic/compatibility/blueman-passkey.py adapts the numeric filter
+in Blueman BluezAgent (https://github.com/blueman-project/blueman). This adaptation
+is GPL-2.0-or-later; upstream source and package copyright/license notices remain
+applicable. Original Carpathian components retain their stated licenses.

@@ -18,7 +18,7 @@ class UpdateCommands(unittest.TestCase):
         # directory override that could be abused by a privileged caller.
         self.script = self.root / 'carpatic-update'
         self.mounts = self.root / 'mounts'; self.mounts.write_text('/dev/test / btrfs rw 0 0\n')
-        self.script.write_text(SOURCE.read_text().replace('/run/', str(self.root / 'run') + '/').replace('/proc/mounts', str(self.mounts)))
+        self.script.write_text(SOURCE.read_text().replace('/run/', str(self.root / 'run') + '/').replace('/proc/mounts', str(self.mounts)).replace('/var/lib/carpathian-blueman-compatibility-error', str(self.root / 'run/carpathian-blueman-compatibility-error')))
         runtime = self.root / 'run/carpatic'; runtime.mkdir(parents=True)
         (runtime / 'boot-versions').write_text('')
         self.counter = runtime / 'updates-available'; self.counter.write_text('7\n')
@@ -51,6 +51,27 @@ echo 'firmware tool output'
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn('Done.', result.stdout)
         self.assertEqual(self.counter.read_text(), '7\n')
+    def test_bluetooth_compatibility_failure_does_not_report_update_complete(self):
+        marker = self.root / 'run/carpathian-blueman-compatibility-error'
+        marker.write_text('Compatibility update required')
+        result = self.invoke()
+        self.assert_no_success(result)
+        self.assertIn('Bluetooth pairing requires a compatibility update', result.stderr)
+        self.assertIn('apk upgrade', (self.root / 'commands.log').read_text())
+
+    def test_bluetooth_repair_marker_is_not_hidden_by_empty_update_list(self):
+        (self.root / 'run/carpathian-blueman-compatibility-error').write_text('repair needed')
+        result = self.invoke(case='no-updates')
+        self.assert_no_success(result)
+        self.assertNotIn('Your system is up to date', result.stdout)
+        self.assertIn('Bluetooth pairing requires a compatibility update', result.stderr)
+
+    def test_upgrade_failure_retains_bluetooth_repair_reason(self):
+        (self.root / 'run/carpathian-blueman-compatibility-error').write_text('repair needed')
+        result = self.invoke(case='upgrade-failure')
+        self.assert_no_success(result)
+        self.assertIn('Bluetooth pairing requires a compatibility update', result.stderr)
+
     def test_btrfs_snapshot_failure_stops_before_upgrade(self):
         result = self.invoke(case='snapshot-failure')
         self.assert_no_success(result)

@@ -85,7 +85,10 @@ do_apply() {
   exec 9>/run/carpatic/.carpathian-rollback.lock || die "could not open the system update lock."
   flock -n 9 || die "another update or restore-point operation is running. Try again when it finishes."
   apk update >/dev/null 2>&1 || die "could not reach the update servers. Check your internet connection."
-  n=$(count_updates) || die "could not list available updates."; [ "$n" = 0 ] && { say "Your system is up to date."; return 0; }
+  n=$(count_updates) || die "could not list available updates."; [ "$n" = 0 ] && {
+    [ ! -f /var/lib/carpathian-blueman-compatibility-error ] || die "Bluetooth pairing requires a compatibility update. The update is not fully complete."
+    say "Your system is up to date."; return 0;
+  }
   say "Installing $n update(s)..."
   root_fs=$(awk '$2=="/" {print $3}' /proc/mounts | tail -1)
   if [ "$root_fs" = btrfs ]; then
@@ -96,7 +99,11 @@ do_apply() {
   else
     say "No system restore point is available on ${root_fs:-this filesystem}. Updates will not have automatic rollback."
   fi
-  run_logged 3 apk upgrade --no-progress || die "the update did not finish. Review the errors before trying again; 'doas apk fix' can repair incomplete packages."
+  if ! run_logged 3 apk upgrade --no-progress; then
+    [ ! -f /var/lib/carpathian-blueman-compatibility-error ] || die "Bluetooth pairing requires a compatibility update. The update is not fully complete."
+    die "the update did not finish. Review the errors before trying again; 'doas apk fix' can repair incomplete packages."
+  fi
+  [ ! -f /var/lib/carpathian-blueman-compatibility-error ] || die "packages were installed, but Bluetooth pairing requires a compatibility update. The update is not fully complete."
   do_mark
   echo 0 > /run/carpatic/updates-available 2>/dev/null
   if [ -f "$FLAG" ]; then say "Done. Please restart to finish updating:"; sed 1d "$FLAG" | sed 's/^/  /'; else say "Done. No restart needed."; fi
@@ -116,7 +123,8 @@ do_firmware() { # BIOS/UEFI, SSD, dock and peripheral firmware from the Linux Ve
 do_status() {
   u=""; [ -f /run/carpatic/updates-available ] && u=$(cat /run/carpatic/updates-available)
   r="no"; [ -f "$FLAG" ] && r="yes"
-  say "updates: ${u:-unknown}, restart needed: $r"
+  b=no; [ -f /var/lib/carpathian-blueman-compatibility-error ] && b=yes
+  say "updates: ${u:-unknown}, restart needed: $r, Bluetooth repair needed: $b"
 }
 
 notify() { command -v notify-send >/dev/null 2>&1 && notify-send -a "Carpathian updates" -i system-software-update "$1" "$2" 2>/dev/null; return 0; }
@@ -125,8 +133,9 @@ do_notify() {
   d=${XDG_RUNTIME_DIR:-/tmp}/carpatic-update-notified; cur=$(do_status)
   [ -f "$d" ] && [ "$(cat "$d")" = "$cur" ] && return 0
   echo "$cur" > "$d"
-  if [ -f "$FLAG" ]; then notify "Restart to finish updating" "$(sed 1d "$FLAG" | head -3 | tr '\n' ' ')"
-  else u=0; [ -f /run/carpatic/updates-available ] && u=$(cat /run/carpatic/updates-available); [ "$u" -gt 0 ] 2>/dev/null && notify "Updates available" "$u package update(s). Open a terminal and run: doas carpatic-update apply"; fi
+  if [ -f /var/lib/carpathian-blueman-compatibility-error ]; then notify "Bluetooth pairing needs repair" "Check Software Update in Settings for a compatibility update."
+  elif [ -f "$FLAG" ]; then notify "Restart to finish updating" "$(sed 1d "$FLAG" | head -3 | tr '\n' ' ')"
+  else u=0; [ -f /run/carpatic/updates-available ] && u=$(cat /run/carpatic/updates-available); [ "$u" -gt 0 ] 2>/dev/null && notify "Updates available" "$u package update(s). Open Settings > Software Update to install them."; fi
   return 0
 }
 

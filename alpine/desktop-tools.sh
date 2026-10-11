@@ -18,7 +18,7 @@ done
 if [ "${CARPATIC_SKIP_PACKAGES:-0}" != 1 ]; then
     apk add gtk+3.0-dev libxext-dev 'picom>=13' mesa-dri-gallium mesa-utils xfdesktop xdg-user-dirs xrandr xprop dmenu xautolock i3lock-color playerctl \
         thunar gvfs gvfs-fuse udisks2 udiskie \
-        networkmanager networkmanager-openrc networkmanager-cli networkmanager-wifi network-manager-applet bluez bluez-openrc \
+        networkmanager networkmanager-openrc networkmanager-cli networkmanager-wifi network-manager-applet bluez bluez-openrc blueman \
         pipewire pipewire-pulse wireplumber alsa-utils firefox xdg-utils \
         libinput-tools xinput xset setxkbmap libxtst flatpak util-linux btrfs-progs flock \
         elogind elogind-openrc polkit-elogind polkit-gnome dbus-openrc polkit-openrc
@@ -47,6 +47,12 @@ command -v bluetoothctl >/dev/null 2>&1 || {
     echo 'Required desktop Bluetooth runtime is missing: bluetoothctl' >&2
     exit 1
 }
+for bluetooth_gui_command in blueman-manager blueman-applet; do
+    command -v "$bluetooth_gui_command" >/dev/null 2>&1 || {
+        echo "Required desktop Bluetooth runtime is missing: $bluetooth_gui_command" >&2
+        exit 1
+    }
+done
 for required_bluetooth_file in /usr/lib/bluetooth/bluetoothd /etc/init.d/bluetooth; do
     [ -x "$required_bluetooth_file" ] || {
         echo "Required desktop Bluetooth runtime is missing: $required_bluetooth_file" >&2
@@ -54,6 +60,12 @@ for required_bluetooth_file in /usr/lib/bluetooth/bluetoothd /etc/init.d/bluetoo
     }
 done
 # End GUI Bluetooth runtime contract.
+# Install pairing compatibility and its APK lifecycle in every desktop.
+install -Dm644 "$SRC/compatibility/blueman-passkey.py" /usr/libexec/carpatic/blueman-passkey.py
+python3 -I /usr/libexec/carpatic/blueman-passkey.py
+rm -f /var/lib/carpathian-blueman-compatibility-error
+install -Dm755 "$SRC/compat/system/apk-commit-hook" /etc/apk/commit_hooks.d/carpatic-fixups
+# End Bluetooth compatibility lifecycle.
 sh alpine/desktop-services.sh
 install -m755 "$SRC/desktop/session/carpatic-status" "$H/.local/share/dwm-titus/scripts/"
 SKIP_PACKAGES=${CARPATIC_SKIP_PACKAGES:-0} SKIP_DWM=1 CARPATIC_USER="$U" DESKTOP_SRC="$SRC/desktop" sh "$SRC/configurator/install.sh"

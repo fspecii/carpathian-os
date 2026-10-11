@@ -22,6 +22,8 @@ python3 tests/desktop-files-settings.py
 python3 tests/removable-media-install.py
 python3 tests/network-install.py
 python3 tests/bluetooth-install.py
+python3 tests/blueman-compatibility.py
+python3 tests/blueman-update-hook.py
 python3 tests/desktop-wallpaper.py
 python3 tests/calendar-events.py
 python3 tests/calendar-loader.py

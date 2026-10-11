@@ -397,13 +397,32 @@ class BluetoothPage(Page):
                 self.find_row.set_title("Find new devices"); self.find_row.buttons[0].set_label("Scan")
                 found = res["devices"]
                 for mac, name in found:
-                    r = ButtonRow(name, "Ready to pair", "Pair", None, "suggested", icon="bluetooth", color="#8e8e93", key="near-" + mac)
-                    r.buttons[0].connect("clicked", lambda b, mac=mac: self.win.apply("sh", "-c", f"bluetoothctl pair {mac} && bluetoothctl trust {mac} && bluetoothctl connect {mac}", msg="Pairing...", done=lambda *_: self.refresh()))
+                    r = ButtonRow(name, "Pairing opens a window for PINs and confirmation", "Set up", None, "suggested", icon="bluetooth", color="#8e8e93", key="near-" + mac)
+                    r.buttons[0].connect("clicked", lambda b, name=name: self.open_pairing(name))
                     self.find.add(r); self.nearby.append(r); r.show_all()
                 self.find_row.set_sub("" if found else "Nothing new found. Put the device in pairing mode and scan again.")
             if getattr(self, "_scan_again", False):
                 self._scan_again = False
                 self.scan()
+        su.bg(work, done)
+
+    def open_pairing(self, name):
+        self.win.busy('Opening Bluetooth pairing...')
+        def work():
+            import subprocess
+            if not su.which('blueman-manager'): return 'missing'
+            try:
+                child = subprocess.Popen(['blueman-manager'], stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                try: code = child.wait(timeout=1)
+                except subprocess.TimeoutExpired: return 'launched'
+                return 'launched' if code == 0 else 'failed'
+            except OSError: return 'failed'
+        def done(result):
+            messages = {'launched': f'Select “{name}” in Bluetooth manager, choose Pair, and follow the confirmation prompts.',
+                        'missing': 'The Bluetooth pairing app is unavailable on this installation.',
+                        'failed': 'The Bluetooth pairing window could not open. Try again.'}
+            self.win.idle(messages.get(result, messages['failed']) if isinstance(result, str) else messages['failed'])
         su.bg(work, done)
 
 # ---------------------------------------------------------------- Network

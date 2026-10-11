@@ -23,6 +23,7 @@ install -Dm755 "$SRC/bin/carpatic-input-method"    /usr/local/bin/carpatic-input
 install -Dm644 "$SRC/system/carpatic-im.sh"        /etc/profile.d/carpatic-im.sh
 install -Dm644 "$SRC/share/udiskie.yml"             /etc/carpatic/udiskie.yml
 install -Dm755 "$SRC/bin/carpatic-rollback"          /usr/local/bin/carpatic-rollback
+install -Dm644 "$REPO/compatibility/blueman-passkey.py" /usr/libexec/carpatic/blueman-passkey.py
 install -Dm755 "$SRC/system/apk-commit-hook"         /etc/apk/commit_hooks.d/carpatic-fixups
 install -Dm755 "$SRC/system/brand-os"                /usr/libexec/carpatic/brand-os
 install -Dm755 "$SRC/system/periodic-update-check"   /etc/periodic/daily/carpatic-update-check
