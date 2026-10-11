@@ -1,8 +1,10 @@
-# Carpathian OS
+# Carpathian OS — Alpine Prototype
 
-An Alpine Linux desktop with an original Rust X11 window manager, tiling and floating layouts, workspaces, desktop settings, themes and integrated applications.
+The preserved Alpine Linux desktop prototype with an original Rust X11 window manager, tiling and floating layouts, workspaces, desktop settings, themes and integrated applications.
 
 Carpathian OS is in early development. Experimental images are for evaluation in a disposable VM; animation continuity, hardware compatibility and recovery qualification remain underway. Rust alone does not establish a performance advantage.
+
+Active Carpathian development is migrating to D77Void-based Void Linux with glibc and runit. This repository and its existing images remain the Alpine prototype. A new primary Void repository will be published after functional installation and desktop qualification.
 
 ## Build
 
@@ -27,6 +29,6 @@ GUI checks run on private Xvfb displays. Never start the window manager inside a
 
 ## Project
 
-[Architecture](docs/ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md) · [Website](https://carpathianos.com) · [Releases](https://github.com/fspecii/carpathian-os/releases)
+[Architecture](docs/ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md) · [Website](https://carpathianos.com) · [Releases](https://github.com/fspecii/carpathian-os-alpine-prototype/releases)
 
 Original project code is MIT licensed. Adapted components and third-party assets retain their own licenses and attribution; see [LICENSE](LICENSE) and [NOTICE](NOTICE).
