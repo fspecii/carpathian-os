@@ -169,4 +169,42 @@ class GreetingTests(unittest.TestCase):
         result=subprocess.run([sys.executable,str(GREETER)],capture_output=True,timeout=3)
         self.assertEqual((result.returncode,result.stdout,result.stderr),(0,b'',b''))
 
+class OverlayHostname(unittest.TestCase):
+    def test_staged_default_and_custom_hostname_preserve_legacy(self):
+        import importlib.util
+        branding = GREETER.parent
+        sys.path.insert(0, str(branding))
+        try:
+            spec = importlib.util.spec_from_file_location('hostname_overlay_subject', branding / 'prepare_overlay.py')
+            module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+            with tempfile.TemporaryDirectory() as directory:
+                base = Path(directory); legacy = base / 'legacy'; overlay = base / 'overlay'
+                wizard = legacy / 'installer/wizard'; (wizard / 'lib').mkdir(parents=True)
+                width = "$(awk '{ if (length > max) max = length } END { print max+0 }' \"$LOGO_PATH\")"
+                (wizard / 'carpatic-wizard').write_text(width + '\n${CARPATIC_GREETER_ANIM:-}\n')
+                (wizard / 'carpatic-dashboard').write_text(width + '\n')
+                (wizard / 'lib/logo.sh').write_text('print_logo() { :; }\n')
+                form = "CARPATIC_HOSTNAME_DEFAULT='carpatic'\nchoose_hostname() { hostname=${1:-$CARPATIC_HOSTNAME_DEFAULT}; }\n"
+                (wizard / 'lib/form.sh').write_text(form)
+                (legacy / 'NOTICE').write_text('Fixture license notice\n')
+                launcher = overlay / 'usr/local/sbin/carpatic-live-installer'; launcher.parent.mkdir(parents=True)
+                launcher.write_text('WIZ=/usr/share/carpatic/installer/wizard\n'
+                    + "$(awk '{ if (length > m) m = length } END { print m + 0 }' \"$WIZ/logo.txt\" 2>/dev/null)\n"
+                    + 'logo() { clear; sed "s/^/$(pad_cols)/" "$WIZ/logo.txt" 2>/dev/null; echo; }\nexport PATH=/bin\n')
+                world = overlay / 'etc/apk/world'; world.parent.mkdir(parents=True); world.write_text('alpine-base\n')
+                changed = module.prepare(overlay, legacy)
+                staged = overlay / 'usr/local/share/carpathian-installer/wizard/lib/form.sh'
+                self.assertIn(str(staged.relative_to(overlay)), changed)
+                self.assertEqual((wizard / 'lib/form.sh').read_text(), form)
+                def run(extra, env=None):
+                    return subprocess.check_output(['bash', '-c', '. "$1"; ' + extra, 'test', str(staged)],
+                        text=True, env={'PATH': '/usr/bin:/bin', **(env or {})}).strip()
+                self.assertEqual(run('choose_hostname; printf "%s" "$hostname"'), 'carpathian')
+                self.assertEqual(run('choose_hostname review-machine; printf "%s" "$hostname"'), 'review-machine')
+                self.assertEqual(run('choose_hostname; printf "%s" "$hostname"',
+                                     {'CARPATIC_HOSTNAME_DEFAULT': 'custom-default'}), 'custom-default')
+        finally:
+            sys.path.remove(str(branding))
+
+
 if __name__=='__main__': unittest.main()

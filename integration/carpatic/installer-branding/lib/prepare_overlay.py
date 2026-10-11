@@ -47,6 +47,11 @@ def prepare(root, legacy):
     text = replace_once(text, 'export PATH=', 'export CARPATIC_GREETER_ANIM=/usr/local/bin/carpathian-installer-greeter\nexport PATH=', 'launcher environment')
     text = re.sub(r'\bCarpatic\b', 'Carpathian', text)
     patched[launcher] = text
+    form = (source_dir / 'lib/form.sh').read_text()
+    patched[wizard_dir / 'lib/form.sh'] = replace_once(
+        form, "CARPATIC_HOSTNAME_DEFAULT='carpatic'",
+        'CARPATIC_HOSTNAME_DEFAULT=${CARPATIC_HOSTNAME_DEFAULT:-carpathian}',
+        'installer default hostname')
     (source_dir / 'lib/logo.sh').read_text()
     patched[painter] = f'''# UTF-8-safe static identity for installer forms and progress.
 print_logo() {{
