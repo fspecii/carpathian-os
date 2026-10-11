@@ -4473,6 +4473,95 @@ fn multiwindow_keyboard_snap_keeps_workarea_focus_stacking_and_restore() -> Resu
                 original[1].height,
             )
     });
+    for peer in &clients {
+        message(
+            &conn,
+            root,
+            *peer,
+            "_NET_WM_STATE",
+            [1, atom(&conn, "_NET_WM_STATE_ABOVE")?, 0, 2, 0],
+        )?;
+    }
+    wait("three above peers published", || {
+        clients.iter().all(|w| {
+            property(&conn, *w, "_NET_WM_STATE")
+                .unwrap_or_default()
+                .contains(&atom(&conn, "_NET_WM_STATE_ABOVE").unwrap())
+        })
+    });
+    for id in &clients {
+        message(&conn, root, *id, "_NET_ACTIVE_WINDOW", [2, 0, 0, 0, 0])?;
+        wait("above peer selected", || {
+            property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![*id]
+        });
+        invoke("left")?;
+        wait("above peer snapped", || {
+            geometry(&conn, root_surface(&conn, *id)).width == 623
+        });
+        // A peer's unrelated property update triggers a complete arrange after
+        // focus has settled, as real toolkit/compositor traffic does.
+        let peer = clients.iter().find(|w| *w != id).unwrap();
+        let mut hints = x11rb::properties::WmHints::new();
+        hints.urgent = true;
+        hints.set(&conn, *peer)?;
+        conn.flush()?;
+        wait("peer urgency triggers arrange", || {
+            property(&conn, *peer, "_NET_WM_STATE")
+                .unwrap_or_default()
+                .contains(&atom(&conn, "_NET_WM_STATE_DEMANDS_ATTENTION").unwrap())
+        });
+        std::thread::sleep(Duration::from_millis(80));
+        let children = conn.query_tree(root)?.reply()?.children;
+        let selected = children
+            .iter()
+            .position(|w| *w == root_surface(&conn, *id))
+            .unwrap();
+        assert!(
+            clients.iter().filter(|w| *w != id).all(|w| children
+                .iter()
+                .position(|p| *p == root_surface(&conn, *w))
+                .unwrap()
+                < selected),
+            "selected ABOVE frame remains highest after arrange: {children:?}"
+        );
+    }
+    let ordinary = conn.generate_id()?;
+    conn.create_window(
+        0,
+        ordinary,
+        root,
+        220,
+        200,
+        250,
+        180,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &CreateWindowAux::new(),
+    )?;
+    conn.map_window(ordinary)?;
+    conn.flush()?;
+    wait("ordinary peer framed", || {
+        root_surface(&conn, ordinary) != ordinary
+    });
+    message(&conn, root, ordinary, "_NET_ACTIVE_WINDOW", [2, 0, 0, 0, 0])?;
+    wait("ordinary client focused below ABOVE layer", || {
+        let siblings = conn.query_tree(root).unwrap().reply().unwrap().children;
+        let normal = siblings
+            .iter()
+            .position(|w| *w == root_surface(&conn, ordinary));
+        property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![ordinary]
+            && normal.is_some_and(|normal| {
+                clients.iter().all(|w| {
+                    siblings
+                        .iter()
+                        .position(|p| *p == root_surface(&conn, *w))
+                        .is_some_and(|p| p > normal)
+                })
+            })
+    });
+    assert_eq!(conn.get_input_focus()?.reply()?.focus, ordinary);
+    conn.destroy_window(ordinary)?;
     for id in clients {
         conn.destroy_window(id)?;
     }

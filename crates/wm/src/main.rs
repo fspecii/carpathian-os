@@ -3158,18 +3158,7 @@ impl Wm {
                 &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
             )?;
         }
-        for c in self.clients.iter().filter(|c| c.mapped && c.above) {
-            self.conn.configure_window(
-                c.surface(),
-                &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
-            )?;
-            self.conn.configure_window(
-                c.titlebar,
-                &ConfigureWindowAux::new()
-                    .sibling(c.id)
-                    .stack_mode(StackMode::ABOVE),
-            )?;
-        }
+        self.restack_above_clients()?;
         self.lower_desktop_surfaces()?;
         self.draw_chrome()?;
         for frame in publish_frames {
@@ -3190,6 +3179,40 @@ impl Wm {
         self.enforce_lock_stack()?;
         if let Some(id) = space_focus {
             self.focus(id)?;
+        }
+        Ok(())
+    }
+
+    // Keep the ABOVE layer above ordinary clients without replacing its peer
+    // order with management order on every unrelated arrange. The selected
+    // peer is highest within its layer, while overlays retain their priority.
+    fn restack_above_clients(&self) -> Result<()> {
+        let siblings = self.conn.query_tree(self.root)?.reply()?.children;
+        let mut above: Vec<_> = self
+            .clients
+            .iter()
+            .filter(|c| c.mapped && c.above)
+            .collect();
+        above.sort_by_key(|c| {
+            (
+                Some(c.id) == self.focused,
+                siblings
+                    .iter()
+                    .position(|id| *id == c.surface())
+                    .unwrap_or(0),
+            )
+        });
+        for c in above {
+            self.conn.configure_window(
+                c.surface(),
+                &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
+            )?;
+            self.conn.configure_window(
+                c.titlebar,
+                &ConfigureWindowAux::new()
+                    .sibling(c.id)
+                    .stack_mode(StackMode::ABOVE),
+            )?;
         }
         Ok(())
     }
@@ -3667,6 +3690,14 @@ impl Wm {
             self.draw_bars()?;
         }
         if raise {
+            self.restack_above_clients()?;
+            for overlay in &self.priority_overlays {
+                self.conn.configure_window(
+                    *overlay,
+                    &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
+                )?;
+            }
+            self.enforce_lock_stack()?;
             self.client_list()?;
         }
         Ok(())
