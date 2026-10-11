@@ -17,6 +17,15 @@ import time
 ROOT = Path(__file__).resolve().parent.parent
 QEMU_NAMES = {'qemu-system-x86_64', 'qemu-system-aarch64'}
 
+def require_host_space(path, installation=False):
+    """Protect sparse fixture writes; installation grows much faster than boot."""
+    required = (6 if installation else 1) * 1024 ** 3
+    available = shutil.disk_usage(path).free
+    if available < required:
+        raise RuntimeError(f'Insufficient host disk space: available {available} bytes '
+                           f'({available / 1024 ** 3:.2f} GiB), required {required} bytes '
+                           f'({required / 1024 ** 3:.0f} GiB)')
+
 def qemu_process(argv):
     return bool(argv) and Path(os.fsdecode(argv[0])).name in QEMU_NAMES
 
@@ -149,6 +158,7 @@ def main():
                 if qemu_process(argv) and any(str(base).encode() in x for x in argv):
                     parser.error('Stop the source VM before cloning it')
             except OSError: pass
+        require_host_space(ROOT / 'vm' if (ROOT / 'vm').exists() else ROOT)
         vm.mkdir(parents=True); (vm / 'run').mkdir()
         try:
             call(['qemu-img', 'create', '-q', '-f', 'qcow2', '-F', 'qcow2', '-b', str(base), str(vm / 'overlay.qcow2')])
@@ -158,9 +168,12 @@ def main():
         print(f'Created {vm}'); return
     meta = json.loads((vm / 'fixture.json').read_text())
     if a.command == 'start':
+        if live(vm): print('Already running'); return
+        require_host_space(vm, installation=cdrom is not None)
         with (ROOT / 'vm/.test-start.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             if live(vm): print('Already running'); return
+            require_host_space(vm, installation=cdrom is not None)
             active = 0
             for p in Path('/proc').glob('[0-9]*/cmdline'):
                 try: active += qemu_process(p.read_bytes().split(b'\0'))

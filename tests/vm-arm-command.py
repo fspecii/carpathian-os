@@ -13,6 +13,60 @@ m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 
 class Commands(unittest.TestCase):
+    def test_space_threshold_boundaries(self):
+        for installation, gib in ((False, 1), (True, 6)):
+            required = gib * 1024 ** 3
+            with patch.object(m.shutil, 'disk_usage', return_value=SimpleNamespace(free=required - 1)):
+                with self.assertRaisesRegex(RuntimeError, 'available .*required'):
+                    m.require_host_space(Path('/unused'), installation)
+            with patch.object(m.shutil, 'disk_usage', return_value=SimpleNamespace(free=required)):
+                m.require_host_space(Path('/unused'), installation)
+    def test_insufficient_space_start_has_no_mutations(self):
+        for arch in ('x86_64', 'aarch64'):
+            for cdrom in (False, True):
+                with self.subTest(arch=arch, cdrom=cdrom), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory); vm = root / 'vm/test-space'; vm.mkdir(parents=True)
+                    metadata = json.dumps({'arch': arch, 'port': 2279})
+                    (vm / 'fixture.json').write_text(metadata)
+                    (vm / 'overlay.qcow2').write_bytes(b'UNCHANGED')
+                    iso = root / 'test.iso'; iso.write_bytes(b'ISO')
+                    argv = ['vm-test', '--name', 'space', 'start'] + (['--cdrom', str(iso)] if cdrom else [])
+                    with patch.object(m, 'ROOT', root), patch('sys.argv', argv), \
+                            patch.object(m, 'live', return_value=None), \
+                            patch.object(m.shutil, 'disk_usage', return_value=SimpleNamespace(free=0)), \
+                            patch.object(m, 'call') as call, patch.object(m, 'arm_command') as arm:
+                        with self.assertRaisesRegex(RuntimeError, 'Insufficient host disk space'):
+                            m.main()
+                        call.assert_not_called(); arm.assert_not_called()
+                    self.assertEqual((vm / 'fixture.json').read_text(), metadata)
+                    self.assertEqual((vm / 'overlay.qcow2').read_bytes(), b'UNCHANGED')
+                    self.assertEqual(sorted(p.name for p in vm.iterdir()), ['fixture.json', 'overlay.qcow2'])
+                    self.assertFalse((root / 'vm/.test-start.lock').exists())
+    def test_insufficient_space_clone_does_not_create_fixture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = root / 'base.qcow2'; base.write_bytes(b'BASE')
+            key = root / 'key'; key.write_text('unused test key')
+            argv = ['vm-test', '--name', 'space', 'clone', '--base', str(base), '--key', str(key), '--port', '2279']
+            with patch.object(m, 'ROOT', root), patch('sys.argv', argv), \
+                    patch.object(m.shutil, 'disk_usage', return_value=SimpleNamespace(free=0)), \
+                    patch.object(m, 'call') as call:
+                with self.assertRaisesRegex(RuntimeError, 'Insufficient host disk space'):
+                    m.main()
+                call.assert_not_called()
+            self.assertFalse((root / 'vm').exists())
+            self.assertEqual(base.read_bytes(), b'BASE')
+
+    def test_already_running_bypasses_space_guard(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); vm = root / 'vm/test-running'; vm.mkdir(parents=True)
+            (vm / 'fixture.json').write_text('{}')
+            with patch.object(m, 'ROOT', root), patch('sys.argv', ['vm-test', '--name', 'running', 'start']), \
+                    patch.object(m, 'live', return_value=123), patch.object(m, 'require_host_space') as guard, \
+                    patch.object(m, 'call') as call:
+                m.main(); guard.assert_not_called(); call.assert_not_called()
+            self.assertFalse((root / 'vm/.test-start.lock').exists())
+
     def test_arm_command_and_variable_isolation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
