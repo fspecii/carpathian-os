@@ -11,6 +11,7 @@ python3 tests/settings-search.py
 python3 tests/storage-mounts.py
 python3 tests/storage-trash.py
 python3 tests/storage-cache.py
+python3 tests/wifi-scan.py
 python3 tests/default-apps.py
 python3 tests/desktop-commands.py
 python3 tests/desktop-files-settings.py

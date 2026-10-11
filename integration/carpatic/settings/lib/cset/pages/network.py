@@ -41,8 +41,8 @@ class WifiPage(Page):
     def build(self, pb):
         self.pb = pb; self.nets_rows = []
         g = pb.group()
-        on = su.out("nmcli", "radio", "wifi") == "enabled"
-        self.sw = SwitchRow("Wi-Fi", "", on, self.toggle, icon="network-wireless", color="#0a84ff", key="wifi-switch"); g.add(self.sw)
+        self.sw = SwitchRow("Wi-Fi", "Checking status...", False, self.toggle, icon="network-wireless", color="#0a84ff", key="wifi-switch"); g.add(self.sw)
+        self.sw.set_sensitive(False)
         self.nets = pb.group("Networks", None); self.nets.page = pb
         self.known = pb.group("Known networks", "Networks your computer remembers. Forgetting one means you will need the password again.")
         self.scan_row = ButtonRow("Looking for networks", "", "Scan again", self.scan, key="nets"); self.nets.add(self.scan_row)
@@ -53,16 +53,63 @@ class WifiPage(Page):
     def toggle(self, v):
         self.win.apply("nmcli", "radio", "wifi", "on" if v else "off", msg="Turning Wi-Fi " + ("on" if v else "off") + "...", done=lambda *_: GLib.timeout_add(1500, lambda: (self.scan(), False)[1]))
     def scan(self):
+        if getattr(self, "_scan_running", False):
+            self._scan_again = True
+            return
+        self._scan_running = True
         self.scan_row.set_busy(True)
         def work():
-            return (su.out("nmcli", "radio", "wifi") == "enabled", su.out("nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "dev", "wifi", "list", "--rescan", "auto", timeout=25),
-                    su.lines("nmcli", "-t", "-f", "NAME,TYPE", "con", "show"))
-        su.bg(work, self.fill)
+            import subprocess
+            def query(*args):
+                # Read-only queries must retain exit status: empty stdout is
+                # also returned when NetworkManager is unavailable.
+                return subprocess.run(["nmcli", *args], capture_output=True, text=True,
+                                      timeout=25, env=dict(os.environ, LC_ALL="C"))
+            radio = query("radio", "wifi")
+            if radio.returncode != 0:
+                return {"error": "service" if radio.returncode == 8 else "radio"}
+            state = radio.stdout.strip()
+            if state not in ("enabled", "disabled"):
+                return {"error": "radio"}
+            if state == "disabled":
+                return {"enabled": False, "text": "", "cons": []}
+            networks = query("-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "dev", "wifi", "list", "--rescan", "auto")
+            if networks.returncode != 0:
+                return {"error": "service" if networks.returncode == 8 else "scan", "enabled": True}
+            profiles = query("-t", "-f", "NAME,TYPE", "con", "show")
+            if profiles.returncode != 0:
+                return {"error": "service" if profiles.returncode == 8 else "profiles", "enabled": True}
+            return {"enabled": True, "text": networks.stdout, "cons": profiles.stdout.splitlines()}
+        def done(res):
+            self._scan_running = False
+            self.fill(res)
+            if getattr(self, "_scan_again", False):
+                self._scan_again = False
+                self.scan()
+        su.bg(work, done)
     def fill(self, res):
         self.scan_row.set_busy(False)
-        if isinstance(res, Exception): return
-        enabled, text, cons = res
-        self.sw.set_value_quiet(enabled); self.nets.set_sensitive(enabled)
+        if isinstance(res, Exception) or "error" in res:
+            error = "query" if isinstance(res, Exception) else res["error"]
+            titles = {"service": "Wi-Fi service is unavailable", "radio": "Could not check Wi-Fi",
+                      "scan": "Could not scan for networks", "profiles": "Could not read saved networks"}
+            self.scan_row.set_title(titles.get(error, "Could not check Wi-Fi"))
+            self.scan_row.set_sub("Try again shortly. If the problem continues, restart the computer." if error == "service"
+                                  else "Try again. If the problem continues, check that your Wi-Fi adapter is available.")
+            self.scan_row.buttons[0].show()
+            confirmed_radio = not isinstance(res, Exception) and "enabled" in res and error != "service"
+            if not isinstance(res, Exception) and "enabled" in res: self.sw.set_value_quiet(res["enabled"])
+            self.sw.set_sensitive(confirmed_radio)
+            self.sw.set_sub("" if confirmed_radio else "Status unavailable")
+            self.known.set_sensitive(False)
+            # Preserve the last radio value and rows; disable stale connection
+            # actions until a successful retry supplies current scan data.
+            self.nets.set_sensitive(True)
+            for row in self.nets_rows: row.set_sensitive(False)
+            return
+        enabled, text, cons = res["enabled"], res["text"], res["cons"]
+        self.sw.set_value_quiet(enabled); self.sw.set_sensitive(True); self.sw.set_sub("")
+        self.nets.set_sensitive(enabled); self.known.set_sensitive(enabled)
         for r in self.nets_rows: self.nets.list.remove(r); self.nets.rows.remove(r)
         self.nets_rows = []
         saved = [split_t(c)[0] for c in cons if len(split_t(c)) > 1 and split_t(c)[1] in ("802-11-wireless", "wifi")]

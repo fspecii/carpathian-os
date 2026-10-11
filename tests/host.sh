@@ -61,4 +61,5 @@ chmod 700 "$temporary/default-apps-runtime"
 XDG_RUNTIME_DIR="$temporary/default-apps-runtime" GSETTINGS_BACKEND=memory GIO_USE_VFS=local NO_AT_BRIDGE=1 CARPATIC_XVFB_TEST=1 CARPATIC_PRIVATE_DBUS_TEST=1 G_DEBUG=fatal-criticals dbus-run-session -- python3 tests/default-apps-gtk.py
 XDG_RUNTIME_DIR="$temporary/default-apps-runtime" GSETTINGS_BACKEND=memory GIO_USE_VFS=local NO_AT_BRIDGE=1 CARPATIC_XVFB_TEST=1 CARPATIC_PRIVATE_DBUS_TEST=1 G_DEBUG=fatal-criticals dbus-run-session -- python3 tests/storage-trash.py --gtk
 XDG_RUNTIME_DIR="$temporary/default-apps-runtime" GSETTINGS_BACKEND=memory GIO_USE_VFS=local NO_AT_BRIDGE=1 CARPATIC_XVFB_TEST=1 CARPATIC_PRIVATE_DBUS_TEST=1 G_DEBUG=fatal-criticals dbus-run-session -- python3 tests/storage-cache.py --gtk
+XDG_RUNTIME_DIR="$temporary/default-apps-runtime" GSETTINGS_BACKEND=memory GIO_USE_VFS=local NO_AT_BRIDGE=1 CARPATIC_XVFB_TEST=1 CARPATIC_PRIVATE_DBUS_TEST=1 G_DEBUG=fatal-criticals dbus-run-session -- python3 tests/wifi-scan.py --gtk
 cargo test --locked -p carpatic-wm --test x11 -- --ignored --nocapture --test-threads=1
