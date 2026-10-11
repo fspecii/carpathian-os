@@ -40,12 +40,15 @@ def elevation():
 def friendly_error(rc, tail):
     if rc in (126, 127) and not tail.strip(): return "The password window was closed, so nothing was changed."
     t = (tail or "").lower()
+    if "do not restart" in t:
+        return "\n".join(line.strip() for line in tail.splitlines()
+                         if "do not restart" in line.lower())
     if "checksum mismatch" in t: return "The download was damaged on the way. Try again in a moment."
     if "download failed" in t or "could not resolve" in t or "network" in t or "curl" in t: return "The download did not work. Check your internet connection and try again."
     if "not authorized" in t or "dismissed" in t or rc in (126,): return "The password window was closed, so nothing was changed."
     if "no space" in t: return "Your disk is full. Free up some space and try again."
     if "needs administrator rights" in t: return "This needs your administrator password."
-    return "That did not finish. Nothing broken was left behind; you can try again."
+    return "That did not finish. Review the details before trying again."
 
 class Job:
     """one command; run() blocks (call it from a thread). on_line(str) gets every output line (split on \\n and \\r). cancel() stops it."""

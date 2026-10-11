@@ -22,7 +22,7 @@ say() { printf '%s\n' "$*"; }
 die() { printf 'carpatic-rollback: %s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || [ "${1:-}" = help ] || [ "${1:-}" = list ] || die "this needs administrator rights. Use: doas carpatic-rollback ${1:-help}"
 
-MOUNTED=""; T=""
+MOUNTED=""; T=""; RS_ACTIVE=0; RS_PREP=0; SS_ACTIVE=0; BM_ACTIVE=0; BM_PREP=0; INDEX_COMMITTED=0; INDEX_EXPECTED=""; INDEX_TEMP=""; RS_READY=0
 open_top() { # mount the top level of the root file system once; sets $T
   if [ -n "${CARPATIC_TOP:-}" ]; then T=$CARPATIC_TOP; return 0; fi
   [ -n "$T" ] && return 0
@@ -33,72 +33,222 @@ open_top() { # mount the top level of the root file system once; sets $T
   mount -o subvolid=5 "$dev" "$d" 2>/dev/null || die "could not open the disk's top level."
   MOUNTED=$d; T=$d
 }
-cleanup() { [ -n "$MOUNTED" ] && umount "$MOUNTED" 2>/dev/null; return 0; }
+cleanup() {
+  # A signal can arrive after the atomic rename succeeded but before the shell
+  # assigns its success flag. Compare the intended bytes before deciding undo.
+  if [ -n "$INDEX_EXPECTED" ] && [ -f "$INDEX_EXPECTED" ] && cmp -s "$INDEX_EXPECTED" "$INDEX"; then INDEX_COMMITTED=1; fi
+  if [ "$BM_ACTIVE" = 1 ]; then
+    if [ "$INDEX_COMMITTED" = 1 ]; then BM_ACTIVE=0; rm -rf "$bm_stage"
+    elif boot_undo "$bm_stage"; then BM_ACTIVE=0; menu_discard || printf 'carpatic-rollback: incomplete menu cleanup.\n' >&2
+    else printf 'carpatic-rollback: partial menu failure; boot backups retained at %s\n' "$bm_stage" >&2; fi
+  elif [ "$BM_PREP" = 1 ]; then menu_discard || printf 'carpatic-rollback: incomplete menu preparation cleanup.\n' >&2; fi
+  if [ "$RS_ACTIVE" = 1 ]; then
+    if [ "$RS_READY" = 1 ] && [ "$INDEX_COMMITTED" = 1 ]; then RS_ACTIVE=0; rm -rf "$rs_stage"
+    else restore_undo || printf 'carpatic-rollback: partial restore failure; do not restart. Recovery data retained at %s and %s\n' "$rs_stage" "$T/@snapshots/replaced-$rs_now" >&2; fi
+  fi
+  if [ "$SS_ACTIVE" = 1 ] && [ "$BM_ACTIVE" = 0 ]; then
+    if [ "$INDEX_COMMITTED" = 1 ] && [ -f "$ss_final.label" ] && awk -v point="$ss_sid" '$1==point {found=1} END {exit !found}' "$INDEX"; then SS_ACTIVE=0
+    else snapshot_cleanup || printf 'carpatic-rollback: incomplete snapshot cleanup; unpublished files retained at %s\n' "$ss_pending" >&2; fi
+  fi
+  if [ "$RS_PREP" = 1 ]; then rm -rf "$rs_stage"; fi
+  [ -z "$INDEX_EXPECTED" ] || rm -f "$INDEX_EXPECTED"
+  [ -z "$INDEX_TEMP" ] || rm -f "$INDEX_TEMP"
+  [ -n "$MOUNTED" ] && umount "$MOUNTED" 2>/dev/null
+  return 0
+}
 trap cleanup EXIT
+trap 'exit 130' INT TERM
+trap 'exit 129' HUP
 
 slug() { printf '%s' "$1" | tr 'A-Z ' 'a-z-' | tr -cd 'a-z0-9._-' | cut -c1-40; }
 
-do_snapshot() {
-  label="${1:-manual}"; open_top
-  [ -d "$T/$ROOTSUB" ] || die "no '$ROOTSUB' subvolume: this is not a Carpathian Btrfs layout."
-  [ -d "$T/@snapshots" ] || btrfs subvolume create "$T/@snapshots" >/dev/null || die "could not create the snapshot area."
-  sid="$(date +%Y%m%d-%H%M%S)-$(slug "$label")"
-  n=1; base=$sid; while [ -e "$T/@snapshots/$sid" ]; do n=$((n+1)); sid="$base-$n"; done   # never snapshot "into" an existing one
-  btrfs subvolume snapshot -r "$T/$ROOTSUB" "$T/@snapshots/$sid" >/dev/null || die "snapshot failed."
-  mkdir -p "$T/@snapshots/$sid.boot"
-  [ -d "$BOOT" ] && for f in "$BOOT"/vmlinuz-* "$BOOT"/initramfs-* "$BOOT"/*-ucode.img "$BOOT"/boot.conf "$BOOT"/limine.conf "$BOOT"/limine.cfg; do
-    [ -f "$f" ] && cp -p "$f" "$T/@snapshots/$sid.boot/" 2>/dev/null
+valid_id() {
+  case "$1" in ''|.|..|*[!a-zA-Z0-9._-]*) return 1;; esac
+}
+
+# Emit only managed relative boot paths. Firmware/EFI loader files are retained.
+boot_files() {
+  bf_dir=$1
+  for bf_path in "$bf_dir"/vmlinuz-* "$bf_dir"/initramfs-* "$bf_dir"/*-ucode.img "$bf_dir"/boot.conf "$bf_dir"/limine.conf "$bf_dir"/limine.cfg "$bf_dir"/limine/limine.conf; do
+    [ -e "$bf_path" ] || [ -L "$bf_path" ] || continue
+    [ -f "$bf_path" ] && [ ! -L "$bf_path" ] || return 1
+    bf_rel=${bf_path#"$bf_dir"/}
+    case "$bf_rel" in *[!a-zA-Z0-9._/-]*) return 1;; esac
+    printf '%s\n' "$bf_rel"
   done
-  printf '%s\n' "$label" > "$T/@snapshots/$sid.label"
-  say "Snapshot saved: $sid"
-  do_menu
+}
+verify_bundle() {
+  vb_dir=$1; vb_count=0
+  [ -d "$vb_dir" ] || return 1
+  boot_files "$vb_dir" >/dev/null || return 1
+  for vb_kernel in "$vb_dir"/vmlinuz-*; do
+    [ -f "$vb_kernel" ] || continue
+    vb_suffix=${vb_kernel##*/vmlinuz-}
+    [ -s "$vb_kernel" ] && [ -s "$vb_dir/initramfs-$vb_suffix" ] && [ ! -L "$vb_dir/initramfs-$vb_suffix" ] || return 1
+    vb_count=$((vb_count + 1))
+  done
+  [ "$vb_count" -gt 0 ]
+}
+copy_bundle() {
+  cb_source=$1; cb_destination=$2
+  verify_bundle "$cb_source" || return 1
+  cb_files=$(boot_files "$cb_source") || return 1
+  mkdir -p "$cb_destination" || return 1
+  for cb_rel in $cb_files; do
+    mkdir -p "$(dirname "$cb_destination/$cb_rel")" || return 1
+    cp "$cb_source/$cb_rel" "$cb_destination/$cb_rel" || return 1
+    cmp -s "$cb_source/$cb_rel" "$cb_destination/$cb_rel" || return 1
+  done
+  verify_bundle "$cb_destination"
+}
+
+# Same-filesystem staging retains the exact previous files until the operation
+# succeeds. Manifests record each successful rename for failure cleanup.
+boot_apply() {
+  ba_stage=$1
+  : > "$ba_stage/moved" && : > "$ba_stage/installed" || return 1
+  while IFS= read -r ba_rel; do
+    [ -n "$ba_rel" ] || continue
+    if [ -e "$BOOT/$ba_rel" ] || [ -L "$BOOT/$ba_rel" ]; then
+      mkdir -p "$(dirname "$ba_stage/old/$ba_rel")" || return 1
+      printf '%s\n' "$ba_rel" >> "$ba_stage/moved" || return 1
+      mv "$BOOT/$ba_rel" "$ba_stage/old/$ba_rel" || return 1
+    fi
+    if [ -e "$ba_stage/new/$ba_rel" ]; then
+      mkdir -p "$(dirname "$BOOT/$ba_rel")" || return 1
+      printf '%s\n' "$ba_rel" >> "$ba_stage/installed" || return 1
+      mv "$ba_stage/new/$ba_rel" "$BOOT/$ba_rel" || return 1
+    fi
+  done < "$ba_stage/files"
+}
+boot_undo() {
+  bu_stage=$1; bu_failed=0
+  # An install manifest may include a failed rename. Only remove a destination
+  # when its staged source disappeared, proving the rename actually happened.
+  if [ -f "$bu_stage/installed" ]; then
+    while IFS= read -r bu_rel; do
+      [ -e "$bu_stage/new/$bu_rel" ] && continue
+      # A previous undo may already have restored this entry before another
+      # entry failed. Never delete that restored original on a retry.
+      if [ ! -e "$bu_stage/old/$bu_rel" ] && [ -f "$bu_stage/moved" ] && grep -Fxq "$bu_rel" "$bu_stage/moved"; then continue; fi
+      if [ -d "$BOOT/$bu_rel" ]; then rm -rf "$BOOT/$bu_rel" || bu_failed=1
+      else rm -f "$BOOT/$bu_rel" || bu_failed=1; fi
+    done < "$bu_stage/installed"
+  fi
+  if [ -f "$bu_stage/moved" ]; then
+    while IFS= read -r bu_rel; do
+      [ -e "$bu_stage/old/$bu_rel" ] || continue
+      mkdir -p "$(dirname "$BOOT/$bu_rel")" || { bu_failed=1; continue; }
+      mv "$bu_stage/old/$bu_rel" "$BOOT/$bu_rel" || bu_failed=1
+    done < "$bu_stage/moved"
+  fi
+  [ "$bu_failed" = 0 ]
+}
+snapshot_cleanup() {
+  sc_failed=0
+  for sc_path in "$ss_pending" "$ss_final" "$ss_final.rw"; do
+    [ -d "$sc_path" ] || continue
+    btrfs subvolume delete "$sc_path" >/dev/null || sc_failed=1
+  done
+  rm -rf "$ss_pending.boot" "$ss_final.boot" "$BOOT/snapshots/$ss_sid" || sc_failed=1
+  rm -f "$ss_final.label" || sc_failed=1
+  [ "$sc_failed" = 0 ]
+}
+do_snapshot() {
+  ss_label="${1:-manual}"; open_top
+  [ -d "$T/$ROOTSUB" ] || die "no '$ROOTSUB' subvolume: this is not a Carpathian Btrfs layout."
+  verify_bundle "$BOOT" || die "restore point needs a complete nonempty kernel/initramfs boot bundle. Nothing was saved."
+  [ -d "$T/@snapshots" ] || btrfs subvolume create "$T/@snapshots" >/dev/null || die "could not create the snapshot area."
+  ss_sid="$(date +%Y%m%d-%H%M%S)-$(slug "$ss_label")"
+  ss_n=1; ss_base=$ss_sid
+  while [ -e "$T/@snapshots/$ss_sid" ] || [ -e "$T/@snapshots/$ss_sid.boot" ] || [ -e "$T/@snapshots/$ss_sid.label" ]; do ss_n=$((ss_n+1)); ss_sid="$ss_base-$ss_n"; done
+  ss_final="$T/@snapshots/$ss_sid"; ss_pending="$T/@snapshots/.pending-$ss_sid-$$"
+  SS_ACTIVE=1
+  btrfs subvolume snapshot -r "$T/$ROOTSUB" "$ss_pending" >/dev/null || die "snapshot failed."
+  copy_bundle "$BOOT" "$ss_pending.boot" || die "could not save the complete boot bundle. The restore point was not published."
+  mv "$ss_pending" "$ss_final" && mv "$ss_pending.boot" "$ss_final.boot" || die "could not publish the restore point."
+  printf '%s\n' "$ss_label" > "$ss_final.label" || die "could not publish the restore point label."
+  if ! do_menu; then die "could not publish the restore point menu. The incomplete restore point was not accepted."; fi
+  SS_ACTIVE=0
+  say "Snapshot saved: $ss_sid"
 }
 
 # ---- Limine boot menu: "Carpathian OS restore points" submenu with the newest few points, bootable even if the system will not start ----
 MENU_KEEP=${CARPATIC_MENU_KEEP:-3}
 INDEX=${CARPATIC_INDEX:-/var/lib/carpatic/restore-points}
-write_index() { # world-readable list so the Settings window (not root) can show the restore points
-  mkdir -p "$(dirname "$INDEX")" 2>/dev/null; do_list_raw > "$INDEX.new" 2>/dev/null && chmod 644 "$INDEX.new" && mv "$INDEX.new" "$INDEX"
+write_index() {
+  INDEX_COMMITTED=0
+  mkdir -p "$(dirname "$INDEX")" || return 1
+  INDEX_TEMP=$(mktemp "$INDEX.XXXXXX") || return 1
+  INDEX_EXPECTED=$(mktemp "$INDEX.expected-XXXXXX") || { rm -f "$INDEX_TEMP"; INDEX_TEMP=""; return 1; }
+  if do_list_raw > "$INDEX_TEMP" && chmod 644 "$INDEX_TEMP" && cp "$INDEX_TEMP" "$INDEX_EXPECTED" && mv "$INDEX_TEMP" "$INDEX"; then
+    INDEX_COMMITTED=1; rm -f "$INDEX_EXPECTED"; INDEX_EXPECTED=""; INDEX_TEMP=""; return 0
+  fi
+  rm -f "$INDEX_TEMP" "$INDEX_EXPECTED"; INDEX_TEMP=""; INDEX_EXPECTED=""; return 1
+}
+menu_discard() {
+  BM_PREP=0
+  md_failed=0
+  for md_sid in $bm_created; do
+    [ ! -d "$T/@snapshots/$md_sid.rw" ] || btrfs subvolume delete "$T/@snapshots/$md_sid.rw" >/dev/null || md_failed=1
+  done
+  rm -rf "$bm_stage" || md_failed=1
+  [ "$md_failed" = 0 ]
 }
 do_menu() {
+  INDEX_COMMITTED=0
   open_top
-  write_index
-  confs=""; for c in "$BOOT/limine/limine.conf" "$BOOT/limine.conf"; do [ -f "$c" ] && confs="$confs $c"; done
-  [ -n "$confs" ] || return 0                      # not a Limine system (or a test directory): nothing to do
-  main=$(sed -n 's/^[[:space:]]*kernel_cmdline:[[:space:]]*//p' $confs | head -1)
-  [ -n "$main" ] || return 0
-  want=$(ls -1r "$T/@snapshots" 2>/dev/null | grep -v '\.boot$\|\.label$\|\.rw$\|^replaced-' | head -n "$MENU_KEEP")
-  mkdir -p "$BOOT/snapshots"
-  entries=""
-  for sid in $want; do
-    [ -d "$T/@snapshots/$sid.boot" ] && [ -f "$T/@snapshots/$sid.boot/vmlinuz-lts" ] || continue
-    [ -d "$T/@snapshots/$sid.rw" ] || btrfs subvolume snapshot "$T/@snapshots/$sid" "$T/@snapshots/$sid.rw" >/dev/null 2>&1 || continue
-    mkdir -p "$BOOT/snapshots/$sid"
-    for f in "$T/@snapshots/$sid.boot"/vmlinuz-* "$T/@snapshots/$sid.boot"/initramfs-* "$T/@snapshots/$sid.boot"/*-ucode.img; do [ -f "$f" ] && cp -p "$f" "$BOOT/snapshots/$sid/" 2>/dev/null; done
-    kernel=$(cd "$BOOT/snapshots/$sid" && ls vmlinuz-* | head -1); initrd=$(cd "$BOOT/snapshots/$sid" && ls initramfs-* | head -1)
-    cmd=$(printf '%s' "$main" | sed "s|rootflags=subvol=@|rootflags=subvol=@snapshots/$sid.rw|; s| resume=[^ ]*||; s| resume_offset=[^ ]*||; s| single||")
-    label=$(cat "$T/@snapshots/$sid.label" 2>/dev/null); d=$(printf '%s' "$sid" | sed 's/^\([0-9]\{4\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)-\([0-9]\{2\}\)\([0-9]\{2\}\).*/\1-\2-\3 \4:\5/')
-    entries="$entries
-    //$d  ${label:-restore point}
+  bm_confs=""
+  for bm_rel in limine/limine.conf limine.conf; do [ ! -f "$BOOT/$bm_rel" ] || bm_confs="$bm_confs $bm_rel"; done
+  [ -n "$bm_confs" ] || { write_index; return $?; }
+  bm_main=""
+  for bm_rel in $bm_confs; do bm_main=$(sed -n 's/^[[:space:]]*kernel_cmdline:[[:space:]]*//p' "$BOOT/$bm_rel" | head -1); [ -z "$bm_main" ] || break; done
+  [ -n "$bm_main" ] || { write_index; return $?; }
+  bm_created=""
+  bm_stage=$(mktemp -d "$BOOT/.carpathian-menu-XXXXXX") || return 1
+  BM_PREP=1
+  mkdir -p "$bm_stage/new/snapshots" "$bm_stage/old" || { menu_discard || printf 'carpatic-rollback: incomplete menu preparation cleanup.\n' >&2; return 1; }
+  bm_want=$(ls -1r "$T/@snapshots" 2>/dev/null | grep -v '^\.\|\.boot$\|\.label$\|\.rw$\|^replaced-' | head -n "$MENU_KEEP")
+  bm_entries=""; bm_created=""
+  for bm_sid in $bm_want; do
+    [ -f "$T/@snapshots/$bm_sid.label" ] || continue
+    if ! copy_bundle "$T/@snapshots/$bm_sid.boot" "$bm_stage/new/snapshots/$bm_sid"; then menu_discard || printf 'carpatic-rollback: incomplete menu preparation cleanup.\n' >&2; return 1; fi
+    if [ ! -d "$T/@snapshots/$bm_sid.rw" ]; then
+      bm_created="$bm_created $bm_sid"
+      btrfs subvolume snapshot "$T/@snapshots/$bm_sid" "$T/@snapshots/$bm_sid.rw" >/dev/null || { menu_discard || printf 'carpatic-rollback: incomplete menu preparation cleanup.\n' >&2; return 1; }
+    fi
+    bm_kernel=""; for bm_file in "$bm_stage/new/snapshots/$bm_sid"/vmlinuz-*; do [ -f "$bm_file" ] && { bm_kernel=${bm_file##*/}; break; }; done
+    bm_initrd=initramfs-${bm_kernel#vmlinuz-}
+    bm_cmd=$(printf '%s' "$bm_main" | sed "s|rootflags=subvol=@|rootflags=subvol=@snapshots/$bm_sid.rw|; s| resume=[^ ]*||; s| resume_offset=[^ ]*||; s| single||")
+    bm_label=$(tr '\r\n' '  ' < "$T/@snapshots/$bm_sid.label") || { menu_discard || printf 'carpatic-rollback: incomplete menu preparation cleanup.\n' >&2; return 1; }
+    bm_date=$(printf '%s' "$bm_sid" | sed 's/^\([0-9]\{4\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)-\([0-9]\{2\}\)\([0-9]\{2\}\).*/\1-\2-\3 \4:\5/')
+    bm_entries="$bm_entries
+    //$bm_date  ${bm_label:-restore point}
         protocol: linux
-        kernel_path: boot():/snapshots/$sid/$kernel
+        kernel_path: boot():/snapshots/$bm_sid/$bm_kernel
 "
-    for u in "$BOOT/snapshots/$sid"/*-ucode.img; do [ -f "$u" ] && entries="$entries        module_path: boot():/snapshots/$sid/$(basename "$u")
+    for bm_file in "$bm_stage/new/snapshots/$bm_sid"/*-ucode.img; do [ -f "$bm_file" ] && bm_entries="$bm_entries        module_path: boot():/snapshots/$bm_sid/${bm_file##*/}
 "; done
-    entries="$entries        module_path: boot():/snapshots/$sid/$initrd
-        kernel_cmdline: $cmd
+    bm_entries="$bm_entries        module_path: boot():/snapshots/$bm_sid/$bm_initrd
+        kernel_cmdline: $bm_cmd
 "
   done
-  for c in $confs; do
-    sed -i '/^# >>> carpatic restore points/,/^# <<< carpatic restore points/d' "$c"
-    if [ -n "$entries" ]; then
-      { printf '\n# >>> carpatic restore points (generated by carpatic-rollback, do not edit)\n/Carpathian OS restore points\n'; printf '%s\n' "$entries"; printf '# <<< carpatic restore points\n'; } >> "$c"
+  for bm_rel in $bm_confs; do
+    mkdir -p "$(dirname "$bm_stage/new/$bm_rel")" || { menu_discard || printf 'carpatic-rollback: incomplete menu preparation cleanup.\n' >&2; return 1; }
+    sed '/^# >>> carpatic restore points/,/^# <<< carpatic restore points/d' "$BOOT/$bm_rel" > "$bm_stage/new/$bm_rel" || { menu_discard || printf 'carpatic-rollback: incomplete menu preparation cleanup.\n' >&2; return 1; }
+    if [ -n "$bm_entries" ]; then
+      { printf '\n# >>> carpatic restore points (generated by carpatic-rollback, do not edit)\n/Carpathian OS restore points\n'; printf '%s\n' "$bm_entries"; printf '# <<< carpatic restore points\n'; } >> "$bm_stage/new/$bm_rel" || { menu_discard || printf 'carpatic-rollback: incomplete menu preparation cleanup.\n' >&2; return 1; }
     fi
   done
-  # forget boot files and writable clones of points that fell out of the menu
-  for d in "$BOOT"/snapshots/*; do [ -d "$d" ] || continue; b=$(basename "$d"); case " $(echo $want) " in *" $b "*) ;; *) rm -rf "${d:?}";; esac; done
-  for r in $(ls -1 "$T/@snapshots" 2>/dev/null | grep '\.rw$'); do b=${r%.rw}; case " $(echo $want) " in *" $b "*) ;; *) btrfs subvolume delete "$T/@snapshots/$r" >/dev/null 2>&1;; esac; done
-  return 0
+  printf '%s\n' snapshots $bm_confs > "$bm_stage/files" || { menu_discard; return 1; }
+  BM_ACTIVE=1; BM_PREP=0
+  if boot_apply "$bm_stage" && write_index; then
+    BM_ACTIVE=0; rm -rf "$bm_stage"; return 0
+  fi
+  if boot_undo "$bm_stage"; then BM_ACTIVE=0; menu_discard || printf 'carpatic-rollback: incomplete menu preparation cleanup.\n' >&2; return 1; fi
+  # EXIT cleanup retries the undo; only its final outcome can establish that
+  # backups remain and restarting is unsafe.
+  return 1
 }
 
 do_list() {
@@ -107,55 +257,120 @@ do_list() {
 }
 do_list_raw() {
   open_top; found=0
-  for s in $(ls -1r "$T/@snapshots" 2>/dev/null | grep -v '\.boot$\|\.label$\|\.rw$\|^replaced-'); do
-    [ -d "$T/@snapshots/$s" ] || continue; found=1
+  for s in $(ls -1r "$T/@snapshots" 2>/dev/null | grep -v '^\.\|\.boot$\|\.label$\|\.rw$\|^replaced-'); do
+    [ -d "$T/@snapshots/$s" ] && [ -f "$T/@snapshots/$s.label" ] || continue; found=1
     printf '%s  %s\n' "$s" "$(cat "$T/@snapshots/$s.label" 2>/dev/null)"
   done
   [ "$found" = 1 ] || say "No snapshots yet. Take one with: doas carpatic-rollback snapshot"
 }
 
-do_restore() {
-  id="${1:-}"; [ -n "$id" ] || die "restore which snapshot? See: carpatic-rollback list"
-  open_top
-  [ -d "$T/@snapshots/$id" ] || die "no snapshot called '$id'."
-  now="$(date +%Y%m%d-%H%M%S)-$$"
-  # 1. safety copy of how the system is right now, so a rollback can itself be undone
-  do_snapshot "before-rollback" >/dev/null
-  # 2. the chosen snapshot becomes the new "@" (read-write), the old "@" is kept aside
-  btrfs subvolume snapshot "$T/@snapshots/$id" "$T/@new-$now" >/dev/null || die "could not prepare the restored system."
-  # nested subvolumes (the installer puts the swap file in "@/swap") are not part of a snapshot: carry them over to the restored system
-  nested=$(btrfs subvolume list -o "$T/$ROOTSUB" 2>/dev/null | sed -n 's/.* path //p' | sed "s|^$ROOTSUB/||")
-  for n in $nested; do
-    [ -d "$T/$ROOTSUB/$n" ] || continue
-    rmdir "$T/@new-$now/$n" 2>/dev/null
-    mv "$T/$ROOTSUB/$n" "$T/@new-$now/$n" || { btrfs subvolume delete "$T/@new-$now" >/dev/null; die "could not keep '$n' (swap) with the restored system."; }
-  done
-  mv "$T/$ROOTSUB" "$T/@snapshots/replaced-$now" 2>/dev/null || { btrfs subvolume delete "$T/@new-$now" >/dev/null; die "could not move the current system aside."; }
-  mv "$T/@new-$now" "$T/$ROOTSUB" || die "could not put the restored system in place. Boot from the live USB and rename @snapshots/replaced-$now back to $ROOTSUB."
-  # 3. matching kernel and initramfs back on /boot
-  if [ -d "$T/@snapshots/$id.boot" ] && [ -d "$BOOT" ]; then
-    for f in "$T/@snapshots/$id.boot"/*; do [ -f "$f" ] && cp -p "$f" "$BOOT/" 2>/dev/null; done
+restore_undo() {
+  ru_failed=0
+  [ ! -d "$T/@snapshots/replaced-$rs_now" ] || rs_old_moved=1
+  if [ "$rs_old_moved" = 1 ] && [ ! -d "$T/@new-$rs_now" ] && [ -d "$T/$ROOTSUB" ]; then rs_new_at_root=1; fi
+  boot_undo "$rs_stage" || ru_failed=1
+  if [ "$rs_new_at_root" = 1 ]; then
+    if mv "$T/$ROOTSUB" "$T/@new-$rs_now"; then rs_new_at_root=0; else ru_failed=1; fi
   fi
-  do_menu
-  say "Done. Restart your computer to go back to '$id'."
+  if [ "$rs_old_moved" = 1 ] && [ "$rs_new_at_root" = 0 ]; then
+    if mv "$T/@snapshots/replaced-$rs_now" "$T/$ROOTSUB"; then rs_old_moved=0; else ru_failed=1; fi
+  fi
+  if [ "$rs_old_moved" = 0 ] && [ "$rs_new_at_root" = 0 ]; then
+    for ru_nested in $rs_nested_moved; do
+      [ -d "$T/@new-$rs_now/$ru_nested" ] || continue
+      mkdir -p "$(dirname "$T/$ROOTSUB/$ru_nested")" || { ru_failed=1; continue; }
+      mv "$T/@new-$rs_now/$ru_nested" "$T/$ROOTSUB/$ru_nested" || ru_failed=1
+    done
+  else ru_failed=1; fi
+  if [ "$ru_failed" = 0 ]; then
+    [ ! -d "$T/@new-$rs_now" ] || btrfs subvolume delete "$T/@new-$rs_now" >/dev/null || return 1
+    rm -rf "$rs_stage" || return 1
+    RS_ACTIVE=0; return 0
+  fi
+  return 1
+}
+do_restore() {
+  rs_id="${1:-}"; valid_id "$rs_id" || die "invalid restore point name."
+  open_top
+  [ -d "$T/@snapshots/$rs_id" ] && [ -f "$T/@snapshots/$rs_id.label" ] || die "no published snapshot called '$rs_id'."
+  verify_bundle "$T/@snapshots/$rs_id.boot" || die "the restore point has no complete matching boot bundle. Nothing was changed."
+  verify_bundle "$BOOT" || die "the current boot bundle cannot be saved safely. Nothing was changed."
+  for rs_config in boot.conf limine.conf limine.cfg limine/limine.conf; do
+    if [ -f "$BOOT/$rs_config" ] && [ ! -s "$T/@snapshots/$rs_id.boot/$rs_config" ]; then
+      die "the restore point is missing the boot configuration $rs_config. Nothing was changed."
+    fi
+  done
+  rs_stage=$(mktemp -d "$BOOT/.carpathian-restore-XXXXXX") || die "could not stage the restore on the boot partition. Nothing was changed."
+  RS_PREP=1
+  if ! copy_bundle "$T/@snapshots/$rs_id.boot" "$rs_stage/new"; then rm -rf "$rs_stage"; die "could not stage the complete boot bundle. Nothing was changed."; fi
+  rs_old_files=$(boot_files "$BOOT") && rs_new_files=$(boot_files "$rs_stage/new") || { rm -rf "$rs_stage"; die "could not enumerate boot files. Nothing was changed."; }
+  printf '%s\n' $rs_old_files $rs_new_files | sort -u > "$rs_stage/files" || { rm -rf "$rs_stage"; die "could not prepare the boot manifest. Nothing was changed."; }
+  mkdir -p "$rs_stage/old" || { rm -rf "$rs_stage"; die "could not prepare the boot backup. Nothing was changed."; }
+  # A failed safety snapshot or its menu must stop before root/nested mutation.
+  if ! do_snapshot "before-rollback" >/dev/null; then rm -rf "$rs_stage"; die "could not save a safety restore point. Nothing was restored."; fi
+  rs_now="$(date +%Y%m%d-%H%M%S)-$$"; rs_old_moved=0; rs_new_at_root=0; rs_nested_moved=""
+  RS_ACTIVE=1; RS_PREP=0
+  btrfs subvolume snapshot "$T/@snapshots/$rs_id" "$T/@new-$rs_now" >/dev/null || die "could not prepare the restored system. Restore will be undone."
+  rs_nested_raw=$(btrfs subvolume list -o "$T/$ROOTSUB") || die "could not enumerate nested subvolumes. Restore will be undone."
+  rs_nested=$(printf '%s\n' "$rs_nested_raw" | sed -n 's/.* path //p')
+  for rs_path in $rs_nested; do
+    case "$rs_path" in "$ROOTSUB"/*) rs_name=${rs_path#"$ROOTSUB"/};; *) die "unexpected nested subvolume path. Restore will be undone.";; esac
+    case "/$rs_name/" in *'/../'*|*'/./'*|*'//'*) die "unsafe nested subvolume path. Restore will be undone.";; esac
+    [ -d "$T/$ROOTSUB/$rs_name" ] || continue
+    [ ! -d "$T/@new-$rs_now/$rs_name" ] || rmdir "$T/@new-$rs_now/$rs_name" || die "restored nested subvolume placeholder is not empty. Restore will be undone."
+    mkdir -p "$(dirname "$T/@new-$rs_now/$rs_name")" || die "could not prepare the nested subvolume path. Restore will be undone."
+    rs_nested_moved="$rs_name $rs_nested_moved"
+    mv "$T/$ROOTSUB/$rs_name" "$T/@new-$rs_now/$rs_name" || die "could not carry over a nested subvolume. Restore will be undone."
+  done
+  mv "$T/$ROOTSUB" "$T/@snapshots/replaced-$rs_now" || die "could not move the current root aside. Restore will be undone."
+  rs_old_moved=1
+  mv "$T/@new-$rs_now" "$T/$ROOTSUB" || die "could not activate the restored root. Restore will be undone."
+  rs_new_at_root=1
+  boot_apply "$rs_stage" || die "could not commit the matching boot files. Restore will be undone."
+  RS_READY=1; INDEX_COMMITTED=0
+  do_menu || die "could not commit the restore menu. Restore will be undone."
+  RS_ACTIVE=0; rm -rf "$rs_stage"
+  say "Done. Restart your computer to go back to '$rs_id'."
   say "Your home folder was not changed. To undo this, restore the snapshot called 'before-rollback' the same way."
 }
 
 do_delete() {
-  id="${1:-}"; [ -n "$id" ] || die "delete which snapshot?"
+  id="${1:-}"; valid_id "$id" || die "invalid snapshot name."
   open_top; [ -d "$T/@snapshots/$id" ] || die "no snapshot called '$id'."
   btrfs subvolume delete "$T/@snapshots/$id" >/dev/null || die "could not delete it."
-  rm -rf "${T:?}/@snapshots/$id.boot"; rm -f "$T/@snapshots/$id.label"; btrfs subvolume delete "$T/@snapshots/$id.rw" >/dev/null 2>&1; do_menu; say "Deleted $id."
+  rm -rf "${T:?}/@snapshots/$id.boot"; rm -f "$T/@snapshots/$id.label"; btrfs subvolume delete "$T/@snapshots/$id.rw" >/dev/null 2>&1; do_menu || die "snapshot removed, but the restore menu could not be updated."; say "Deleted $id."
 }
 
 do_prune() {
   keep="${1:-8}"; open_top
-  ls -1r "$T/@snapshots" 2>/dev/null | grep -v '\.boot$\|\.label$\|\.rw$\|^replaced-' | tail -n +"$((keep+1))" | while read -r s; do
+  ls -1r "$T/@snapshots" 2>/dev/null | grep -v '^\.\|\.boot$\|\.label$\|\.rw$\|^replaced-' | tail -n +"$((keep+1))" | while read -r s; do
     case "$s" in *-before-update-*|*-before-update) do_delete "$s" >/dev/null && echo "pruned $s";; esac
   done
   ls -1r "$T/@snapshots" 2>/dev/null | grep '^replaced-' | tail -n +3 | while read -r s; do btrfs subvolume delete "$T/@snapshots/$s" >/dev/null && echo "pruned $s"; done
   return 0
 }
+
+# A privileged update may share its already-held open file description.
+# Verify the descriptor is the actual lock inode, then acquire/confirm the
+# kernel lock; a caller-provided flag or environment alone never bypasses it.
+INHERIT_LOCK=0
+if [ "${1:-}" = --inherit-lock ]; then INHERIT_LOCK=1; shift; fi
+# Serialize writers before mounting or staging. Kernel locks disappear on exit.
+case "${1:-help}" in
+  snapshot|menu|restore|delete|prune)
+    case "$ROOTSUB" in ''|.|..|*[!a-zA-Z0-9._@-]*) die "invalid root subvolume name.";; esac
+    lock_file=${CARPATIC_TOP:-/run/carpatic}/.carpathian-rollback.lock
+    mkdir -p "$(dirname "$lock_file")" || die "could not open the restore lock."
+    if [ "$INHERIT_LOCK" = 1 ]; then
+      lock_inode=$(stat -Lc '%d:%i' "$lock_file") || die "could not verify the update lock."
+      held_inode=$(stat -Lc '%d:%i' /proc/self/fd/9 2>/dev/null) || die "missing inherited update lock."
+      [ "$held_inode" = "$lock_inode" ] || die "invalid inherited update lock."
+    else
+      exec 9>"$lock_file" || die "could not open the restore lock."
+    fi
+    flock -n 9 || die "another restore-point operation is running. Try again when it finishes."
+    ;;
+esac
 
 case "${1:-help}" in
   snapshot) shift; do_snapshot "$*";;

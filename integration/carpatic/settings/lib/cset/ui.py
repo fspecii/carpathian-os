@@ -591,11 +591,15 @@ class ProgressSheet(Gtk.Dialog):
     def step_done(self, rc):
         if isinstance(rc, Exception): rc = 1
         job = self.job
-        if job and job.cancelled: return self.finish(False, "Cancelled. Nothing was changed.")
+        details = "\n".join(job.tail[-6:]) if job else ""
+        if "do not restart" in details.lower():
+            return self.finish(False, self.runner.friendly_error(rc, details))
+        if job and job.cancelled:
+            return self.finish(False, "Cancelled. Some changes may have completed; review the details before trying again.")
         if job and job.auth_failed and rc != 0:
             self.password = None
             return self.finish(False, "That password did not work. Try again.")
-        if rc != 0: return self.finish(False, self.runner.friendly_error(rc, "\n".join(job.tail[-6:]) if job else ""))
+        if rc != 0: return self.finish(False, self.runner.friendly_error(rc, details))
         self.step_i += 1; self.frac = 1.0; self.bar.set_fraction(self.step_i / len(self.steps)); self.run_step()
     def finish(self, ok, message=""):
         self.finished = True; self.ok = ok; self.btn_cancel.hide()

@@ -1,7 +1,10 @@
 #!/bin/sh
 # /etc/periodic/daily/carpatic-auto-update: installs updates only when the person turned "Install updates automatically" on in
-# Settings > Software Update (the flag file does not exist by default). carpatic-update saves a restore point first and never restarts.
+# Settings > Software Update (the flag file does not exist by default). Btrfs updates save a restore point first; updates never restart.
 [ -f /etc/carpatic/auto-updates ] || exit 0
-command -v carpatic-update >/dev/null 2>&1 || exit 0
+command -v carpatic-update >/dev/null 2>&1 || {
+    printf 'Automatic updates could not run: the update component is missing.\n' >&2
+    exit 127
+}
 { date; carpatic-update apply; } >>/var/log/carpatic-auto-update.log 2>&1
-exit 0
+exit $?

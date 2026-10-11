@@ -4,6 +4,8 @@ set -eu
 cd "$(dirname "$0")/.."
 python3 tests/update-commands.py
 python3 tests/update-status.py
+python3 tests/progress-errors.py
+python3 tests/rollback-commands.py
 python3 tests/display-commands.py
 python3 tests/settings-search.py
 python3 tests/default-apps.py

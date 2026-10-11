@@ -80,10 +80,22 @@ do_list() { available=$(apk list -u 2>/dev/null) || die "could not list availabl
 
 do_apply() {
   need_root apply
+  # Hold the same kernel lock as restore for the complete package transaction.
+  mkdir -p /run/carpatic || die "could not open the system update lock."
+  exec 9>/run/carpatic/.carpathian-rollback.lock || die "could not open the system update lock."
+  flock -n 9 || die "another update or restore-point operation is running. Try again when it finishes."
   apk update >/dev/null 2>&1 || die "could not reach the update servers. Check your internet connection."
   n=$(count_updates) || die "could not list available updates."; [ "$n" = 0 ] && { say "Your system is up to date."; return 0; }
   say "Installing $n update(s)..."
-  if command -v carpatic-rollback >/dev/null 2>&1; then carpatic-rollback snapshot "before update $(date +%Y-%m-%d)" >/dev/null 2>&1 && { say "Safety snapshot taken."; carpatic-rollback prune 8 >/dev/null 2>&1; }; fi
+  root_fs=$(awk '$2=="/" {print $3}' /proc/mounts | tail -1)
+  if [ "$root_fs" = btrfs ]; then
+    command -v carpatic-rollback >/dev/null 2>&1 || die "the restore-point component is missing. Updates were not installed."
+    carpatic-rollback --inherit-lock snapshot "before update $(date +%Y-%m-%d)" || die "the safety restore point could not be saved. Updates were not installed."
+    say "Safety snapshot taken."
+    carpatic-rollback --inherit-lock prune 8 >/dev/null 2>&1 || say "Old restore points could not be pruned; the new safety point is kept."
+  else
+    say "No system restore point is available on ${root_fs:-this filesystem}. Updates will not have automatic rollback."
+  fi
   run_logged 3 apk upgrade --no-progress || die "the update did not finish. Review the errors before trying again; 'doas apk fix' can repair incomplete packages."
   do_mark
   echo 0 > /run/carpatic/updates-available 2>/dev/null
