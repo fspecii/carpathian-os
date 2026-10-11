@@ -8,6 +8,7 @@ tests/check-host.sh
 python3 tests/window-animations.py
 python3 tests/animation-matrix-policy.py
 python3 tests/seam-segments.py
+python3 tests/flyout-oracle.py
 python3 tests/installer-branding.py
 python3 tests/prebuilt-architecture.py
 python3 tests/desktop-auth-install.py
@@ -52,4 +53,5 @@ case "$DISPLAY" in :0|:1) printf 'Refusing a reserved display.\n' >&2; exit 1;; 
 unset WAYLAND_DISPLAY
 export GDK_BACKEND=x11 CARPATIC_WM_TEST_DISPLAY=1
 export CARPATIC_WM_TEST_LOG="$PWD/artifacts/wm-test.log"
+python3 integration/carpatic/panel/tests/test_first_paint.py
 cargo test --locked -p carpatic-wm --test x11 -- --ignored --nocapture --test-threads=1

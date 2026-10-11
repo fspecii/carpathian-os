@@ -45,7 +45,9 @@ class Group:
         self.target = 0.0
 
     @property
-    def max_offset(self): return max(0.0, self.content_h - self.h)
+    def max_offset(self):
+        if self.w <= 0 or self.h <= 0 or self.content_h <= 0: return 0.0
+        return max(0.0, self.content_h - self.h)
 
     def scroll_by(self, d):
         self.target = max(0.0, min(self.max_offset, self.target + d))
@@ -164,6 +166,7 @@ class Canvas(Gtk.DrawingArea):
 
     # ------------------------------------------------------------------ draw
     def on_draw(self, widget, cr):
+        self.paint_complete = False
         if self.dirty: self.rebuild()
         f = uiscale.factor()
         w, h = self.get_allocated_width() / f, self.get_allocated_height() / f      # logical px: the views know nothing about the scale
@@ -175,6 +178,7 @@ class Canvas(Gtk.DrawingArea):
         if self.view.framed:
             self.view.paint_frame(cr, w, h, getattr(self, "frame_alpha", 1.0))
         paint_nodes(cr, self.nodes, self.view, self.hv, self.press_id, self.focus_id if self.show_focus else None, self.hover_id)
+        self.paint_complete = True
         return False
 
     # ------------------------------------------------------------------ pointer
@@ -311,6 +315,9 @@ def paint_nodes(cr, nodes, view, hv, press_id=None, focus_id=None, hover_id=None
         if n.group:
             g = view.groups.get(n.group)
             if g is not None:
+                if g.w <= 0 or g.h <= 0:
+                    cr.restore()
+                    continue
                 cr.rectangle(g.x, g.y, g.w, g.h); cr.clip(); cr.translate(0, -g.offset)
         n.paint(cr, n, st)
         if st.focus and n.ring and n.id is not None:

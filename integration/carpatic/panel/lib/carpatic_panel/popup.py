@@ -128,7 +128,7 @@ class Popup(Gtk.Window):
         return {"bottom": (x, y + d), "top": (x, y - d), "left": (x - d, y), "right": (x + d, y)}.get(self.edge, (x, y))
 
     def _first_paint(self, *_):
-        if not self._paint_ready:
+        if not self._paint_ready and getattr(self.canvas, "paint_complete", False):
             self._paint_ready = True
             self._schedule(0, self._reveal)
         return False
