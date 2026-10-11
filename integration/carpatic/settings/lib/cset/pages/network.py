@@ -178,7 +178,7 @@ class BluetoothPage(Page):
     entries = (("Bluetooth", "on off wireless", "bt-switch"), ("My devices", "paired connect headphones speaker", "bt-devices"), ("Find new devices", "pair scan discoverable", "bt-scan"))
     def available(self): return su.which("bluetoothctl") and (bool(os.environ.get("CSET_FAKE_HW")) or bool(glob.glob("/sys/class/bluetooth/hci*")))
     def build(self, pb):
-        self.pb = pb; self.rows = []
+        self.pb = pb; self.rows = []; self._discovery_allowed = False
         g = pb.group(None, "This computer can be found as “" + (__import__("cset.pages.about_data", fromlist=["x"]).hostname() or "this computer") + "” while Bluetooth settings are open.")
         self.sw = SwitchRow("Bluetooth", "Checking status...", False, lambda v: self.win.apply("bluetoothctl", "power", "on" if v else "off", msg="Turning Bluetooth " + ("on" if v else "off") + "...", done=lambda *_: self.refresh()), icon="bluetooth", color="#0a84ff", key="bt-switch"); g.add(self.sw)
         self.sw.set_sensitive(False)
@@ -237,6 +237,10 @@ class BluetoothPage(Page):
         su.bg(work, done)
     ICONS = {"audio-headphones": "audio-headphones", "audio-headset": "audio-headset", "audio-card": "audio-speakers", "input-keyboard": "input-keyboard", "input-mouse": "input-mouse", "input-gaming": "input-gaming", "phone": "phone"}
     def fill(self, res):
+        # A newer controller/device observation supersedes in-flight discovery.
+        self._discovery_epoch = getattr(self, "_discovery_epoch", 0) + 1
+        self._discovery_allowed = not isinstance(res, Exception) and "error" not in res and res["powered"]
+        for row in getattr(self, "nearby", []): row.set_sensitive(False)
         self.refresh_row.set_busy(False)
         if isinstance(res, Exception) or "error" in res:
             error = "query" if isinstance(res, Exception) else res["error"]
@@ -272,21 +276,84 @@ class BluetoothPage(Page):
         if ui.confirm(self.win, f"Forget “{name}”?", "You will need to pair it again.", "Forget", True):
             self.win.apply("bluetoothctl", "remove", mac, msg="Removing...", done=lambda *_: self.refresh())
     def scan(self):
+        if getattr(self, "_discovery_allowed", True) is False:
+            # The status row outside this disabled group can refresh/retry.
+            return
+        if getattr(self, "_scan_running", False):
+            self._scan_again = True
+            return
+        self._scan_running = True
+        epoch = getattr(self, "_discovery_epoch", 0)
         self.find_row.set_busy(True)
         def work():
-            su.run_sync("bluetoothctl", "--timeout", "8", "scan", "on", timeout=15)
-            known = {l.split(" ", 2)[1] for l in su.lines("bluetoothctl", "paired-devices") if l.count(" ") >= 2}
-            return [(l.split(" ", 2)[1], l.split(" ", 2)[2]) for l in su.lines("bluetoothctl", "devices") if l.count(" ") >= 2 and l.split(" ", 2)[1] not in known and not re.fullmatch(r"[0-9A-F]{2}(-[0-9A-F]{2}){5}", l.split(" ", 2)[2])]
+            import subprocess, time
+            deadline = time.monotonic() + 30
+            def query(*args):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0: raise subprocess.TimeoutExpired(["bluetoothctl", *args], 30)
+                # run() owns, kills and reaps its process on timeout. BlueZ
+                # removes this client's discovery reference on bus disconnect;
+                # a separate process cannot release the original client's ref.
+                result = subprocess.run(["bluetoothctl", *args], capture_output=True, text=True,
+                                        timeout=min(15, remaining), env=dict(os.environ, LC_ALL="C"))
+                if time.monotonic() >= deadline:
+                    raise subprocess.TimeoutExpired(["bluetoothctl", *args], 30)
+                return result
+            def devices(text):
+                found = []
+                for line in text.splitlines():
+                    if not line.strip(): continue
+                    parts = line.split(" ", 2)
+                    if (len(parts) != 3 or parts[0] != "Device"
+                            or not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", parts[1])):
+                        raise ValueError("Malformed Bluetooth device list")
+                    found.append((parts[1].upper(), parts[2]))
+                return found
+            discovery = query("--timeout", "8", "scan", "on")
+            # BlueZ's --timeout mode can discard noninteractive error status.
+            # Require its acknowledged discovery start as well as exit0.
+            if discovery.returncode != 0 or not re.search(r"(?m)^Discovery started\s*$", discovery.stdout):
+                return {"error": "scan"}
+            paired = query("devices", "Paired")
+            if paired.returncode != 0: return {"error": "paired"}
+            try: known = {mac for mac, _ in devices(paired.stdout)}
+            except ValueError: return {"error": "paired"}
+            nearby = query("devices")
+            if nearby.returncode != 0: return {"error": "devices"}
+            try: found = devices(nearby.stdout)
+            except ValueError: return {"error": "devices"}
+            return {"devices": [(mac, name) for mac, name in found if mac not in known
+                                 and not re.fullmatch(r"[0-9A-Fa-f]{2}(-[0-9A-Fa-f]{2}){5}", name)]}
         def done(res):
+            import subprocess
+            self._scan_running = False
             self.find_row.set_busy(False)
-            for r in self.nearby: self.find.list.remove(r); self.find.rows.remove(r)
-            self.nearby = []
-            if isinstance(res, Exception): return
-            for mac, name in res:
-                r = ButtonRow(name, "Ready to pair", "Pair", None, "suggested", icon="bluetooth", color="#8e8e93", key="near-" + mac)
-                r.buttons[0].connect("clicked", lambda b, mac=mac: self.win.apply("sh", "-c", f"bluetoothctl pair {mac} && bluetoothctl trust {mac} && bluetoothctl connect {mac}", msg="Pairing...", done=lambda *_: self.refresh()))
-                self.find.add(r); self.nearby.append(r); r.show_all()
-            self.find_row.set_sub("" if res else "Nothing new found. Put the device in pairing mode and scan again.")
+            if epoch != getattr(self, "_discovery_epoch", 0) or getattr(self, "_discovery_allowed", True) is False:
+                self._scan_again = False
+                return
+            if isinstance(res, Exception) or "error" in res:
+                error = "query" if isinstance(res, Exception) else res["error"]
+                titles = {"scan": "Could not start Bluetooth discovery", "paired": "Could not read paired devices",
+                          "devices": "Could not read nearby devices"}
+                self.find_row.set_title(titles.get(error, "Bluetooth discovery timed out" if isinstance(res, (TimeoutError, subprocess.TimeoutExpired)) else "Could not finish Bluetooth discovery"))
+                self.find_row.set_sub("Try again. Check that Bluetooth is on and your adapter is available.")
+                self.find_row.buttons[0].set_label("Retry")
+                self.find.set_sensitive(True)
+                for row in self.nearby: row.set_sensitive(False)
+            else:
+                for row in self.nearby: self.find.list.remove(row); self.find.rows.remove(row)
+                self.nearby = []
+                self.find.set_sensitive(True)
+                self.find_row.set_title("Find new devices"); self.find_row.buttons[0].set_label("Scan")
+                found = res["devices"]
+                for mac, name in found:
+                    r = ButtonRow(name, "Ready to pair", "Pair", None, "suggested", icon="bluetooth", color="#8e8e93", key="near-" + mac)
+                    r.buttons[0].connect("clicked", lambda b, mac=mac: self.win.apply("sh", "-c", f"bluetoothctl pair {mac} && bluetoothctl trust {mac} && bluetoothctl connect {mac}", msg="Pairing...", done=lambda *_: self.refresh()))
+                    self.find.add(r); self.nearby.append(r); r.show_all()
+                self.find_row.set_sub("" if found else "Nothing new found. Put the device in pairing mode and scan again.")
+            if getattr(self, "_scan_again", False):
+                self._scan_again = False
+                self.scan()
         su.bg(work, done)
 
 # ---------------------------------------------------------------- Network
