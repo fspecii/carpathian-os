@@ -4783,7 +4783,16 @@ impl Wm {
                         .find(|c| c.id == e.window)
                         .map(|c| c.desktop)
                     {
-                        self.switch(desktop)?;
+                        let monitor = &self.monitors[self.active_monitor];
+                        // Same-view activation must not briefly focus the first
+                        // available app before the requested target. A real
+                        // view change still applies normal workspace policy.
+                        if self.showing_desktop
+                            || monitor.view != 1 << desktop
+                            || monitor.all_view
+                        {
+                            self.switch(desktop)?;
+                        }
                         self.focus(e.window)?;
                     }
                 } else if e.type_ == self.atoms._NET_CLOSE_WINDOW {

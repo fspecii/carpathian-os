@@ -4544,22 +4544,47 @@ fn multiwindow_keyboard_snap_keeps_workarea_focus_stacking_and_restore() -> Resu
     wait("ordinary peer framed", || {
         root_surface(&conn, ordinary) != ordinary
     });
+    println!("ORDINARY_BEFORE_ACTIVATE ordinary={ordinary} frame={} visibility={:?} active={:?} input={}",
+        root_surface(&conn, ordinary), conn.get_window_attributes(ordinary)?.reply()?.map_state,
+        property(&conn, root, "_NET_ACTIVE_WINDOW")?, conn.get_input_focus()?.reply()?.focus);
     message(&conn, root, ordinary, "_NET_ACTIVE_WINDOW", [2, 0, 0, 0, 0])?;
-    wait("ordinary client focused below ABOVE layer", || {
-        let siblings = conn.query_tree(root).unwrap().reply().unwrap().children;
+    // Management already focuses this app, so its pre-request active property
+    // alone is not acknowledgement that activation has finished. Require the
+    // actual input, logical active ID and ABOVE ordering to settle together.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut stable_since = None;
+    loop {
+        let siblings = conn.query_tree(root)?.reply()?.children;
         let normal = siblings
             .iter()
             .position(|w| *w == root_surface(&conn, ordinary));
-        property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![ordinary]
-            && normal.is_some_and(|normal| {
-                clients.iter().all(|w| {
-                    siblings
-                        .iter()
-                        .position(|p| *p == root_surface(&conn, *w))
-                        .is_some_and(|p| p > normal)
-                })
+        let active = property(&conn, root, "_NET_ACTIVE_WINDOW")?;
+        let input = conn.get_input_focus()?.reply()?.focus;
+        let below_above = normal.is_some_and(|normal| {
+            clients.iter().all(|w| {
+                siblings
+                    .iter()
+                    .position(|p| *p == root_surface(&conn, *w))
+                    .is_some_and(|p| p > normal)
             })
-    });
+        });
+        if active == vec![ordinary] && input == ordinary && below_above {
+            let since = stable_since.get_or_insert_with(Instant::now);
+            if since.elapsed() >= Duration::from_millis(120) {
+                break;
+            }
+        } else {
+            stable_since = None;
+            println!("ORDINARY_ACTIVATION_TRANSITION ordinary={ordinary} active={active:?} input={input} below_above={below_above} stack={siblings:?}");
+        }
+        assert!(
+            Instant::now() < deadline,
+            "ordinary activation failed stable active/input/ABOVE precondition"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    println!("PASS ordinary client actual focus stable below ABOVE layer");
+    assert_eq!(property(&conn, root, "_NET_ACTIVE_WINDOW")?, vec![ordinary]);
     assert_eq!(conn.get_input_focus()?.reply()?.focus, ordinary);
     conn.destroy_window(ordinary)?;
     for id in clients {
@@ -4906,6 +4931,138 @@ fn stationary_pointer_does_not_steal_keyboard_snap_focus() -> Result<()> {
         || property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![exposed],
     );
     assert_eq!(conn.get_input_focus()?.reply()?.focus, exposed);
+    for id in clients {
+        conn.destroy_window(id)?;
+    }
+    conn.flush()?;
+    wm.0.kill()?;
+    wm.0.wait()?;
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires private Xvfb; run tests/run.sh"]
+fn same_view_activation_never_focuses_an_unrelated_client() -> Result<()> {
+    assert_eq!(
+        std::env::var("CARPATIC_WM_TEST_DISPLAY").as_deref(),
+        Ok("1")
+    );
+    assert!(std::env::var_os("WAYLAND_DISPLAY").is_none());
+    let dir = std::path::PathBuf::from(std::env::var("CARPATIC_CONFIG_DIR")?);
+    let _config = ConfigRestore::new(&dir);
+    std::fs::write(dir.join("themes.toml"), "[appearance]\nworkspaces=4\ndefault_layout='float'\n[bar]\nenabled=0\n[titlebar]\nenabled=1\n")?;
+    let (conn, screen) = x11rb::connect(None)?;
+    let root = conn.setup().roots[screen].root;
+    let mut wm = start_with_policy(false, false)?;
+    wait("activation WM ready", || ready(&conn, root, &wm));
+    let mut clients = Vec::new();
+    for x in [100, 400] {
+        let id = conn.generate_id()?;
+        conn.create_window(
+            0,
+            id,
+            root,
+            x,
+            150,
+            240,
+            180,
+            0,
+            WindowClass::INPUT_OUTPUT,
+            0,
+            &CreateWindowAux::new(),
+        )?;
+        conn.map_window(id)?;
+        conn.flush()?;
+        wait("activation client viewable", || {
+            conn.get_window_attributes(id)
+                .unwrap()
+                .reply()
+                .unwrap()
+                .map_state
+                == MapState::VIEWABLE
+                && root_surface(&conn, id) != id
+        });
+        clients.push(id);
+    }
+    let target = clients[1];
+    wait("last managed client actual focus", || {
+        property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![target]
+            && conn.get_input_focus().unwrap().reply().unwrap().focus == target
+    });
+    for id in &clients {
+        conn.change_window_attributes(
+            *id,
+            &ChangeWindowAttributesAux::new().event_mask(EventMask::FOCUS_CHANGE),
+        )?;
+    }
+    conn.change_window_attributes(
+        root,
+        &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE),
+    )?;
+    conn.get_input_focus()?.reply()?;
+    let active_atom = atom(&conn, "_NET_ACTIVE_WINDOW")?;
+    for iteration in 0..5 {
+        while conn.poll_for_event()?.is_some() {}
+        message(&conn, root, target, "_NET_ACTIVE_WINDOW", [2, 0, 0, 0, 0])?;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut acknowledged = false;
+        loop {
+            while let Some(event) = conn.poll_for_event()? {
+                match event {
+                    x11rb::protocol::Event::FocusIn(e) => {
+                        println!("ACTIVATION_FOCUS_IN iteration={iteration} window={} mode={:?} detail={:?}",e.event,e.mode,e.detail);
+                        assert!(
+                            !clients.iter().any(|id| *id != target && *id == e.event),
+                            "same-view activation focused unrelated app {} before target {target}",
+                            e.event
+                        );
+                    }
+                    x11rb::protocol::Event::PropertyNotify(e)
+                        if e.window == root && e.atom == active_atom =>
+                    {
+                        acknowledged = true
+                    }
+                    _ => {}
+                }
+            }
+            if acknowledged
+                && property(&conn, root, "_NET_ACTIVE_WINDOW")? == vec![target]
+                && conn.get_input_focus()?.reply()?.focus == target
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "activation request lacked actual property/focus acknowledgement"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+    // A target on a different view still switches workspace and becomes viewable.
+    message(&conn, root, target, "_NET_WM_DESKTOP", [1, 0, 0, 0, 0])?;
+    wait("activation target hidden on second workspace", || {
+        property(&conn, target, "_NET_WM_DESKTOP").unwrap_or_default() == vec![1]
+            && conn
+                .get_window_attributes(target)
+                .unwrap()
+                .reply()
+                .unwrap()
+                .map_state
+                != MapState::VIEWABLE
+    });
+    message(&conn, root, target, "_NET_ACTIVE_WINDOW", [2, 0, 0, 0, 0])?;
+    wait("hidden target activation switches and focuses", || {
+        property(&conn, root, "_NET_CURRENT_DESKTOP").unwrap_or_default() == vec![1]
+            && property(&conn, root, "_NET_ACTIVE_WINDOW").unwrap_or_default() == vec![target]
+            && conn.get_input_focus().unwrap().reply().unwrap().focus == target
+            && conn
+                .get_window_attributes(target)
+                .unwrap()
+                .reply()
+                .unwrap()
+                .map_state
+                == MapState::VIEWABLE
+    });
     for id in clients {
         conn.destroy_window(id)?;
     }
