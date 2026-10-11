@@ -18,6 +18,9 @@ Results are written under ignored artifacts/test-run-* with suite logs and actua
 
 Performance runs must be exclusive of builds and other suites. Root-pixel checks do not measure physical FPS. Restore preferences and destroy disposable fixtures after testing; retain evidence outside source commits.
 
+
+The fixture manager refuses new clones or ordinary VM starts below 1 GiB of available host disk space. Starting with `--cdrom` requires at least 6 GiB because installation expands the writable overlay. These are startup checks; monitor free space during longer runs and stop disposable workloads before exhausting storage. Already-running VMs are not stopped by these checks. At most four QEMU VMs may run concurrently.
+
 ## Installer identity
 
 The quick suite includes five private controlling-terminal checks for the selected wordmark, mountain alignment, animation/reduced motion, resize and terminal restoration. They require no graphical desktop. Theme checks include canonical/symbolic logo geometry and palette contrast.
