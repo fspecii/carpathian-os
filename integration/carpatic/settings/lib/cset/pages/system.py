@@ -6,6 +6,7 @@ from ..app import Page
 from ..ui import *
 from . import about_data as ad
 from .. import trash as trash_backend
+from .. import cache_cleanup
 
 DESIGN = [os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "..", "..", "design", "brand"), "/usr/share/carpatic/brand", "/usr/local/share/carpatic/brand"]
 
@@ -281,7 +282,9 @@ class StoragePage(Page):
         self.trash_row.add_button("Refresh", self.refresh_trash)
         h.add(self.trash_row)
         self.refresh_trash()
-        h.add(ButtonRow("Clear cached thumbnails", "They are made again when needed", "Clear", lambda: self.win.apply("sh", "-c", "rm -rf ~/.cache/thumbnails ~/.cache/carpatic/thumbs", msg="Clearing...", done=lambda *_: self.win.idle("Cleared.")), key="cache"))
+        self._cache_busy = False
+        self.cache_row = ButtonRow("Clear cached thumbnails", "They are made again when needed", "Clear", self.clear_cache, key="cache")
+        h.add(self.cache_row)
         if su.which("carpatic-rollback") and fs_of_root() == "btrfs":
             snaps = [l for l in su.lines("carpatic-rollback", "list") if not l.startswith("No snapshots")]
             h.add(NavRow("Restore points", f"{len(snaps)} saved", "document-save", "#34c759", "", lambda: self.win.open_page("updates"), key="snapshots"))
@@ -290,6 +293,19 @@ class StoragePage(Page):
         tot = sum(res.values()) or 1
         for p, sz in res.items():
             r = self.home_rows[p]; r.set_busy(False); r.set_value(su.human_bytes(sz))
+    def clear_cache(self):
+        if self._cache_busy:
+            return
+        self._cache_busy = True
+        self.cache_row.set_sub("Clearing cached thumbnails...")
+        self.cache_row.set_busy(True)
+        self.cache_row.buttons[0].set_sensitive(False)
+        su.bg(cache_cleanup.clear_thumbnails, self._cache_done)
+    def _cache_done(self, result):
+        self._cache_busy = False
+        self.cache_row.set_busy(False)
+        self.cache_row.buttons[0].set_sensitive(True)
+        self.cache_row.set_sub(cache_cleanup.status_text(result))
     def on_show(self):
         if hasattr(self, "trash_row"):
             self.refresh_trash()
