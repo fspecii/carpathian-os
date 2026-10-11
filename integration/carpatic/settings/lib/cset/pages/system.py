@@ -67,7 +67,15 @@ class AboutPage(Page):
 # ---------------------------------------------------------------- Software Update
 def parse_update_status(st):
     n = st.split("updates:")[-1].split(",")[0].strip() if "updates:" in st else "unknown"
+    if not n.isascii() or not n.isdigit(): n = "unknown"
     return n, "restart needed: yes" in st
+
+def read_update_status():
+    result = subprocess.run(["carpatic-update", "status"], capture_output=True,
+                            text=True, timeout=15, check=True)
+    if "updates:" not in result.stdout or "restart needed:" not in result.stdout:
+        raise RuntimeError("Invalid update status")
+    return result.stdout.strip()
 
 def nice_snap(sid):
     d = sid[:15]
@@ -94,16 +102,16 @@ class UpdatesPage(Page):
     def build(self, pb):
         self.pb = pb
         g = pb.group()
-        self.status = StatusRow("Carpathian OS", "Up to date", "ok", "", key="check"); g.add(self.status)
+        self.status = StatusRow("Carpathian OS", "Checking status…", "off", "", key="check"); g.add(self.status)
         self.btns = ButtonRow("Updates", "", "Check for updates", lambda: self.admin("check", ["carpatic-update", "check"], "Looking for updates..."), key="install")
         self.btn_apply = self.btns.add_button("Install updates", lambda: self.admin("apply", ["carpatic-update", "apply"], "Installing updates. This can take a few minutes..."), "suggested")
         self.btn_restart = self.btns.add_button("Restart now", lambda: su.spawn("loginctl", "reboot"), "default"); self.btn_restart.set_no_show_all(True); self.btn_restart.hide()
         g.add(self.btns)
         if su.which("carpatic-security"):
-            ga = pb.group("Automatic updates", "Off unless you turn it on. When on, updates are installed once a day after a restore point is saved; the computer is never restarted for you.", key="auto")
+            ga = pb.group("Automatic updates", "Off unless you turn it on. When on, updates are installed once a day, with a restore point saved first on Btrfs installations. The computer is never restarted for you.", key="auto")
             ga.add(SwitchRow("Install updates automatically", "Fixes arrive without you doing anything. Leave off to be only notified.", su.out("carpatic-security", "auto-updates", "status").strip() == "on",
                              lambda v: self.win.apply(*su.pk("carpatic-security", "auto-updates", "on" if v else "off"), msg="Saving..."), key="auto-updates"))
-        self.snap = pb.group("Restore points", "Before every update Carpathian OS keeps a copy of the system. If something goes wrong, restore it and restart. Your files in the home folder are never changed.", key="restore")
+        self.snap = pb.group("Restore points", "On Btrfs installations, updates save a copy of the system first. Restore a saved point and restart to go back. Your files in the home folder are never changed.", key="restore")
         self.snap_rows = []
         self.make = ButtonRow("Make a restore point now", "", "Make", lambda: self.admin("snap", ["carpatic-rollback", "snapshot", "manual"], "Saving a restore point..."), key="snap")
         self.snap.add(self.make)
@@ -112,10 +120,17 @@ class UpdatesPage(Page):
         if self.pb: self.refresh()
     def refresh(self):
         def work():
-            return su.out("carpatic-update", "status"), (su.lines("carpatic-rollback", "list") if su.which("carpatic-rollback") else None), fs_of_root()
+            return read_update_status(), (su.lines("carpatic-rollback", "list") if su.which("carpatic-rollback") else None), fs_of_root()
         su.bg(work, self.fill)
     def fill(self, res):
-        if isinstance(res, Exception): return
+        if isinstance(res, Exception):
+            self.status.set_value("Status unavailable")
+            self.status.set_sub("Could not read update status. Try checking again.")
+            self.status.set_state("warn")
+            self.btn_apply.set_sensitive(False)
+            self.btn_restart.set_visible(False)
+            self.btn_restart.set_no_show_all(True)
+            return
         st, snaps, fs = res; n, restart = parse_update_status(st)
         if restart: self.status.set_value("Restart needed"); self.status.set_sub("Restart to finish updating."); self.status.set_state("warn")
         elif n == "0": self.status.set_value("Up to date"); self.status.set_sub("Your system is up to date."); self.status.set_state("ok")
@@ -185,16 +200,27 @@ class AppsPage(Page):
             ents, defaults = res
             for title, probe, mimes, icon, color in CATEGORIES:
                 cands = candidates(probe, ents)
-                if not cands: continue
+                if not cands:
+                    g.add(InfoRow(title, "No installed app supports this file type", key="app-" + probe, icon=icon, color=color))
+                    continue
                 cur = defaults.get(probe, "")
-                opts = [(i, n) for i, n in cands]
+                opts = [("", "Not configured")] + [(i, n) for i, n in cands]
                 if cur and cur not in dict(opts): opts.insert(0, (cur, cur[:-8] if cur.endswith(".desktop") else cur))
-                r = PopupRow(title, "", opts, cur or opts[0][0], lambda v, mimes=mimes: self.set_default(v, mimes), key="app-" + probe, icon=icon, color=color); g.add(r)
+                r = PopupRow(title, "", opts, cur, lambda v, mimes=mimes: self.set_default(v, mimes), key="app-" + probe, icon=icon, color=color); g.add(r); self.rows[probe] = r
             if su.which("carpatic-mail-choice"): g.add(ButtonRow("Mail app", "Webmail, Thunderbird, Claws Mail, Alpine or none: installs only what you pick", "Choose...", lambda: su.spawn("carpatic-mail-choice", "gui"), key="mail-choice"))
             self.win.on_page_filled(self)
         su.bg(work, fill)
     def set_default(self, desktop_id, mimes):
-        self.win.apply("xdg-mime", "default", desktop_id, *mimes, msg="Saving...")
+        def refresh(*_):
+            def fill(cur):
+                if isinstance(cur, Exception): return
+                row = self.rows.get(mimes[0])
+                if row is not None: row.set_value_quiet(cur)
+            su.bg(lambda: su.out("xdg-mime", "query", "default", mimes[0]), fill)
+        # The empty item describes absent configuration; it is not a command
+        # to remove an existing association. Re-query after changes or failure.
+        if not desktop_id: return refresh()
+        self.win.apply("xdg-mime", "default", desktop_id, *mimes, msg="Saving...", done=refresh)
 
 # ---------------------------------------------------------------- Storage
 REAL_FS = {"ext4", "ext3", "ext2", "btrfs", "xfs", "f2fs", "vfat", "exfat", "ntfs", "ntfs3", "fuseblk", "jfs", "reiserfs", "zfs"}

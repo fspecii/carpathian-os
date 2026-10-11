@@ -3,8 +3,10 @@
 set -eu
 cd "$(dirname "$0")/.."
 python3 tests/update-commands.py
+python3 tests/update-status.py
 python3 tests/display-commands.py
 python3 tests/settings-search.py
+python3 tests/default-apps.py
 python3 tests/desktop-commands.py
 python3 tests/desktop-files-settings.py
 python3 tests/desktop-wallpaper.py

@@ -112,25 +112,34 @@ def install_packs(win, packs, heading, after=None, apply_after=False):
 def desktop_entries():
     """All visible .desktop applications: [(id, name, icon, [mimetypes], exec)]. Parsed with a small reader (no GIO needed)."""
     seen = {}; res = []
-    dirs = [os.path.expanduser("~/.local/share/applications")] + [os.path.join(d, "applications") for d in (os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share").split(":")]
-    for d in dirs:
-        try: names = sorted(os.listdir(d))
-        except OSError: continue
-        for n in names:
-            if not n.endswith(".desktop") or n in seen: continue
-            seen[n] = 1; kv = {}
-            try:
-                sec = False
-                for line in open(os.path.join(d, n), errors="replace"):
-                    line = line.strip()
-                    if line.startswith("["): sec = line == "[Desktop Entry]"; continue
-                    if sec and "=" in line:
-                        k, v = line.split("=", 1)
-                        if k not in kv: kv[k] = v
-            except OSError:
-                continue
-            if kv.get("NoDisplay") == "true" or kv.get("Hidden") == "true" or kv.get("Type", "Application") != "Application": continue
-            res.append((n, kv.get("Name", n[:-8]), kv.get("Icon", ""), [m for m in kv.get("MimeType", "").split(";") if m], kv.get("Exec", "")))
+    data_home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    if not os.path.isabs(data_home): data_home = os.path.expanduser("~/.local/share")
+    bases = [data_home] + (os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share").split(":")
+    for base in bases:
+        if not os.path.isabs(base): continue
+        d = os.path.join(base, "applications")
+        for parent, folders, names in os.walk(d):
+            folders.sort()
+            for filename in sorted(names):
+                if not filename.endswith(".desktop"): continue
+                path = os.path.join(parent, filename)
+                n = os.path.relpath(path, d).replace(os.sep, "-")
+                if n in seen: continue
+                seen[n] = 1; kv = {}
+                try:
+                    sec = False
+                    with open(path, errors="replace") as source:
+                        lines = source.readlines()
+                    for line in lines:
+                        line = line.strip()
+                        if line.startswith("["): sec = line == "[Desktop Entry]"; continue
+                        if sec and "=" in line:
+                            k, v = line.split("=", 1)
+                            if k not in kv: kv[k] = v
+                except OSError:
+                    continue
+                if kv.get("NoDisplay") == "true" or kv.get("Hidden") == "true" or kv.get("Type", "Application") != "Application": continue
+                res.append((n, kv.get("Name", n[:-8]), kv.get("Icon", ""), [m for m in kv.get("MimeType", "").split(";") if m], kv.get("Exec", "")))
     return res
 
 

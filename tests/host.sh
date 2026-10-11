@@ -55,4 +55,8 @@ export GDK_BACKEND=x11 CARPATIC_WM_TEST_DISPLAY=1
 export CARPATIC_WM_TEST_LOG="$PWD/artifacts/wm-test.log"
 python3 integration/carpatic/panel/tests/test_first_paint.py
 CARPATIC_XVFB_TEST=1 CARPATIC_PRIVATE_DBUS_TEST=1 G_DEBUG=fatal-criticals dbus-run-session -- python3 tests/calendar-compact.py
+# Default-app widgets use an isolated runtime and in-memory GTK settings.
+mkdir -p "$temporary/default-apps-runtime"
+chmod 700 "$temporary/default-apps-runtime"
+XDG_RUNTIME_DIR="$temporary/default-apps-runtime" GSETTINGS_BACKEND=memory GIO_USE_VFS=local NO_AT_BRIDGE=1 CARPATIC_XVFB_TEST=1 CARPATIC_PRIVATE_DBUS_TEST=1 G_DEBUG=fatal-criticals dbus-run-session -- python3 tests/default-apps-gtk.py
 cargo test --locked -p carpatic-wm --test x11 -- --ignored --nocapture --test-threads=1
