@@ -149,7 +149,7 @@ python3 - "$partial" <<'PY_PART'
 import pathlib, sys
 pathlib.Path(sys.argv[1]).unlink()
 PY_PART
-(set -C; sha256sum "$out" >"$out.sha256")
+(set -C; cd "$(dirname "$out")"; sha256sum "$(basename "$out")" >"$out.sha256")
 cp "$out.sha256" "$run/output.sha256"
 if [ "$update_latest" = 1 ]; then
     ln -sfn "$out" iso/out/carpatic-rust-latest.iso
