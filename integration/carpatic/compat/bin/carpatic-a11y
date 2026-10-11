@@ -66,15 +66,178 @@ mask_of() { case "$1" in slow) echo 2;; bounce) echo 4;; sticky) echo 8;; mousek
 proc_running() { ps | grep -v grep | grep -q "$1"; }
 
 set_large() {
+(
   have carpatic-appearance || die "the Appearance tools are not installed"
-  if [ "$1" = on ]; then
-    [ -n "$(get LARGE_PREV)" ] || put LARGE_PREV "$(carpatic-appearance get 2>/dev/null | tr '\n' ' ')"
-    carpatic-appearance set ui-size 14 mono-size 13 cursor-size 40 >/dev/null 2>&1
+  umask 077
+  large_snapshot="$CFG/large-text.snapshot"
+  large_settings="${CARPATIC_CONFIG:-$HOME/.config/carpatic}/settings.conf"
+  large_tmp=; large_lockdir=
+  large_cleanup() {
+    [ -z "$large_tmp" ] || rm -f "$large_tmp"
+    [ -z "$large_lockdir" ] || rmdir "$large_lockdir" 2>/dev/null
+    :
+  }
+  trap large_cleanup EXIT
+  trap 'exit 1' INT TERM
+  if have flock; then
+    exec 9>"$CFG/large-text.lock" || die "cannot open the Large Text lock"
+    flock -w 5 9 || die "Large Text is being changed; try again"
   else
-    carpatic-appearance set ui-size default mono-size default cursor-size default >/dev/null 2>&1; del LARGE_PREV
+    mkdir "$CFG/large-text.lock.d" 2>/dev/null || die "Large Text is being changed; try again"
+    large_lockdir="$CFG/large-text.lock.d"
   fi
-  put LARGE_TEXT "$1"
+  large_validate() {
+    awk -F= '
+      $1 == "VERSION" { if (NF != 2 || ($2 != "1" && $2 != "2") || ++version != 1) bad=1; format=$2; next }
+      $1 ~ /^(UI_SIZE|MONO_SIZE|CURSOR_SIZE)$/ {
+        if (NF != 2 || ++seen[$1] != 1 || $2 !~ /^(absent|empty|default|[0-9]+)$/ || ($2 ~ /^[0-9]+$/ && ($2+0 < 1 || $2+0 > 4096))) bad=1; next
+      }
+      $1 ~ /^TARGET_(UI_SIZE|MONO_SIZE|CURSOR_SIZE)$/ {
+        if (NF != 2 || ++seen[$1] != 1 || $2 !~ /^[0-9]+$/ || $2+0 < 1 || $2+0 > 4096) bad=1; next
+      }
+      { bad=1 }
+      END { if (format == 2 && (seen["TARGET_UI_SIZE"] != 1 || seen["TARGET_MONO_SIZE"] != 1 || seen["TARGET_CURSOR_SIZE"] != 1)) bad=1;
+        if (format == 1 && (seen["TARGET_UI_SIZE"] || seen["TARGET_MONO_SIZE"] || seen["TARGET_CURSOR_SIZE"])) bad=1;
+        if (bad || version != 1 || seen["UI_SIZE"] != 1 || seen["MONO_SIZE"] != 1 || seen["CURSOR_SIZE"] != 1) exit 1 }
+    ' "$large_snapshot"
+  }
+  large_state() {
+    large_tmp=$(mktemp "$CFG/.large-text-state.XXXXXX") || return 1
+    { awk '!/^LARGE_TEXT=/ && !/^LARGE_PREV=/' "$ENV" && printf 'LARGE_TEXT="%s"\n' "$1"; } >"$large_tmp" || return 1
+    mv "$large_tmp" "$ENV" || return 1
+    large_tmp=
+  }
+  # The legacy snapshot was computed, so it cannot recover historical absence.
+  # Migrate only its three validated sizes; never source/eval the full string.
+  large_legacy=$(get LARGE_PREV)
+  if [ ! -e "$large_snapshot" ] && [ -n "$large_legacy" ]; then
+    large_tmp=$(mktemp "$CFG/.large-text-snapshot.XXXXXX") || die "cannot save the original sizes"
+    printf '%s\n' "$large_legacy" | awk '
+      {
+        # Old get output was collapsed into words with quotes removed. Recognize
+        # assignment boundaries, never interpret shell syntax in font families.
+        for (i=1;i<=NF;i++) {
+          if ($i ~ /^[A-Z_]+=/) {
+            key=$i; sub(/=.*/,"",key); value=$i; sub(/^[^=]*=/,"",value);
+            if (++seen[key] != 1) bad=1; fields[key]=value
+          } else if (key != "") fields[key]=fields[key]" "$i
+        }
+      }
+      END {
+        ui=fields["UI_SIZE"]; mono=fields["MONO_SIZE"]; cursor=fields["CURSOR_SIZE"];
+        if (ui == "") { ui=fields["UI_FONT"]; sub(/^.* /,"",ui) }
+        if (mono == "") { mono=fields["MONO_FONT"]; sub(/^.* /,"",mono) }
+        if (ui !~ /^(default|[0-9]+)$/ || mono !~ /^(default|[0-9]+)$/ || cursor !~ /^(default|[0-9]+)$/) bad=1;
+        if (!seen["UI_SIZE"] || !seen["MONO_SIZE"]) {
+          scale=fields["SCALE"];
+          if (scale !~ /^[0-9]+$/ || scale+0 < 100 || scale+0 > 300 || cursor !~ /^[0-9]+$/ || cursor+0 < 1 || cursor+0 > 4096) bad=1;
+          else cursor=int((cursor*100+scale-1)/scale)
+        }
+        if (bad) exit 1;
+        print "VERSION=1"; print "UI_SIZE="ui; print "MONO_SIZE="mono; print "CURSOR_SIZE="cursor
+      }
+    ' >"$large_tmp" || die "the saved legacy sizes are invalid; they were retained"
+    mv "$large_tmp" "$large_snapshot" || die "cannot save the original sizes"
+    large_tmp=
+  fi
+  if [ "$1" = on ] && [ ! -e "$large_snapshot" ]; then
+    [ "$(get LARGE_TEXT)" != on ] || die "the original sizes are missing; cannot replace them with the current Large Text sizes"
+    large_tmp=$(mktemp "$CFG/.large-text-snapshot.XXXXXX") || die "cannot save the original sizes"
+    if [ -e "$large_settings" ]; then
+      [ -f "$large_settings" ] && [ -r "$large_settings" ] || die "cannot read the original size settings"
+      awk '
+        /^(UI_SIZE|MONO_SIZE|CURSOR_SIZE)=/ {
+          key=$0; sub(/=.*/,"",key); value=$0; sub(/^[^=]*=/,"",value)
+          if (value ~ /^".*"$/) { sub(/^"/,"",value); sub(/"$/,"",value) }
+          if (value == "") value="empty"
+          if (value !~ /^(empty|default|[0-9]+)$/) bad=1
+          values[key]=value; seen[key]=1
+        }
+        END { if (bad) exit 1; print "VERSION=1";
+          print "UI_SIZE="(seen["UI_SIZE"] ? values["UI_SIZE"] : "absent");
+          print "MONO_SIZE="(seen["MONO_SIZE"] ? values["MONO_SIZE"] : "absent");
+          print "CURSOR_SIZE="(seen["CURSOR_SIZE"] ? values["CURSOR_SIZE"] : "absent") }
+      ' "$large_settings" >"$large_tmp" || die "cannot capture valid original size settings"
+    else
+      printf 'VERSION=1\nUI_SIZE=absent\nMONO_SIZE=absent\nCURSOR_SIZE=absent\n' >"$large_tmp" || die "cannot save the original sizes"
+    fi
+    mv "$large_tmp" "$large_snapshot" || die "cannot save the original sizes"
+    large_tmp=
+  fi
+  if [ ! -e "$large_snapshot" ]; then
+    [ "$(get LARGE_TEXT)" != on ] || die "the original sizes are missing; current preferences were preserved"
+    large_state off || die "cannot record the Large Text state"
+    return 0
+  fi
+  [ -f "$large_snapshot" ] && large_validate || die "the saved original sizes are invalid; they were retained"
+  if [ "$1" = on ]; then
+    if [ "$(sed -n 's/^VERSION=//p' "$large_snapshot")" = 1 ]; then
+      # appearance.get reports logical font sizes but physical cursor pixels.
+      # Preserve originals independently. Add two font points / eight logical
+      # cursor pixels once, with floors 14/13/40; repeated login never grows them.
+      large_effective=$(carpatic-appearance get 9>&- 2>/dev/null) || die "cannot read effective sizes; saved originals were kept for retry"
+      large_tmp=$(mktemp "$CFG/.large-text-snapshot.XXXXXX") || die "cannot save enlarged sizes"
+      { printf '%s\n' "$large_effective"; printf '__ORIGINALS__\n'; cat "$large_snapshot"; } | awk '
+        BEGIN { FS="=" }
+        /^__ORIGINALS__$/ { originals=1; next }
+        originals { if ($1 != "VERSION") saved[$1]=$2; next }
+        $1 ~ /^(UI_FONT|MONO_FONT|CURSOR_SIZE|SCALE)$/ {
+          if (++seen[$1] != 1) bad=1;
+          value=substr($0,index($0,"=")+1); sub(/^"/,"",value); sub(/"$/,"",value);
+          if ($1 ~ /_FONT$/) sub(/^.* /,"",value);
+          if (value !~ /^[0-9]+$/ || value+0 < 1 || value+0 > 4096) bad=1;
+          effective[$1]=value+0
+        }
+        END {
+          if (bad || seen["UI_FONT"] != 1 || seen["MONO_FONT"] != 1 || seen["CURSOR_SIZE"] != 1 || seen["SCALE"] != 1 || effective["SCALE"] < 100 || effective["SCALE"] > 300) exit 1;
+          keys[1]="UI_SIZE"; keys[2]="MONO_SIZE"; keys[3]="CURSOR_SIZE";
+          baseline[1]=effective["UI_FONT"]; baseline[2]=effective["MONO_FONT"];
+          baseline[3]=int((effective["CURSOR_SIZE"]*100+effective["SCALE"]-1)/effective["SCALE"]);
+          floor[1]=14; floor[2]=13; floor[3]=40;
+          for(i=1;i<=3;i++) {
+            if (saved[keys[i]] ~ /^[0-9]+$/ && saved[keys[i]]+0 > baseline[i]) baseline[i]=saved[keys[i]]+0;
+            if (baseline[i] < 1 || baseline[i] > 4088) exit 1;
+            target[i]=baseline[i]+(i==3 ? 8 : 2); if (target[i]<floor[i]) target[i]=floor[i]
+          }
+          print "VERSION=2";
+          for(i=1;i<=3;i++) print keys[i]"="saved[keys[i]];
+          for(i=1;i<=3;i++) print "TARGET_"keys[i]"="target[i]
+        }
+      ' >"$large_tmp" || die "cannot capture valid effective sizes; saved originals were kept for retry"
+      mv "$large_tmp" "$large_snapshot" || die "cannot save enlarged sizes; saved originals were kept for retry"
+      large_tmp=
+    fi
+    large_ui=$(sed -n 's/^TARGET_UI_SIZE=//p' "$large_snapshot")
+    large_mono=$(sed -n 's/^TARGET_MONO_SIZE=//p' "$large_snapshot")
+    large_cursor=$(sed -n 's/^TARGET_CURSOR_SIZE=//p' "$large_snapshot")
+    carpatic-appearance set ui-size "$large_ui" mono-size "$large_mono" cursor-size "$large_cursor" 9>&- >/dev/null 2>&1 || die "could not apply Large Text; size settings may already have changed. Saved originals were kept for retry"
+    large_state on || die "could not record Large Text; size settings may already have changed. Saved originals were kept for retry"
+  else
+    large_ui=$(sed -n 's/^UI_SIZE=//p' "$large_snapshot")
+    large_mono=$(sed -n 's/^MONO_SIZE=//p' "$large_snapshot")
+    large_cursor=$(sed -n 's/^CURSOR_SIZE=//p' "$large_snapshot")
+    case $large_ui in absent|empty) large_ui=default;; esac
+    case $large_mono in absent|empty) large_mono=default;; esac
+    case $large_cursor in absent|empty) large_cursor=default;; esac
+    carpatic-appearance set ui-size "$large_ui" mono-size "$large_mono" cursor-size "$large_cursor" 9>&- >/dev/null 2>&1 || die "could not restore sizes; size settings may already have changed. Saved originals were kept for retry"
+    # Appearance's default writes an empty override. Recover original presence
+    # as well, filtering only these keys from the latest settings file.
+    large_tmp=$(mktemp "${large_settings}.restore.XXXXXX") || die "cannot restore original overrides; saved originals were kept for retry"
+    awk '!/^(UI_SIZE|MONO_SIZE|CURSOR_SIZE)=/' "$large_settings" >"$large_tmp" || die "cannot restore original overrides; saved originals were kept for retry"
+    while IFS='=' read -r large_key large_value; do
+      case $large_key in UI_SIZE|MONO_SIZE|CURSOR_SIZE)
+        case $large_value in absent) continue;; empty) large_value=;; esac
+        printf '%s="%s"\n' "$large_key" "$large_value" >>"$large_tmp" || die "cannot restore original overrides; saved originals were kept for retry"
+      ;; esac
+    done <"$large_snapshot"
+    mv "$large_tmp" "$large_settings" || die "cannot restore original overrides; saved originals were kept for retry"
+    large_tmp=
+    large_state off || die "could not record restored sizes; saved originals were kept for retry"
+    rm -f "$large_snapshot" || die "sizes restored but saved-state cleanup failed; try turning Large Text off again"
+  fi
+) || exit $?
 }
+
 set_contrast() {
   have carpatic-theme || die "the theme tools are not installed"
   if [ "$1" = on ]; then

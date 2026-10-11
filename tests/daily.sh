@@ -15,6 +15,7 @@ python3 tests/wifi-scan.py
 python3 tests/wifi-connect.py
 python3 tests/bluetooth-refresh.py
 python3 tests/bluetooth-discovery.py
+python3 tests/a11y-large-text.py
 python3 tests/default-apps.py
 python3 tests/desktop-commands.py
 python3 tests/desktop-files-settings.py
